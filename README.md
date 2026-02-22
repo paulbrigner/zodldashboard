@@ -1,73 +1,140 @@
-# xmonitor
+# XMonitor Stream A (AWS Foundation)
 
+This repository now tracks Stream A for XMonitor:
 
-# Next.js + AWS Amplify Template (Google Auth Canary)
+- canonical cloud data model in PostgreSQL,
+- one-time migration tooling from local SQLite,
+- API contract implementation for ingest + read,
+- Amplify-hosted web UI for read-only feed.
 
-This template is a minimal Next.js App Router starter with:
+Stream B (local OpenClaw collector rewiring) remains out of scope here.
 
-- A protected hello-world homepage (`/`)
-- Google OAuth login via NextAuth (`/signin`)
-- Domain restriction to a company domain (default `zodl.com`)
-- A separate OAuth probe page (`/oauth-probe`) to detect Workspace policy friction
-- `amplify.yml` for AWS Amplify deployments
+## Architecture summary
 
-No database is required.
+- Frontend: Next.js App Router deployed via Amplify.
+- Auth: NextAuth Google OAuth with domain restriction.
+- API: Next.js route handlers under `/api/v1/*`.
+- Storage: PostgreSQL with schema migrations in `db/migrations`.
+- Migration tooling: Python scripts in `scripts/migrate`.
 
-## 1. Configure Google OAuth
+## Required docs
 
-Create a Google OAuth Web client and add callback URLs:
+Implementation baseline is documented in:
 
-- `http://localhost:3000/api/auth/callback/google`
-- `https://<your-amplify-domain>/api/auth/callback/google`
+1. `docs/AWS_MIGRATION_PLAN.md`
+2. `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
+3. `docs/openapi.v1.yaml`
+4. `docs/AWS_MIGRATION_RUNBOOK.md`
+5. `docs/CODEX_HANDOFF_STREAM_A.md`
 
-For the probe flow, add:
+## Prerequisites
 
-- `http://localhost:3000/oauth-probe`
-- `https://<your-amplify-domain>/oauth-probe`
+- Node.js 22.x
+- npm
+- Python 3.10+
+- `psql`
+- PostgreSQL 15+ target (local or AWS)
 
-## 2. Set environment variables
-
-Copy `.env.example` to `.env.local` and fill in values:
+For import/validation scripts:
 
 ```bash
-NEXTAUTH_URL=http://localhost:3000
-NEXTAUTH_SECRET=<long-random-secret>
-GOOGLE_CLIENT_ID=<client-id>
-GOOGLE_CLIENT_SECRET=<client-secret>
-ALLOWED_GOOGLE_DOMAIN=zodl.com
+python3 -m pip install psycopg[binary]
 ```
 
-Generate a local secret with:
+## Environment
+
+Copy `.env.example` to `.env.local` and set values.
+
+```bash
+cp .env.example .env.local
+```
+
+Generate a local NextAuth secret:
 
 ```bash
 openssl rand -base64 32
 ```
 
-## 3. Run locally
+## Install and run
 
 ```bash
 npm install
 npm run dev
 ```
 
-Visit:
+Key pages:
 
-- `http://localhost:3000/signin` for Google login
-- `http://localhost:3000/oauth-probe` for policy diagnostics
+- `/signin` for Google login
+- `/oauth-probe` for Workspace policy diagnostics
+- `/` read-only feed UI (requires auth)
 
-## 4. Interpreting probe results
+## Database migrations
 
-The probe page reports raw OAuth return values:
+Migrations live in `db/migrations/`.
 
-- `error=access_denied` + `error_subtype=admin_policy_enforced`: org policy blocked the app.
-- `error=org_internal`: app audience is restricted to a different org.
-- `code=<...>`: authorization step succeeded (not blocked at policy gate).
+Apply migrations using `DATABASE_URL`:
 
-## 5. Deploy to AWS Amplify
+```bash
+DATABASE_URL='postgres://user:pass@localhost:5432/xmonitor' npm run db:migrate
+```
 
-1. Copy this folder to a new repository root.
-2. Push to GitHub.
-3. Create an Amplify app from that repository.
-4. Keep the included `amplify.yml`.
-5. Set the same env vars in Amplify (use deployed URL for `NEXTAUTH_URL`).
-6. Deploy.
+Or using `PG*` vars:
+
+```bash
+PGHOST=localhost PGPORT=5432 PGDATABASE=xmonitor PGUSER=postgres PGPASSWORD=postgres npm run db:migrate
+```
+
+## SQLite migration tooling
+
+### 1) Export local SQLite to JSONL
+
+```bash
+python3 scripts/migrate/export_sqlite.py \
+  --sqlite-path /Users/paulbrigner/.openclaw/workspace/memory/x_monitor.db \
+  --out-dir data/export
+```
+
+### 2) Import JSONL into Postgres
+
+```bash
+DATABASE_URL='postgres://user:pass@localhost:5432/xmonitor' \
+python3 scripts/migrate/import_sqlite_jsonl_to_postgres.py \
+  --input-dir data/export \
+  --reject-log data/import_rejects.ndjson
+```
+
+### 3) Validate source vs target counts
+
+```bash
+DATABASE_URL='postgres://user:pass@localhost:5432/xmonitor' \
+python3 scripts/migrate/validate_counts.py \
+  --sqlite-path data/x_monitor.snapshot.db
+```
+
+## API surface
+
+OpenAPI source: `docs/openapi.v1.yaml`
+
+Implemented under `/api/v1`:
+
+- `GET /health`
+- `POST /ingest/posts/batch`
+- `POST /ingest/metrics/batch`
+- `POST /ingest/reports/batch`
+- `POST /ingest/runs`
+- `GET /feed`
+- `GET /posts/{statusId}`
+
+## Current scope boundaries
+
+In scope here:
+
+- DB schema + migration tooling
+- API + read-only feed UI
+- migration validation helpers
+
+Out of scope here:
+
+- modifying local OpenClaw scripts under `~/.openclaw/workspace/scripts`
+- re-enabling local launchd jobs
+- Signal behavior redesign

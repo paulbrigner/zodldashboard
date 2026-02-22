@@ -8,16 +8,23 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "db:migrate": "bash scripts/db/apply_migrations.sh",
+    "migrate:export": "python3 scripts/migrate/export_sqlite.py",
+    "migrate:import": "python3 scripts/migrate/import_sqlite_jsonl_to_postgres.py",
+    "migrate:validate": "python3 scripts/migrate/validate_counts.py"
   },
   "dependencies": {
     "next": "^15.5.12",
     "next-auth": "^4.24.13",
+    "pg": "^8.16.3",
     "react": "19.1.1",
     "react-dom": "19.1.1"
   },
   "devDependencies": {
     "@types/node": "24.2.1",
+    "@types/pg": "^8.15.6",
     "@types/react": "19.1.9",
     "@types/react-dom": "19.1.7",
     "typescript": "5.9.2"
