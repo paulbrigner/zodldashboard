@@ -42,7 +42,8 @@ function buildQuery(
 }
 
 function buildFeedApiUrl(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): string {
-  const url = new URL("/feed", `${baseUrl}/`);
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const url = new URL(`${normalizedBase}/feed`);
 
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);

@@ -14,7 +14,8 @@ type PostPageProps = {
 };
 
 function buildPostApiUrl(baseUrl: string, statusId: string): string {
-  const url = new URL(`/posts/${encodeURIComponent(statusId)}`, `${baseUrl}/`);
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const url = new URL(`${normalizedBase}/posts/${encodeURIComponent(statusId)}`);
   return url.toString();
 }
 
