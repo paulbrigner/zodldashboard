@@ -10,11 +10,23 @@ frontend:
         - if [ -f package-lock.json ]; then npm ci; else npm install; fi
     build:
       commands:
+        - rm -f .env.production
         - env | grep -e NEXTAUTH_URL >> .env.production || true
         - env | grep -e NEXTAUTH_SECRET >> .env.production || true
-        - env | grep -e OOGLE_CLIENT_ID >> .env.production || true
+        - env | grep -e GOOGLE_CLIENT_ID >> .env.production || true
         - env | grep -e GOOGLE_CLIENT_SECRET >> .env.production || true
         - env | grep -e ALLOWED_GOOGLE_DOMAIN >> .env.production || true
+        - env | grep -e DATABASE_URL >> .env.production || true
+        - env | grep -e PGHOST >> .env.production || true
+        - env | grep -e PGPORT >> .env.production || true
+        - env | grep -e PGDATABASE >> .env.production || true
+        - env | grep -e PGUSER >> .env.production || true
+        - env | grep -e PGPASSWORD >> .env.production || true
+        - env | grep -e PGSSLMODE >> .env.production || true
+        - env | grep -e XMONITOR_API_SERVICE_NAME >> .env.production || true
+        - env | grep -e XMONITOR_API_VERSION >> .env.production || true
+        - env | grep -e XMONITOR_DEFAULT_FEED_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_MAX_FEED_LIMIT >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next
