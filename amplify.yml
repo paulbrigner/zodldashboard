@@ -10,6 +10,11 @@ frontend:
         - if [ -f package-lock.json ]; then npm ci; else npm install; fi
     build:
       commands:
+        - env | grep -e NEXTAUTH_URL >> .env.production || true
+        - env | grep -e NEXTAUTH_SECRET >> .env.production || true
+        - env | grep -e OOGLE_CLIENT_ID >> .env.production || true
+        - env | grep -e GOOGLE_CLIENT_SECRET >> .env.production || true
+        - env | grep -e ALLOWED_GOOGLE_DOMAIN >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next
