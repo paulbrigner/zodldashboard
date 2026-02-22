@@ -1,0 +1,11 @@
+{
+  "name": "xmonitor-vpc-api-lambda",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "VPC-attached Lambda API for XMonitor v1 endpoints.",
+  "main": "index.mjs",
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

@@ -1,4 +1,5 @@
 import { ensureDatabaseConfigured } from "@/lib/xmonitor/db";
+import { maybeProxyApiRequest } from "@/lib/xmonitor/backend-api";
 import { jsonError, jsonOk } from "@/lib/xmonitor/http";
 import { getFeed } from "@/lib/xmonitor/repository";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
@@ -6,6 +7,11 @@ import { parseFeedQuery } from "@/lib/xmonitor/validators";
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  const proxied = await maybeProxyApiRequest(request);
+  if (proxied) {
+    return proxied;
+  }
+
   const { searchParams } = new URL(request.url);
   const queryInput: Record<string, string | string[] | undefined> = {};
 

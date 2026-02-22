@@ -2,14 +2,54 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { notFound, redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getPostDetail } from "@/lib/xmonitor/repository";
+import type { PostDetail } from "@/lib/xmonitor/types";
 
 export const runtime = "nodejs";
 
 type PostPageProps = {
   params: Promise<{ statusId: string }>;
 };
+
+function buildPostApiUrl(baseUrl: string, statusId: string): string {
+  const url = new URL(`/posts/${encodeURIComponent(statusId)}`, `${baseUrl}/`);
+  return url.toString();
+}
+
+async function readApiError(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (typeof payload.error === "string" && payload.error.trim()) {
+      return payload.error;
+    }
+  } catch {
+    // fall through
+  }
+  return `API request failed (${response.status})`;
+}
+
+async function fetchPostDetailViaApi(baseUrl: string, statusId: string): Promise<PostDetail | null> {
+  const response = await fetch(buildPostApiUrl(baseUrl, statusId), {
+    cache: "no-store",
+  });
+
+  if (response.status === 404) {
+    return null;
+  }
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  const payload = (await response.json()) as PostDetail;
+  if (!payload || !payload.post || !Array.isArray(payload.snapshots)) {
+    throw new Error("Invalid post detail response payload");
+  }
+
+  return payload;
+}
 
 export default async function PostPage({ params }: PostPageProps) {
   const session = await getServerSession(authOptions);
@@ -22,13 +62,33 @@ export default async function PostPage({ params }: PostPageProps) {
     notFound();
   }
 
-  if (!hasDatabaseConfig()) {
+  let detail: PostDetail | null = null;
+  let detailError: string | null = null;
+
+  const apiBaseUrl = readApiBaseUrl();
+  if (apiBaseUrl) {
+    try {
+      detail = await fetchPostDetailViaApi(apiBaseUrl, statusId);
+    } catch (error) {
+      detailError = error instanceof Error ? error.message : "Failed to load post detail";
+    }
+  } else if (hasDatabaseConfig()) {
+    try {
+      detail = await getPostDetail(statusId);
+    } catch (error) {
+      detailError = error instanceof Error ? error.message : "Failed to load post detail";
+    }
+  } else {
+    detailError = "No detail backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
+  }
+
+  if (detailError) {
     return (
       <main className="page">
         <section className="card">
           <p className="eyebrow">XMonitor Stream A</p>
           <h1>Post detail</h1>
-          <p className="error-text">Database is not configured. Set DATABASE_URL or PG* variables.</p>
+          <p className="error-text">{detailError}</p>
           <div className="button-row">
             <Link className="button button-secondary" href="/">
               Back to feed
@@ -39,7 +99,6 @@ export default async function PostPage({ params }: PostPageProps) {
     );
   }
 
-  const detail = await getPostDetail(statusId);
   if (!detail) {
     notFound();
   }

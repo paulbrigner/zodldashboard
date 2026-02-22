@@ -1,4 +1,5 @@
 import { ensureDatabaseConfigured } from "@/lib/xmonitor/db";
+import { maybeProxyApiRequest } from "@/lib/xmonitor/backend-api";
 import { jsonError, jsonOk } from "@/lib/xmonitor/http";
 import { upsertPipelineRun } from "@/lib/xmonitor/repository";
 import { parsePipelineRunUpsert } from "@/lib/xmonitor/validators";
@@ -6,6 +7,11 @@ import { parsePipelineRunUpsert } from "@/lib/xmonitor/validators";
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const proxied = await maybeProxyApiRequest(request);
+  if (proxied) {
+    return proxied;
+  }
+
   let payload: unknown;
 
   try {

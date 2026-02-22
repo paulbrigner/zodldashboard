@@ -1,4 +1,5 @@
 import { ensureDatabaseConfigured } from "@/lib/xmonitor/db";
+import { maybeProxyApiRequest } from "@/lib/xmonitor/backend-api";
 import { jsonError, jsonOk } from "@/lib/xmonitor/http";
 import { upsertMetricSnapshots } from "@/lib/xmonitor/repository";
 import { parseBatchItems, parseMetricsSnapshotUpsert } from "@/lib/xmonitor/validators";
@@ -7,6 +8,11 @@ import type { BatchUpsertResult, MetricsSnapshotUpsert } from "@/lib/xmonitor/ty
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const proxied = await maybeProxyApiRequest(request);
+  if (proxied) {
+    return proxied;
+  }
+
   let payload: unknown;
 
   try {

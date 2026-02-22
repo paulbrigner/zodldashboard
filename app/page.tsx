@@ -2,6 +2,7 @@ import Link from "next/link";
 import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
+import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getFeed } from "@/lib/xmonitor/repository";
 import type { FeedResponse } from "@/lib/xmonitor/types";
@@ -40,6 +41,53 @@ function buildQuery(
   return query.toString();
 }
 
+function buildFeedApiUrl(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): string {
+  const url = new URL("/feed", `${baseUrl}/`);
+
+  if (query.since) url.searchParams.set("since", query.since);
+  if (query.until) url.searchParams.set("until", query.until);
+  if (query.tier) url.searchParams.set("tier", query.tier);
+  if (query.handle) url.searchParams.set("handle", query.handle);
+  if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
+  if (query.q) url.searchParams.set("q", query.q);
+  if (query.limit) url.searchParams.set("limit", String(query.limit));
+  if (query.cursor) url.searchParams.set("cursor", query.cursor);
+
+  return url.toString();
+}
+
+async function readApiError(response: Response): Promise<string> {
+  try {
+    const payload = (await response.json()) as { error?: unknown };
+    if (typeof payload.error === "string" && payload.error.trim()) {
+      return payload.error;
+    }
+  } catch {
+    // fall through
+  }
+  return `API request failed (${response.status})`;
+}
+
+async function fetchFeedViaApi(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): Promise<FeedResponse> {
+  const response = await fetch(buildFeedApiUrl(baseUrl, query), {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  const payload = (await response.json()) as FeedResponse;
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("Invalid feed response payload");
+  }
+
+  return {
+    items: payload.items,
+    next_cursor: payload.next_cursor || null,
+  };
+}
+
 export default async function HomePage({ searchParams }: HomePageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -48,19 +96,25 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   const params = (await searchParams) || {};
   const query = parseFeedQuery(params);
+  const apiBaseUrl = readApiBaseUrl();
 
-  const dbConfigured = hasDatabaseConfig();
   let feed: FeedResponse = { items: [], next_cursor: null };
   let feedError: string | null = null;
 
-  if (dbConfigured) {
+  if (apiBaseUrl) {
+    try {
+      feed = await fetchFeedViaApi(apiBaseUrl, query);
+    } catch (error) {
+      feedError = error instanceof Error ? error.message : "Failed to load feed";
+    }
+  } else if (hasDatabaseConfig()) {
     try {
       feed = await getFeed(query);
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
     }
   } else {
-    feedError = "Database is not configured. Set DATABASE_URL or PG* variables and apply migrations.";
+    feedError = "No feed backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
   }
 
   return (
