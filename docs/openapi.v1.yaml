@@ -1,0 +1,295 @@
+openapi: 3.0.3
+info:
+  title: XMonitor API
+  version: 1.0.0
+servers:
+  - url: /v1
+paths:
+  /health:
+    get:
+      summary: Health check
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  service: { type: string }
+                  version: { type: string }
+
+  /ingest/posts/batch:
+    post:
+      summary: Upsert posts by status_id
+      operationId: ingestPostsBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/PostUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
+  /ingest/metrics/batch:
+    post:
+      summary: Upsert metric snapshots
+      operationId: ingestMetricsBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/MetricsSnapshotUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
+  /ingest/reports/batch:
+    post:
+      summary: Upsert report marks
+      operationId: ingestReportsBatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/ReportUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
+  /ingest/runs:
+    post:
+      summary: Upsert pipeline run records
+      operationId: ingestRun
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PipelineRunUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
+  /feed:
+    get:
+      summary: Query timeline feed
+      operationId: getFeed
+      parameters:
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+        - in: query
+          name: tier
+          schema: { type: string, enum: [teammate, influencer, ecosystem] }
+        - in: query
+          name: handle
+          schema: { type: string }
+        - in: query
+          name: significant
+          schema: { type: boolean }
+        - in: query
+          name: q
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 50, maximum: 200 }
+        - in: query
+          name: cursor
+          schema: { type: string }
+      responses:
+        '200':
+          description: Feed page
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FeedResponse'
+
+  /posts/{statusId}:
+    get:
+      summary: Get post detail
+      operationId: getPost
+      parameters:
+        - in: path
+          name: statusId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Post detail
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PostDetail'
+        '404':
+          description: Not found
+
+components:
+  schemas:
+    BatchUpsertResult:
+      type: object
+      properties:
+        received: { type: integer }
+        inserted: { type: integer }
+        updated: { type: integer }
+        skipped: { type: integer }
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              index: { type: integer }
+              message: { type: string }
+
+    PostUpsert:
+      type: object
+      required: [status_id, url, author_handle, discovered_at, last_seen_at]
+      properties:
+        status_id: { type: string }
+        url: { type: string }
+        author_handle: { type: string }
+        author_display: { type: string }
+        body_text: { type: string }
+        posted_relative: { type: string }
+        source_query: { type: string }
+        watch_tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        is_significant: { type: boolean }
+        significance_reason: { type: string }
+        significance_version: { type: string }
+        likes: { type: integer }
+        reposts: { type: integer }
+        replies: { type: integer }
+        views: { type: integer }
+        initial_likes: { type: integer }
+        initial_reposts: { type: integer }
+        initial_replies: { type: integer }
+        initial_views: { type: integer }
+        likes_24h: { type: integer }
+        reposts_24h: { type: integer }
+        replies_24h: { type: integer }
+        views_24h: { type: integer }
+        refresh_24h_at: { type: string, format: date-time }
+        refresh_24h_status: { type: string }
+        refresh_24h_delta_likes: { type: integer }
+        refresh_24h_delta_reposts: { type: integer }
+        refresh_24h_delta_replies: { type: integer }
+        refresh_24h_delta_views: { type: integer }
+        discovered_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time }
+
+    MetricsSnapshotUpsert:
+      type: object
+      required: [status_id, snapshot_type, snapshot_at, likes, reposts, replies, views]
+      properties:
+        status_id: { type: string }
+        snapshot_type: { type: string, enum: [initial_capture, latest_observed, refresh_24h] }
+        snapshot_at: { type: string, format: date-time }
+        likes: { type: integer }
+        reposts: { type: integer }
+        replies: { type: integer }
+        views: { type: integer }
+        source: { type: string }
+
+    ReportUpsert:
+      type: object
+      required: [status_id, reported_at]
+      properties:
+        status_id: { type: string }
+        reported_at: { type: string, format: date-time }
+        channel: { type: string }
+        destination: { type: string }
+        summary: { type: string }
+
+    PipelineRunUpsert:
+      type: object
+      required: [run_at, mode]
+      properties:
+        run_at: { type: string, format: date-time }
+        mode: { type: string, enum: [priority, discovery, both, refresh24h, manual] }
+        fetched_count: { type: integer }
+        significant_count: { type: integer }
+        reported_count: { type: integer }
+        note: { type: string }
+        source: { type: string }
+
+    FeedItem:
+      type: object
+      properties:
+        status_id: { type: string }
+        discovered_at: { type: string, format: date-time }
+        author_handle: { type: string }
+        watch_tier: { type: string }
+        body_text: { type: string }
+        url: { type: string }
+        is_significant: { type: boolean }
+        significance_reason: { type: string }
+        likes: { type: integer }
+        reposts: { type: integer }
+        replies: { type: integer }
+        views: { type: integer }
+        reported_at: { type: string, format: date-time, nullable: true }
+
+    FeedResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItem'
+        next_cursor:
+          type: string
+          nullable: true
+
+    PostDetail:
+      type: object
+      properties:
+        post:
+          $ref: '#/components/schemas/FeedItem'
+        snapshots:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricsSnapshotUpsert'
+        report:
+          $ref: '#/components/schemas/ReportUpsert'
