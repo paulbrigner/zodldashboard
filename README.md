@@ -266,10 +266,11 @@ curl -sS 'https://www.zodldashboard.com/api/v1/health'
 curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
 ```
 
-Ingest auth (expect `401` without key):
+Ingest auth against backend API (expect `401` without key):
 
 ```bash
-curl -i -X POST 'https://www.zodldashboard.com/v1/ingest/runs' \
+BACKEND_API_BASE='https://abc123.execute-api.us-east-1.amazonaws.com/prod/v1'
+curl -i -X POST "$BACKEND_API_BASE/ingest/runs" \
   -H 'content-type: application/json' \
   --data '{"run_at":"2026-02-22T00:00:00Z","mode":"manual"}'
 ```
