@@ -128,9 +128,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <p className="subtle-text">Signed in as {session.user.email}</p>
           </div>
           <div className="button-row">
-            <Link className="button button-secondary" href="/oauth-probe">
-              OAuth probe
-            </Link>
             <SignOutButton />
           </div>
         </header>

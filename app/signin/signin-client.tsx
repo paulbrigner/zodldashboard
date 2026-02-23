@@ -1,7 +1,6 @@
 "use client";
 
 import { signIn } from "next-auth/react";
-import Link from "next/link";
 
 const errorText: Record<string, string> = {
   AccessDenied: "Access denied. Use a verified account from the allowed company domain.",
@@ -27,9 +26,6 @@ export default function SignInClient({ error }: SignInClientProps) {
           <button className="button" onClick={() => signIn("google", { callbackUrl: "/" })} type="button">
             Continue with Google
           </button>
-          <Link className="button button-secondary" href="/oauth-probe">
-            Run policy probe
-          </Link>
         </div>
         {error ? <p className="error-text">{errorText[error] || errorText.Default}</p> : null}
       </section>
