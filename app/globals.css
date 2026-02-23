@@ -493,6 +493,19 @@ p {
   white-space: pre-wrap;
 }
 
+.feed-item-actions {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.feed-item-actions .button {
+  border-radius: 0.62rem;
+  padding: 0.42rem 0.68rem;
+  font-size: 0.82rem;
+}
+
 .feed-tags {
   margin-top: 0.66rem;
   display: flex;
@@ -611,6 +624,11 @@ p {
 
   .header-aux-row .button {
     width: 100%;
+  }
+
+  .feed-item-actions .button,
+  .feed-item-actions .button-secondary {
+    width: auto;
   }
 
   .update-inline .button {

@@ -267,20 +267,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
               <p className="feed-body">{item.body_text || "(no text captured)"}</p>
 
-              <div className="feed-tags">
-                <span className="pill">tier: {item.watch_tier || "-"}</span>
-                <span className="pill">significant: {item.is_significant ? "true" : "false"}</span>
-                <span className="pill">likes: {item.likes}</span>
-                <span className="pill">reposts: {item.reposts}</span>
-                <span className="pill">replies: {item.replies}</span>
-                <span className="pill">views: {item.views}</span>
-              </div>
-
-              <div className="button-row">
-                <Link className="button" href={`/posts/${item.status_id}`}>
+              <div className="feed-item-actions">
+                <Link className="button button-small" href={`/posts/${item.status_id}`}>
                   View detail
                 </Link>
-                <a className="button button-secondary" href={item.url} rel="noreferrer" target="_blank">
+                <a className="button button-secondary button-small" href={item.url} rel="noreferrer" target="_blank">
                   Open on X
                 </a>
               </div>
