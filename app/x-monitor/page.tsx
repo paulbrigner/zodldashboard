@@ -232,7 +232,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <details className="summary-panel" open>
           <summary className="summary-panel-header">
-            <span className="summary-panel-title">Summaries</span>
+            <span className="summary-panel-title-wrap">
+              <span className="summary-panel-title">Summaries</span>
+              <span aria-hidden className="disclosure-caret">
+                ▾
+              </span>
+            </span>
             <span className="summary-panel-state">{summaries.length} loaded</span>
           </summary>
           <div className="summary-panel-grid">
@@ -271,7 +276,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <details className="filter-panel">
           <summary className="filter-summary">
-            <span className="filter-summary-title">Filters</span>
+            <span className="filter-summary-title-wrap">
+              <span className="filter-summary-title">Filters</span>
+              <span aria-hidden className="disclosure-caret">
+                ▾
+              </span>
+            </span>
             {hasActiveFilters ? (
               <div className="filter-summary-controls">
                 <span className="filter-summary-state">Active</span>

@@ -215,6 +215,13 @@ p {
   color: #3358aa;
 }
 
+.summary-panel-title-wrap,
+.filter-summary-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
 .summary-panel-state {
   display: inline-flex;
   align-items: center;
@@ -229,6 +236,20 @@ p {
 
 .summary-panel[open] .summary-panel-header {
   border-bottom: 1px solid var(--border);
+}
+
+.disclosure-caret {
+  display: inline-block;
+  color: #3358aa;
+  font-size: 0.86rem;
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: transform 0.16s ease;
+}
+
+.summary-panel[open] .disclosure-caret,
+.filter-panel[open] .disclosure-caret {
+  transform: rotate(0deg);
 }
 
 .summary-panel-grid {
