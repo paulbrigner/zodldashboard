@@ -11,6 +11,7 @@ import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { DateRangeFields } from "./date-range-fields";
 import { QueryReferencePopup } from "./query-reference-popup";
 import { SignOutButton } from "../sign-out-button";
+import { LocalDateTime } from "../components/local-date-time";
 
 type HomePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -259,7 +260,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <li className="feed-item" key={item.status_id}>
               <div className="feed-item-top">
                 <p className="feed-handle">@{item.author_handle}</p>
-                <p className="subtle-text">{new Date(item.discovered_at).toLocaleString()}</p>
+                <p className="subtle-text">
+                  <LocalDateTime iso={item.discovered_at} />
+                </p>
               </div>
 
               <p className="feed-body">{item.body_text || "(no text captured)"}</p>

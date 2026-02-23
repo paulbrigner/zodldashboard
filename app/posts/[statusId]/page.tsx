@@ -6,6 +6,7 @@ import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getPostDetail } from "@/lib/xmonitor/repository";
 import type { PostDetail } from "@/lib/xmonitor/types";
+import { LocalDateTime } from "@/app/components/local-date-time";
 
 export const runtime = "nodejs";
 
@@ -110,7 +111,9 @@ export default async function PostPage({ params }: PostPageProps) {
         <p className="eyebrow">Post detail</p>
         <h1>@{detail.post.author_handle}</h1>
 
-        <p className="subtle-text">Discovered: {new Date(detail.post.discovered_at).toLocaleString()}</p>
+        <p className="subtle-text">
+          Discovered: <LocalDateTime iso={detail.post.discovered_at} />
+        </p>
         <p>{detail.post.body_text || "(no text captured)"}</p>
 
         <div className="feed-tags">
@@ -141,7 +144,7 @@ export default async function PostPage({ params }: PostPageProps) {
               {detail.snapshots.map((snapshot) => (
                 <article className="snapshot-row" key={`${snapshot.snapshot_type}:${snapshot.snapshot_at}`}>
                   <p>
-                    <strong>{snapshot.snapshot_type}</strong> at {new Date(snapshot.snapshot_at).toLocaleString()}
+                    <strong>{snapshot.snapshot_type}</strong> at <LocalDateTime iso={snapshot.snapshot_at} />
                   </p>
                   <p className="subtle-text">
                     likes {snapshot.likes} | reposts {snapshot.reposts} | replies {snapshot.replies} | views {snapshot.views}
@@ -157,7 +160,7 @@ export default async function PostPage({ params }: PostPageProps) {
           {detail.report ? (
             <div className="report-box">
               <p>
-                <strong>Reported:</strong> {new Date(detail.report.reported_at).toLocaleString()}
+                <strong>Reported:</strong> <LocalDateTime iso={detail.report.reported_at} />
               </p>
               <p>
                 <strong>Channel:</strong> {detail.report.channel || "-"}
