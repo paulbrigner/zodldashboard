@@ -7,7 +7,7 @@ const BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL";
 const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
-    "jwihart",
+    "jswihart",
     "nuttycom",
     "paulbrigner",
     "peacemongerz",
