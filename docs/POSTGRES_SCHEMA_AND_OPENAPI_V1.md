@@ -262,6 +262,10 @@ Base path proposal: `/v1`
 
 ### 5.2 Ingest endpoints
 
+Auth requirement (v1 hardening):
+- Require shared secret on all ingest routes via `x-api-key` (or `Authorization: Bearer ...`).
+- Server env: `XMONITOR_INGEST_SHARED_SECRET`.
+
 - `POST /ingest/posts/batch`
   - Upsert posts by `status_id`
   - Idempotent by PK

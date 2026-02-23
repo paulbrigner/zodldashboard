@@ -10,6 +10,7 @@ set -euo pipefail
 #   VPC_ID=vpc-...
 #   RDS_SG_ID=sg-...
 #   DB_SECRET_ID=xmonitor/rds/app
+#   INGEST_SHARED_SECRET=...
 #   LAMBDA_FUNCTION_NAME=xmonitor-vpc-api
 #   LAMBDA_ROLE_NAME=xmonitor-vpc-api-lambda-role
 #   LAMBDA_SG_NAME=xmonitor-api-lambda-sg
@@ -135,6 +136,7 @@ print(str(d.get("port", 5432)))
 print(d.get("dbname", ""))
 print(d.get("username", ""))
 print(d.get("password", ""))
+print(d.get("ingest_shared_secret", d.get("api_key", "")))
 PY
 )"
 
@@ -143,9 +145,16 @@ DB_PORT="$(printf '%s\n' "$DB_FIELDS" | sed -n '2p')"
 DB_NAME="$(printf '%s\n' "$DB_FIELDS" | sed -n '3p')"
 DB_USER="$(printf '%s\n' "$DB_FIELDS" | sed -n '4p')"
 DB_PASS="$(printf '%s\n' "$DB_FIELDS" | sed -n '5p')"
+DB_INGEST_SHARED_SECRET="$(printf '%s\n' "$DB_FIELDS" | sed -n '6p')"
+INGEST_SHARED_SECRET="${INGEST_SHARED_SECRET:-$DB_INGEST_SHARED_SECRET}"
 
 if [[ -z "$DB_HOST" || -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASS" ]]; then
   echo "error: secret $DB_SECRET_ID is missing required fields (host/dbname/username/password)" >&2
+  exit 1
+fi
+
+if [[ -z "$INGEST_SHARED_SECRET" ]]; then
+  echo "error: ingest shared secret is required (set INGEST_SHARED_SECRET or include ingest_shared_secret in $DB_SECRET_ID)" >&2
   exit 1
 fi
 
@@ -162,6 +171,7 @@ ENV_JSON="$(
   DB_NAME="$DB_NAME" \
   DB_USER="$DB_USER" \
   DB_PASS="$DB_PASS" \
+  INGEST_SHARED_SECRET="$INGEST_SHARED_SECRET" \
   SERVICE_NAME="$SERVICE_NAME" \
   API_VERSION="$API_VERSION" \
   DEFAULT_FEED_LIMIT="$DEFAULT_FEED_LIMIT" \
@@ -176,6 +186,7 @@ print(json.dumps({
     "PGUSER": os.environ["DB_USER"],
     "PGPASSWORD": os.environ["DB_PASS"],
     "PGSSLMODE": "require",
+    "XMONITOR_INGEST_SHARED_SECRET": os.environ["INGEST_SHARED_SECRET"],
     "XMONITOR_API_SERVICE_NAME": os.environ["SERVICE_NAME"],
     "XMONITOR_API_VERSION": os.environ["API_VERSION"],
     "XMONITOR_DEFAULT_FEED_LIMIT": os.environ["DEFAULT_FEED_LIMIT"],

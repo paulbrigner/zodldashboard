@@ -24,6 +24,8 @@ paths:
     post:
       summary: Upsert posts by status_id
       operationId: ingestPostsBatch
+      security:
+        - IngestSharedSecret: []
       requestBody:
         required: true
         content:
@@ -48,6 +50,8 @@ paths:
     post:
       summary: Upsert metric snapshots
       operationId: ingestMetricsBatch
+      security:
+        - IngestSharedSecret: []
       requestBody:
         required: true
         content:
@@ -72,6 +76,8 @@ paths:
     post:
       summary: Upsert report marks
       operationId: ingestReportsBatch
+      security:
+        - IngestSharedSecret: []
       requestBody:
         required: true
         content:
@@ -96,6 +102,8 @@ paths:
     post:
       summary: Upsert pipeline run records
       operationId: ingestRun
+      security:
+        - IngestSharedSecret: []
       requestBody:
         required: true
         content:
@@ -167,6 +175,11 @@ paths:
           description: Not found
 
 components:
+  securitySchemes:
+    IngestSharedSecret:
+      type: apiKey
+      in: header
+      name: x-api-key
   schemas:
     BatchUpsertResult:
       type: object

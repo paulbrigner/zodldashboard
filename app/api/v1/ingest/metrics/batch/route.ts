@@ -1,6 +1,7 @@
 import { ensureDatabaseConfigured } from "@/lib/xmonitor/db";
 import { maybeProxyApiRequest } from "@/lib/xmonitor/backend-api";
 import { jsonError, jsonOk } from "@/lib/xmonitor/http";
+import { requireIngestAuth } from "@/lib/xmonitor/ingest-auth";
 import { upsertMetricSnapshots } from "@/lib/xmonitor/repository";
 import { parseBatchItems, parseMetricsSnapshotUpsert } from "@/lib/xmonitor/validators";
 import type { BatchUpsertResult, MetricsSnapshotUpsert } from "@/lib/xmonitor/types";
@@ -8,6 +9,11 @@ import type { BatchUpsertResult, MetricsSnapshotUpsert } from "@/lib/xmonitor/ty
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const unauthorized = requireIngestAuth(request);
+  if (unauthorized) {
+    return unauthorized;
+  }
+
   const proxied = await maybeProxyApiRequest(request);
   if (proxied) {
     return proxied;

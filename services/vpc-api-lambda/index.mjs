@@ -1,4 +1,5 @@
 import { Pool } from "pg";
+import { timingSafeEqual } from "node:crypto";
 
 const WATCH_TIERS = new Set(["teammate", "influencer", "ecosystem"]);
 const SNAPSHOT_TYPES = new Set(["initial_capture", "latest_observed", "refresh_24h"]);
@@ -30,6 +31,10 @@ function defaultFeedLimit() {
 
 function maxFeedLimit() {
   return parsePositiveInt(process.env.XMONITOR_MAX_FEED_LIMIT, DEFAULT_MAX_FEED_LIMIT);
+}
+
+function ingestSharedSecret() {
+  return asString(process.env.XMONITOR_INGEST_SHARED_SECRET) || asString(process.env.XMONITOR_API_KEY);
 }
 
 function hasDatabaseConfig() {
@@ -87,6 +92,65 @@ function normalizePath(path) {
     return `/v1/${withSlash.slice("/api/v1/".length)}`;
   }
   return withSlash;
+}
+
+function isIngestPath(path) {
+  return path === "/v1/ingest/runs" || /^\/v1\/ingest\/[^/]+\/batch$/.test(path);
+}
+
+function timingSafeMatch(expected, actual) {
+  const expectedBytes = Buffer.from(expected, "utf8");
+  const actualBytes = Buffer.from(actual, "utf8");
+  if (expectedBytes.length !== actualBytes.length) {
+    return false;
+  }
+  return timingSafeEqual(expectedBytes, actualBytes);
+}
+
+function extractBearerToken(headerValue) {
+  const text = asString(headerValue);
+  if (!text) return null;
+  const match = /^Bearer\s+(.+)$/i.exec(text);
+  if (!match) return null;
+  return asString(match[1]) || null;
+}
+
+function headerValue(headers, name) {
+  if (!isRecord(headers)) return undefined;
+  const candidates = [name, name.toLowerCase(), name.toUpperCase()];
+  for (const candidate of candidates) {
+    const value = headers[candidate];
+    if (typeof value === "string" && value.trim()) {
+      return value;
+    }
+  }
+  return undefined;
+}
+
+function validateIngestAuthorization(event) {
+  const expectedSecret = ingestSharedSecret();
+  if (!expectedSecret) {
+    return {
+      ok: false,
+      status: 503,
+      error: "ingest auth is not configured. Set XMONITOR_INGEST_SHARED_SECRET.",
+    };
+  }
+
+  const headers = event?.headers;
+  const apiKey = asString(headerValue(headers, "x-api-key"));
+  const bearer = extractBearerToken(headerValue(headers, "authorization"));
+  const presentedSecret = apiKey || bearer;
+
+  if (!presentedSecret || !timingSafeMatch(expectedSecret, presentedSecret)) {
+    return {
+      ok: false,
+      status: 401,
+      error: "unauthorized",
+    };
+  }
+
+  return { ok: true };
 }
 
 function jsonResponse(statusCode, body) {
@@ -951,6 +1015,13 @@ async function handleIngestRuns(event) {
 export async function handler(event) {
   const method = String(event?.requestContext?.http?.method || event?.httpMethod || "GET").toUpperCase();
   const path = normalizePath(event?.rawPath || event?.path || "/");
+
+  if (method === "POST" && isIngestPath(path)) {
+    const auth = validateIngestAuthorization(event);
+    if (!auth.ok) {
+      return jsonError(auth.error, auth.status);
+    }
+  }
 
   if (method === "GET" && path === "/v1/health") {
     return handleHealth();

@@ -55,6 +55,17 @@ Generate a local NextAuth secret:
 openssl rand -base64 32
 ```
 
+Generate an ingest shared secret:
+
+```bash
+openssl rand -hex 32
+```
+
+Set that value as:
+
+- `XMONITOR_INGEST_SHARED_SECRET` in API runtimes (Lambda and Amplify).
+- `XMONITOR_API_KEY` in publisher clients (for example `x_monitor_sync_api.py`).
+
 ## Install and run
 
 ```bash
@@ -124,6 +135,13 @@ Implemented under `/api/v1`:
 - `POST /ingest/runs`
 - `GET /feed`
 - `GET /posts/{statusId}`
+
+Ingest auth:
+
+- All `POST /ingest/*` routes require either:
+  - `x-api-key: <shared-secret>`, or
+  - `Authorization: Bearer <shared-secret>`
+- The shared secret must match runtime env `XMONITOR_INGEST_SHARED_SECRET`.
 
 ## Current scope boundaries
 
