@@ -1225,6 +1225,7 @@ async function getLatestWindowSummaries() {
           summary_text
         FROM window_summaries
         WHERE window_type = r.window_type
+          AND summary_key LIKE (r.window_type || ':%')
         ORDER BY window_end DESC, generated_at DESC
         LIMIT 1
       ) ws ON true
