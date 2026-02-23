@@ -498,3 +498,9 @@ components:
 - Add websocket/subscription stream for near-real-time UI updates.
 - Add role-based auth (admin vs viewer).
 - Add S3 archive export for long-term cold storage.
+
+## 9) TODO (UI polling optimization)
+
+- Add a lightweight latest-pointer endpoint for feed freshness checks (example: `GET /feed/latest`), so dashboard polling does not need to call `GET /feed?limit=1`.
+- Endpoint should return only minimal freshness metadata (for example `status_id` + `discovered_at` or a single opaque `latest_key`).
+- Add `ETag`/`If-None-Match` support to return `304 Not Modified` when no new matching data exists.

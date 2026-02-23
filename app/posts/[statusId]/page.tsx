@@ -87,11 +87,11 @@ export default async function PostPage({ params }: PostPageProps) {
     return (
       <main className="page">
         <section className="card">
-          <p className="eyebrow">XMonitor Stream A</p>
+          <p className="eyebrow">ZODL Team Dashboards</p>
           <h1>Post detail</h1>
           <p className="error-text">{detailError}</p>
           <div className="button-row">
-            <Link className="button button-secondary" href="/">
+            <Link className="button button-secondary" href="/x-monitor">
               Back to feed
             </Link>
           </div>
@@ -127,7 +127,7 @@ export default async function PostPage({ params }: PostPageProps) {
           <a className="button" href={detail.post.url} rel="noreferrer" target="_blank">
             Open on X
           </a>
-          <Link className="button button-secondary" href="/">
+          <Link className="button button-secondary" href="/x-monitor">
             Back to feed
           </Link>
         </div>

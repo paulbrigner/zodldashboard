@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "XMonitor Dashboard",
-  description: "XMonitor Stream A dashboard, migration API, and feed UI.",
+  description: "ZODL Team Dashboards for monitoring and operations.",
 };
 
 export default function RootLayout({
