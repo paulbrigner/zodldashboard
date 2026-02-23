@@ -11,6 +11,7 @@ const DEFAULT_FEED_LIMIT = 50;
 const DEFAULT_MAX_FEED_LIMIT = 200;
 
 let pool;
+let summarySchemaEnsured = false;
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -35,6 +36,17 @@ function maxFeedLimit() {
 
 function ingestSharedSecret() {
   return asString(process.env.XMONITOR_INGEST_SHARED_SECRET) || asString(process.env.XMONITOR_API_KEY);
+}
+
+function shouldBootstrapSummarySchema() {
+  const value = asString(process.env.XMONITOR_ENABLE_SUMMARY_SCHEMA_BOOTSTRAP);
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function quoteIdent(identifier) {
+  return `"${String(identifier || "").replace(/"/g, "\"\"")}"`;
 }
 
 function hasDatabaseConfig() {
@@ -185,6 +197,41 @@ function asString(value) {
 function asNullableString(value) {
   if (value === null) return null;
   return asString(value);
+}
+
+function asObject(value) {
+  if (!isRecord(value)) return undefined;
+  return value;
+}
+
+function asArray(value) {
+  if (!Array.isArray(value)) return undefined;
+  return value;
+}
+
+function asStringArray(value) {
+  if (!Array.isArray(value)) return undefined;
+  const out = [];
+  for (const item of value) {
+    const text = asString(item);
+    if (!text) return undefined;
+    out.push(text);
+  }
+  return out;
+}
+
+function asNumberArray(value) {
+  if (!Array.isArray(value)) return undefined;
+  const out = [];
+  for (const item of value) {
+    if (typeof item !== "number" || !Number.isFinite(item)) return undefined;
+    out.push(item);
+  }
+  return out;
+}
+
+function asJson(value) {
+  return JSON.stringify(value ?? null);
 }
 
 function asBoolean(value) {
@@ -437,6 +484,92 @@ function parsePipelineRunUpsert(value) {
   };
 }
 
+function parseWindowSummaryUpsert(value) {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const summaryKey = asString(value.summary_key);
+  const windowType = asString(value.window_type);
+  const windowStart = asIsoTimestamp(value.window_start);
+  const windowEnd = asIsoTimestamp(value.window_end);
+  const generatedAt = asIsoTimestamp(value.generated_at);
+  const summaryText = asString(value.summary_text);
+
+  if (!summaryKey || !windowType || !windowStart || !windowEnd || !generatedAt || !summaryText) {
+    return {
+      ok: false,
+      error: "summary_key, window_type, window_start, window_end, generated_at, and summary_text are required",
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      summary_key: summaryKey,
+      window_type: windowType,
+      window_start: windowStart,
+      window_end: windowEnd,
+      generated_at: generatedAt,
+      post_count: asInteger(value.post_count) ?? 0,
+      significant_count: asInteger(value.significant_count) ?? 0,
+      tier_counts: asObject(value.tier_counts) ?? {},
+      top_themes: asArray(value.top_themes) ?? [],
+      debates: asArray(value.debates) ?? [],
+      top_authors: asArray(value.top_authors) ?? [],
+      notable_posts: asArray(value.notable_posts) ?? [],
+      summary_text: summaryText,
+      source_version: asNullableString(value.source_version) ?? "v1",
+      embedding_backend: asNullableString(value.embedding_backend) ?? null,
+      embedding_model: asNullableString(value.embedding_model) ?? null,
+      embedding_dims: asInteger(value.embedding_dims) ?? null,
+      embedding_vector: asNumberArray(value.embedding_vector) ?? null,
+      created_at: asIsoTimestamp(value.created_at) ?? null,
+      updated_at: asIsoTimestamp(value.updated_at) ?? null,
+    },
+  };
+}
+
+function parseNarrativeShiftUpsert(value) {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const shiftKey = asString(value.shift_key);
+  const basisWindowType = asString(value.basis_window_type);
+  const periodStart = asIsoTimestamp(value.period_start);
+  const periodEnd = asIsoTimestamp(value.period_end);
+  const generatedAt = asIsoTimestamp(value.generated_at);
+  const summaryText = asString(value.summary_text);
+
+  if (!shiftKey || !basisWindowType || !periodStart || !periodEnd || !generatedAt || !summaryText) {
+    return {
+      ok: false,
+      error: "shift_key, basis_window_type, period_start, period_end, generated_at, and summary_text are required",
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      shift_key: shiftKey,
+      basis_window_type: basisWindowType,
+      period_start: periodStart,
+      period_end: periodEnd,
+      generated_at: generatedAt,
+      source_summary_keys: asStringArray(value.source_summary_keys) ?? [],
+      emerging_themes: asArray(value.emerging_themes) ?? [],
+      declining_themes: asArray(value.declining_themes) ?? [],
+      debate_intensity: asArray(value.debate_intensity) ?? [],
+      position_shifts: asObject(value.position_shifts) ?? {},
+      summary_text: summaryText,
+      source_version: asNullableString(value.source_version) ?? "v1",
+      embedding_backend: asNullableString(value.embedding_backend) ?? null,
+      embedding_model: asNullableString(value.embedding_model) ?? null,
+      embedding_dims: asInteger(value.embedding_dims) ?? null,
+      embedding_vector: asNumberArray(value.embedding_vector) ?? null,
+      created_at: asIsoTimestamp(value.created_at) ?? null,
+      updated_at: asIsoTimestamp(value.updated_at) ?? null,
+    },
+  };
+}
+
 function parseFeedQuery(input) {
   const since = asIsoTimestamp(firstValue(input.since));
   const until = asIsoTimestamp(firstValue(input.until));
@@ -465,6 +598,80 @@ async function runUpsert(sql, values) {
   const db = getPool();
   const result = await db.query(sql, values);
   return { inserted: Boolean(result.rows[0]?.inserted) };
+}
+
+async function ensureSummaryAnalyticsSchema() {
+  if (summarySchemaEnsured || !shouldBootstrapSummarySchema()) {
+    return;
+  }
+
+  const db = getPool();
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS window_summaries (
+      summary_key TEXT PRIMARY KEY,
+      window_type TEXT NOT NULL,
+      window_start TIMESTAMPTZ NOT NULL,
+      window_end TIMESTAMPTZ NOT NULL,
+      generated_at TIMESTAMPTZ NOT NULL,
+      post_count INTEGER NOT NULL DEFAULT 0,
+      significant_count INTEGER NOT NULL DEFAULT 0,
+      tier_counts_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      top_themes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      debates_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      top_authors_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      notable_posts_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      summary_text TEXT NOT NULL,
+      source_version TEXT NOT NULL DEFAULT 'v1',
+      embedding_backend TEXT,
+      embedding_model TEXT,
+      embedding_dims INTEGER,
+      embedding_vector_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_window_summaries_window_end_desc
+      ON window_summaries (window_end DESC);
+    CREATE INDEX IF NOT EXISTS idx_window_summaries_type_end_desc
+      ON window_summaries (window_type, window_end DESC);
+
+    CREATE TABLE IF NOT EXISTS narrative_shifts (
+      shift_key TEXT PRIMARY KEY,
+      basis_window_type TEXT NOT NULL,
+      period_start TIMESTAMPTZ NOT NULL,
+      period_end TIMESTAMPTZ NOT NULL,
+      generated_at TIMESTAMPTZ NOT NULL,
+      source_summary_keys_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      emerging_themes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      declining_themes_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      debate_intensity_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      position_shifts_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      summary_text TEXT NOT NULL,
+      source_version TEXT NOT NULL DEFAULT 'v1',
+      embedding_backend TEXT,
+      embedding_model TEXT,
+      embedding_dims INTEGER,
+      embedding_vector_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_narrative_shifts_period_end_desc
+      ON narrative_shifts (period_end DESC);
+    CREATE INDEX IF NOT EXISTS idx_narrative_shifts_basis_period_end_desc
+      ON narrative_shifts (basis_window_type, period_end DESC);
+  `);
+
+  const grantRole = asString(process.env.XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE);
+  if (grantRole) {
+    const role = quoteIdent(grantRole);
+    await db.query(`
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE window_summaries TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE narrative_shifts TO ${role};
+    `);
+  }
+
+  summarySchemaEnsured = true;
 }
 
 async function upsertPosts(items) {
@@ -706,6 +913,185 @@ async function upsertPipelineRun(item) {
   } catch (error) {
     result.errors.push({ index: 0, message: errorMessage(error) });
     result.skipped = 1;
+  }
+
+  return result;
+}
+
+async function upsertWindowSummaries(items) {
+  await ensureSummaryAnalyticsSchema();
+
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO window_summaries(
+      summary_key,
+      window_type,
+      window_start,
+      window_end,
+      generated_at,
+      post_count,
+      significant_count,
+      tier_counts_json,
+      top_themes_json,
+      debates_json,
+      top_authors_json,
+      notable_posts_json,
+      summary_text,
+      source_version,
+      embedding_backend,
+      embedding_model,
+      embedding_dims,
+      embedding_vector_json,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, $5,
+      $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb,
+      $13, $14, $15, $16, $17, $18::jsonb, $19, $20
+    )
+    ON CONFLICT (summary_key) DO UPDATE SET
+      window_type = EXCLUDED.window_type,
+      window_start = EXCLUDED.window_start,
+      window_end = EXCLUDED.window_end,
+      generated_at = EXCLUDED.generated_at,
+      post_count = EXCLUDED.post_count,
+      significant_count = EXCLUDED.significant_count,
+      tier_counts_json = EXCLUDED.tier_counts_json,
+      top_themes_json = EXCLUDED.top_themes_json,
+      debates_json = EXCLUDED.debates_json,
+      top_authors_json = EXCLUDED.top_authors_json,
+      notable_posts_json = EXCLUDED.notable_posts_json,
+      summary_text = EXCLUDED.summary_text,
+      source_version = EXCLUDED.source_version,
+      embedding_backend = EXCLUDED.embedding_backend,
+      embedding_model = EXCLUDED.embedding_model,
+      embedding_dims = EXCLUDED.embedding_dims,
+      embedding_vector_json = EXCLUDED.embedding_vector_json,
+      updated_at = COALESCE(EXCLUDED.updated_at, now())
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.summary_key,
+        item.window_type,
+        item.window_start,
+        item.window_end,
+        item.generated_at,
+        item.post_count ?? 0,
+        item.significant_count ?? 0,
+        asJson(item.tier_counts ?? {}),
+        asJson(item.top_themes ?? []),
+        asJson(item.debates ?? []),
+        asJson(item.top_authors ?? []),
+        asJson(item.notable_posts ?? []),
+        item.summary_text,
+        item.source_version ?? "v1",
+        item.embedding_backend ?? null,
+        item.embedding_model ?? null,
+        item.embedding_dims ?? null,
+        asJson(item.embedding_vector ?? null),
+        item.created_at || item.generated_at,
+        item.updated_at || item.generated_at,
+      ]);
+
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
+  }
+
+  return result;
+}
+
+async function upsertNarrativeShifts(items) {
+  await ensureSummaryAnalyticsSchema();
+
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO narrative_shifts(
+      shift_key,
+      basis_window_type,
+      period_start,
+      period_end,
+      generated_at,
+      source_summary_keys_json,
+      emerging_themes_json,
+      declining_themes_json,
+      debate_intensity_json,
+      position_shifts_json,
+      summary_text,
+      source_version,
+      embedding_backend,
+      embedding_model,
+      embedding_dims,
+      embedding_vector_json,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb,
+      $11, $12, $13, $14, $15, $16::jsonb, $17, $18
+    )
+    ON CONFLICT (shift_key) DO UPDATE SET
+      basis_window_type = EXCLUDED.basis_window_type,
+      period_start = EXCLUDED.period_start,
+      period_end = EXCLUDED.period_end,
+      generated_at = EXCLUDED.generated_at,
+      source_summary_keys_json = EXCLUDED.source_summary_keys_json,
+      emerging_themes_json = EXCLUDED.emerging_themes_json,
+      declining_themes_json = EXCLUDED.declining_themes_json,
+      debate_intensity_json = EXCLUDED.debate_intensity_json,
+      position_shifts_json = EXCLUDED.position_shifts_json,
+      summary_text = EXCLUDED.summary_text,
+      source_version = EXCLUDED.source_version,
+      embedding_backend = EXCLUDED.embedding_backend,
+      embedding_model = EXCLUDED.embedding_model,
+      embedding_dims = EXCLUDED.embedding_dims,
+      embedding_vector_json = EXCLUDED.embedding_vector_json,
+      updated_at = COALESCE(EXCLUDED.updated_at, now())
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.shift_key,
+        item.basis_window_type,
+        item.period_start,
+        item.period_end,
+        item.generated_at,
+        asJson(item.source_summary_keys ?? []),
+        asJson(item.emerging_themes ?? []),
+        asJson(item.declining_themes ?? []),
+        asJson(item.debate_intensity ?? []),
+        asJson(item.position_shifts ?? {}),
+        item.summary_text,
+        item.source_version ?? "v1",
+        item.embedding_backend ?? null,
+        item.embedding_model ?? null,
+        item.embedding_dims ?? null,
+        asJson(item.embedding_vector ?? null),
+        item.created_at || item.generated_at,
+        item.updated_at || item.generated_at,
+      ]);
+
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
   }
 
   return result;
@@ -1059,6 +1445,24 @@ export async function handler(event) {
       parseReportUpsert,
       upsertReports,
       "failed to upsert reports"
+    );
+  }
+
+  if (method === "POST" && path === "/v1/ingest/window-summaries/batch") {
+    return handleIngestBatch(
+      event,
+      parseWindowSummaryUpsert,
+      upsertWindowSummaries,
+      "failed to upsert window summaries"
+    );
+  }
+
+  if (method === "POST" && path === "/v1/ingest/narrative-shifts/batch") {
+    return handleIngestBatch(
+      event,
+      parseNarrativeShiftUpsert,
+      upsertNarrativeShifts,
+      "failed to upsert narrative shifts"
     );
   }
 

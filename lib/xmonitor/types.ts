@@ -78,6 +78,50 @@ export type PipelineRunUpsert = {
   source?: string | null;
 };
 
+export type WindowSummaryUpsert = {
+  summary_key: string;
+  window_type: string;
+  window_start: string;
+  window_end: string;
+  generated_at: string;
+  post_count?: number;
+  significant_count?: number;
+  tier_counts?: Record<string, unknown>;
+  top_themes?: unknown[];
+  debates?: unknown[];
+  top_authors?: unknown[];
+  notable_posts?: unknown[];
+  summary_text: string;
+  source_version?: string | null;
+  embedding_backend?: string | null;
+  embedding_model?: string | null;
+  embedding_dims?: number | null;
+  embedding_vector?: number[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
+export type NarrativeShiftUpsert = {
+  shift_key: string;
+  basis_window_type: string;
+  period_start: string;
+  period_end: string;
+  generated_at: string;
+  source_summary_keys?: string[];
+  emerging_themes?: unknown[];
+  declining_themes?: unknown[];
+  debate_intensity?: unknown[];
+  position_shifts?: Record<string, unknown>;
+  summary_text: string;
+  source_version?: string | null;
+  embedding_backend?: string | null;
+  embedding_model?: string | null;
+  embedding_dims?: number | null;
+  embedding_vector?: number[] | null;
+  created_at?: string | null;
+  updated_at?: string | null;
+};
+
 export type FeedItem = {
   status_id: string;
   discovered_at: string;

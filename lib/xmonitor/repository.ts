@@ -8,10 +8,12 @@ import type {
   FeedQuery,
   FeedResponse,
   MetricsSnapshotUpsert,
+  NarrativeShiftUpsert,
   PipelineRunUpsert,
   PostDetail,
   PostUpsert,
   ReportUpsert,
+  WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 
 function toIso(value: unknown): string | null {
@@ -56,6 +58,10 @@ function buildBatchResult(received: number): BatchUpsertResult {
 function errorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return "Unknown error";
+}
+
+function asJson(value: unknown): string {
+  return JSON.stringify(value ?? null);
 }
 
 async function runUpsert(
@@ -306,6 +312,181 @@ export async function upsertPipelineRun(item: PipelineRunUpsert): Promise<BatchU
   } catch (error) {
     result.errors.push({ index: 0, message: errorMessage(error) });
     result.skipped = 1;
+  }
+
+  return result;
+}
+
+export async function upsertWindowSummaries(items: WindowSummaryUpsert[]): Promise<BatchUpsertResult> {
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO window_summaries(
+      summary_key,
+      window_type,
+      window_start,
+      window_end,
+      generated_at,
+      post_count,
+      significant_count,
+      tier_counts_json,
+      top_themes_json,
+      debates_json,
+      top_authors_json,
+      notable_posts_json,
+      summary_text,
+      source_version,
+      embedding_backend,
+      embedding_model,
+      embedding_dims,
+      embedding_vector_json,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, $5,
+      $6, $7, $8::jsonb, $9::jsonb, $10::jsonb, $11::jsonb, $12::jsonb,
+      $13, $14, $15, $16, $17, $18::jsonb, $19, $20
+    )
+    ON CONFLICT (summary_key) DO UPDATE SET
+      window_type = EXCLUDED.window_type,
+      window_start = EXCLUDED.window_start,
+      window_end = EXCLUDED.window_end,
+      generated_at = EXCLUDED.generated_at,
+      post_count = EXCLUDED.post_count,
+      significant_count = EXCLUDED.significant_count,
+      tier_counts_json = EXCLUDED.tier_counts_json,
+      top_themes_json = EXCLUDED.top_themes_json,
+      debates_json = EXCLUDED.debates_json,
+      top_authors_json = EXCLUDED.top_authors_json,
+      notable_posts_json = EXCLUDED.notable_posts_json,
+      summary_text = EXCLUDED.summary_text,
+      source_version = EXCLUDED.source_version,
+      embedding_backend = EXCLUDED.embedding_backend,
+      embedding_model = EXCLUDED.embedding_model,
+      embedding_dims = EXCLUDED.embedding_dims,
+      embedding_vector_json = EXCLUDED.embedding_vector_json,
+      updated_at = COALESCE(EXCLUDED.updated_at, now())
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.summary_key,
+        item.window_type,
+        item.window_start,
+        item.window_end,
+        item.generated_at,
+        item.post_count ?? 0,
+        item.significant_count ?? 0,
+        asJson(item.tier_counts ?? {}),
+        asJson(item.top_themes ?? []),
+        asJson(item.debates ?? []),
+        asJson(item.top_authors ?? []),
+        asJson(item.notable_posts ?? []),
+        item.summary_text,
+        item.source_version ?? "v1",
+        item.embedding_backend ?? null,
+        item.embedding_model ?? null,
+        item.embedding_dims ?? null,
+        asJson(item.embedding_vector ?? null),
+        item.created_at || item.generated_at,
+        item.updated_at || item.generated_at,
+      ]);
+
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
+  }
+
+  return result;
+}
+
+export async function upsertNarrativeShifts(items: NarrativeShiftUpsert[]): Promise<BatchUpsertResult> {
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO narrative_shifts(
+      shift_key,
+      basis_window_type,
+      period_start,
+      period_end,
+      generated_at,
+      source_summary_keys_json,
+      emerging_themes_json,
+      declining_themes_json,
+      debate_intensity_json,
+      position_shifts_json,
+      summary_text,
+      source_version,
+      embedding_backend,
+      embedding_model,
+      embedding_dims,
+      embedding_vector_json,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, $5, $6::jsonb, $7::jsonb, $8::jsonb, $9::jsonb, $10::jsonb,
+      $11, $12, $13, $14, $15, $16::jsonb, $17, $18
+    )
+    ON CONFLICT (shift_key) DO UPDATE SET
+      basis_window_type = EXCLUDED.basis_window_type,
+      period_start = EXCLUDED.period_start,
+      period_end = EXCLUDED.period_end,
+      generated_at = EXCLUDED.generated_at,
+      source_summary_keys_json = EXCLUDED.source_summary_keys_json,
+      emerging_themes_json = EXCLUDED.emerging_themes_json,
+      declining_themes_json = EXCLUDED.declining_themes_json,
+      debate_intensity_json = EXCLUDED.debate_intensity_json,
+      position_shifts_json = EXCLUDED.position_shifts_json,
+      summary_text = EXCLUDED.summary_text,
+      source_version = EXCLUDED.source_version,
+      embedding_backend = EXCLUDED.embedding_backend,
+      embedding_model = EXCLUDED.embedding_model,
+      embedding_dims = EXCLUDED.embedding_dims,
+      embedding_vector_json = EXCLUDED.embedding_vector_json,
+      updated_at = COALESCE(EXCLUDED.updated_at, now())
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.shift_key,
+        item.basis_window_type,
+        item.period_start,
+        item.period_end,
+        item.generated_at,
+        asJson(item.source_summary_keys ?? []),
+        asJson(item.emerging_themes ?? []),
+        asJson(item.declining_themes ?? []),
+        asJson(item.debate_intensity ?? []),
+        asJson(item.position_shifts ?? {}),
+        item.summary_text,
+        item.source_version ?? "v1",
+        item.embedding_backend ?? null,
+        item.embedding_model ?? null,
+        item.embedding_dims ?? null,
+        asJson(item.embedding_vector ?? null),
+        item.created_at || item.generated_at,
+        item.updated_at || item.generated_at,
+      ]);
+
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
   }
 
   return result;

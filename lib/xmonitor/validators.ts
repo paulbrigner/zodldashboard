@@ -1,4 +1,15 @@
-import { RUN_MODES, SNAPSHOT_TYPES, WATCH_TIERS, type FeedQuery, type MetricsSnapshotUpsert, type PipelineRunUpsert, type PostUpsert, type ReportUpsert } from "@/lib/xmonitor/types";
+import {
+  RUN_MODES,
+  SNAPSHOT_TYPES,
+  WATCH_TIERS,
+  type FeedQuery,
+  type MetricsSnapshotUpsert,
+  type NarrativeShiftUpsert,
+  type PipelineRunUpsert,
+  type PostUpsert,
+  type ReportUpsert,
+  type WindowSummaryUpsert,
+} from "@/lib/xmonitor/types";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -16,6 +27,37 @@ function asString(value: unknown): string | undefined {
 function asNullableString(value: unknown): string | null | undefined {
   if (value === null) return null;
   return asString(value);
+}
+
+function asObject(value: unknown): Record<string, unknown> | undefined {
+  if (!isRecord(value)) return undefined;
+  return value;
+}
+
+function asArray(value: unknown): unknown[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value;
+}
+
+function asStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: string[] = [];
+  for (const item of value) {
+    const text = asString(item);
+    if (!text) return undefined;
+    out.push(text);
+  }
+  return out;
+}
+
+function asNumberArray(value: unknown): number[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const out: number[] = [];
+  for (const item of value) {
+    if (typeof item !== "number" || !Number.isFinite(item)) return undefined;
+    out.push(item);
+  }
+  return out;
 }
 
 function asBoolean(value: unknown): boolean | undefined {
@@ -185,6 +227,96 @@ export function parsePipelineRunUpsert(
       reported_count: asInteger(value.reported_count) ?? 0,
       note: asNullableString(value.note),
       source: asNullableString(value.source) ?? "local-dispatcher",
+    },
+  };
+}
+
+export function parseWindowSummaryUpsert(
+  value: unknown
+): { ok: true; data: WindowSummaryUpsert } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const summaryKey = asString(value.summary_key);
+  const windowType = asString(value.window_type);
+  const windowStart = asIsoTimestamp(value.window_start);
+  const windowEnd = asIsoTimestamp(value.window_end);
+  const generatedAt = asIsoTimestamp(value.generated_at);
+  const summaryText = asString(value.summary_text);
+
+  if (!summaryKey || !windowType || !windowStart || !windowEnd || !generatedAt || !summaryText) {
+    return {
+      ok: false,
+      error: "summary_key, window_type, window_start, window_end, generated_at, and summary_text are required",
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      summary_key: summaryKey,
+      window_type: windowType,
+      window_start: windowStart,
+      window_end: windowEnd,
+      generated_at: generatedAt,
+      post_count: asInteger(value.post_count) ?? 0,
+      significant_count: asInteger(value.significant_count) ?? 0,
+      tier_counts: asObject(value.tier_counts) ?? {},
+      top_themes: asArray(value.top_themes) ?? [],
+      debates: asArray(value.debates) ?? [],
+      top_authors: asArray(value.top_authors) ?? [],
+      notable_posts: asArray(value.notable_posts) ?? [],
+      summary_text: summaryText,
+      source_version: asNullableString(value.source_version) ?? "v1",
+      embedding_backend: asNullableString(value.embedding_backend) ?? null,
+      embedding_model: asNullableString(value.embedding_model) ?? null,
+      embedding_dims: asInteger(value.embedding_dims) ?? null,
+      embedding_vector: asNumberArray(value.embedding_vector) ?? null,
+      created_at: asIsoTimestamp(value.created_at) ?? null,
+      updated_at: asIsoTimestamp(value.updated_at) ?? null,
+    },
+  };
+}
+
+export function parseNarrativeShiftUpsert(
+  value: unknown
+): { ok: true; data: NarrativeShiftUpsert } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const shiftKey = asString(value.shift_key);
+  const basisWindowType = asString(value.basis_window_type);
+  const periodStart = asIsoTimestamp(value.period_start);
+  const periodEnd = asIsoTimestamp(value.period_end);
+  const generatedAt = asIsoTimestamp(value.generated_at);
+  const summaryText = asString(value.summary_text);
+
+  if (!shiftKey || !basisWindowType || !periodStart || !periodEnd || !generatedAt || !summaryText) {
+    return {
+      ok: false,
+      error: "shift_key, basis_window_type, period_start, period_end, generated_at, and summary_text are required",
+    };
+  }
+
+  return {
+    ok: true,
+    data: {
+      shift_key: shiftKey,
+      basis_window_type: basisWindowType,
+      period_start: periodStart,
+      period_end: periodEnd,
+      generated_at: generatedAt,
+      source_summary_keys: asStringArray(value.source_summary_keys) ?? [],
+      emerging_themes: asArray(value.emerging_themes) ?? [],
+      declining_themes: asArray(value.declining_themes) ?? [],
+      debate_intensity: asArray(value.debate_intensity) ?? [],
+      position_shifts: asObject(value.position_shifts) ?? {},
+      summary_text: summaryText,
+      source_version: asNullableString(value.source_version) ?? "v1",
+      embedding_backend: asNullableString(value.embedding_backend) ?? null,
+      embedding_model: asNullableString(value.embedding_model) ?? null,
+      embedding_dims: asInteger(value.embedding_dims) ?? null,
+      embedding_vector: asNumberArray(value.embedding_vector) ?? null,
+      created_at: asIsoTimestamp(value.created_at) ?? null,
+      updated_at: asIsoTimestamp(value.updated_at) ?? null,
     },
   };
 }

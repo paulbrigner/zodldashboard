@@ -118,6 +118,58 @@ paths:
               schema:
                 $ref: '#/components/schemas/BatchUpsertResult'
 
+  /ingest/window-summaries/batch:
+    post:
+      summary: Upsert rolling window summaries
+      operationId: ingestWindowSummariesBatch
+      security:
+        - IngestSharedSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/WindowSummaryUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
+  /ingest/narrative-shifts/batch:
+    post:
+      summary: Upsert narrative/debate shift summaries
+      operationId: ingestNarrativeShiftsBatch
+      security:
+        - IngestSharedSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/NarrativeShiftUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
   /feed:
     get:
       summary: Query timeline feed
@@ -266,6 +318,94 @@ components:
         reported_count: { type: integer }
         note: { type: string }
         source: { type: string }
+
+    WindowSummaryUpsert:
+      type: object
+      required: [summary_key, window_type, window_start, window_end, generated_at, summary_text]
+      properties:
+        summary_key: { type: string }
+        window_type: { type: string }
+        window_start: { type: string, format: date-time }
+        window_end: { type: string, format: date-time }
+        generated_at: { type: string, format: date-time }
+        post_count: { type: integer }
+        significant_count: { type: integer }
+        tier_counts:
+          type: object
+          additionalProperties: true
+        top_themes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        debates:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        top_authors:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        notable_posts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        summary_text: { type: string }
+        source_version: { type: string }
+        embedding_backend: { type: string, nullable: true }
+        embedding_model: { type: string, nullable: true }
+        embedding_dims: { type: integer, nullable: true }
+        embedding_vector:
+          type: array
+          nullable: true
+          items: { type: number }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
+
+    NarrativeShiftUpsert:
+      type: object
+      required: [shift_key, basis_window_type, period_start, period_end, generated_at, summary_text]
+      properties:
+        shift_key: { type: string }
+        basis_window_type: { type: string }
+        period_start: { type: string, format: date-time }
+        period_end: { type: string, format: date-time }
+        generated_at: { type: string, format: date-time }
+        source_summary_keys:
+          type: array
+          items: { type: string }
+        emerging_themes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        declining_themes:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        debate_intensity:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        position_shifts:
+          type: object
+          additionalProperties: true
+        summary_text: { type: string }
+        source_version: { type: string }
+        embedding_backend: { type: string, nullable: true }
+        embedding_model: { type: string, nullable: true }
+        embedding_dims: { type: integer, nullable: true }
+        embedding_vector:
+          type: array
+          nullable: true
+          items: { type: number }
+        created_at: { type: string, format: date-time, nullable: true }
+        updated_at: { type: string, format: date-time, nullable: true }
 
     FeedItem:
       type: object
