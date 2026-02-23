@@ -2,13 +2,11 @@
 
 _Last updated: 2026-02-22 (ET)_
 
-This document is the implementation baseline for **Stream A** (AWS code in this repo):
+This document defines the canonical v1 data model and API contract used by the live system:
 - provision AWS database,
 - define ingest/query API,
 - enable one-time migration from local SQLite,
-- support Amplify MVP feed UI.
-
-It is designed to pair with `AWS_MIGRATION_PLAN.md`.
+- support the Amplify-hosted feed UI.
 
 ---
 
@@ -482,19 +480,15 @@ components:
 
 ---
 
-## 7) Codex implementation checklist (Stream A)
+## 7) Implementation status (current)
 
-- [ ] Add SQL migration files for schema above.
-- [ ] Add seed script for watchlist import.
-- [ ] Add local SQLite export + cloud import CLI tools.
-- [ ] Add API handlers for ingest + feed/read routes.
-- [ ] Add pagination strategy (cursor over discovered_at + status_id).
-- [ ] Add idempotent upsert logic for all ingest endpoints.
-- [ ] Add basic integration tests for:
-  - duplicate ingest retries,
-  - feed filtering,
-  - post detail fetch.
-- [ ] Add Amplify MVP page showing feed + filters.
+- [x] SQL migration files implemented in `db/migrations/`.
+- [x] SQLite export/import/validation tooling implemented in `scripts/migrate/`.
+- [x] Ingest and read API routes implemented and deployed.
+- [x] Cursor-based feed pagination implemented (`discovered_at` + `status_id`).
+- [x] Idempotent upsert behavior implemented across ingest routes.
+- [x] Amplify-hosted feed and post-detail pages deployed.
+- [x] Ingest shared-secret auth enforced on all write routes.
 
 ---
 

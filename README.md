@@ -1,103 +1,107 @@
-# XMonitor Stream A (AWS Foundation)
+# XMonitor Dashboard
 
-This repository now tracks Stream A for XMonitor:
+XMonitor is an AWS-backed monitoring system for X activity, with local collection and a hosted feed UI.
 
-- canonical cloud data model in PostgreSQL,
-- one-time migration tooling from local SQLite,
-- API contract implementation for ingest + read,
-- Amplify-hosted web UI for read-only feed.
+## Executive Summary
 
-Stream B (local OpenClaw collector rewiring) remains out of scope here.
+XMonitor continuously collects prioritized X posts, stores them in PostgreSQL, and exposes them through a private web dashboard and versioned API. The system supports historical search/filtering, post detail views with metric snapshots, and authenticated ingest from local collectors. Ingest writes are protected by a shared secret, while database access remains private inside VPC networking.
 
-## Architecture summary
+## Functional Summary
 
-- Frontend: Next.js App Router deployed via Amplify.
-- Auth: NextAuth Google OAuth with domain restriction.
-- API: Next.js route handlers under `/api/v1/*`.
-- Storage: PostgreSQL with schema migrations in `db/migrations`.
-- Migration tooling: Python scripts in `scripts/migrate`.
+### 1) Data ingestion
 
-## Required docs
+- Local OpenClaw jobs run scheduled collection (`priority`, `discovery`, and refresh workflows).
+- Local sync publishes batches to `/v1/ingest/*` endpoints.
+- Ingest routes are idempotent upserts keyed by stable identifiers (`status_id`, composite snapshot keys, and run keys).
 
-Implementation baseline is documented in:
+### 2) Hosted read experience
 
-1. `docs/AWS_MIGRATION_PLAN.md`
-2. `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
-3. `docs/openapi.v1.yaml`
-4. `docs/AWS_MIGRATION_RUNBOOK.md`
-5. `docs/CODEX_HANDOFF_STREAM_A.md`
+- Users sign in with Google Workspace auth.
+- Feed view supports filtering by tier, handle, date range, significance flag, search text, and cursor pagination.
+- Post detail shows snapshots and report state.
 
-## Prerequisites
+### 3) Migration and data integrity
 
+- One-time SQLite export/import scripts exist for reproducible migration.
+- Validation tooling checks source vs target counts.
+- Historical records and live updates share the same canonical Postgres schema.
+
+### 4) Operational security
+
+- RDS is private and reachable only through Lambda security group rules.
+- Ingest writes require a shared secret (`x-api-key` or Bearer token).
+- Read API is exposed through the hosted app path and backend API path.
+
+## Technical Summary
+
+### Architecture
+
+1. Local scheduler (`launchd`) triggers `x_monitor_dispatch.py`.
+2. Dispatcher calls `x_monitor_sync_api.py`.
+3. Sync client posts to hosted API (`/api/v1/ingest/*`).
+4. Next.js API proxy forwards to backend API (`/v1/*`) when backend base URL is configured.
+5. API Gateway invokes VPC-attached Lambda (`services/vpc-api-lambda/index.mjs`).
+6. Lambda reads/writes PostgreSQL in RDS.
+7. Amplify hosts the Next.js dashboard and auth flows.
+
+### Key repository areas
+
+- `app/`: Next.js pages and API routes.
+- `lib/xmonitor/`: query logic, proxy helpers, validators, ingest auth helper.
+- `services/vpc-api-lambda/`: backend Lambda implementation.
+- `db/migrations/`: Postgres schema migrations.
+- `scripts/migrate/`: SQLite export/import/validation tooling.
+- `scripts/aws/provision_vpc_api_lambda.sh`: backend API provisioning and update script.
+- `docs/openapi.v1.yaml`: API contract.
+
+### Runtime config model
+
+Read-path API routing:
+- `XMONITOR_READ_API_BASE_URL`
+- `XMONITOR_BACKEND_API_BASE_URL`
+
+Ingest auth:
+- Server side: `XMONITOR_INGEST_SHARED_SECRET`
+- Publisher side: `XMONITOR_API_KEY`
+
+Database config:
+- `DATABASE_URL` or `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD`/`PGSSLMODE`
+
+## Local Development
+
+Prerequisites:
 - Node.js 22.x
 - npm
 - Python 3.10+
 - `psql`
-- PostgreSQL 15+ target (local or AWS)
 
-For import/validation scripts:
-
-```bash
-python3 -m pip install psycopg[binary]
-```
-
-## Environment
-
-Copy `.env.example` to `.env.local` and set values.
-
-```bash
-cp .env.example .env.local
-```
-
-Generate a local NextAuth secret:
-
-```bash
-openssl rand -base64 32
-```
-
-Generate an ingest shared secret:
-
-```bash
-openssl rand -hex 32
-```
-
-Set that value as:
-
-- `XMONITOR_INGEST_SHARED_SECRET` in API runtimes (Lambda and Amplify).
-- `XMONITOR_API_KEY` in publisher clients (for example `x_monitor_sync_api.py`).
-
-## Install and run
+Install:
 
 ```bash
 npm install
+```
+
+Run dev server:
+
+```bash
 npm run dev
 ```
 
-Key pages:
+Useful routes:
+- `/signin`
+- `/oauth-probe`
+- `/`
+- `/posts/{statusId}`
 
-- `/signin` for Google login
-- `/oauth-probe` for Workspace policy diagnostics
-- `/` read-only feed UI (requires auth)
+## Database and Migration Commands
 
-## Database migrations
-
-Migrations live in `db/migrations/`.
-
-Apply migrations using `DATABASE_URL`:
+Apply migrations:
 
 ```bash
 DATABASE_URL='postgres://user:pass@localhost:5432/xmonitor' npm run db:migrate
 ```
 
-Or using `PG*` vars:
-
-```bash
-PGHOST=localhost PGPORT=5432 PGDATABASE=xmonitor PGUSER=postgres PGPASSWORD=postgres npm run db:migrate
-```
-
-## SQLite migration tooling
-
-### 1) Export local SQLite to JSONL
+Export SQLite:
 
 ```bash
 python3 scripts/migrate/export_sqlite.py \
@@ -105,7 +109,7 @@ python3 scripts/migrate/export_sqlite.py \
   --out-dir data/export
 ```
 
-### 2) Import JSONL into Postgres
+Import JSONL:
 
 ```bash
 DATABASE_URL='postgres://user:pass@localhost:5432/xmonitor' \
@@ -114,7 +118,7 @@ python3 scripts/migrate/import_sqlite_jsonl_to_postgres.py \
   --reject-log data/import_rejects.ndjson
 ```
 
-### 3) Validate source vs target counts
+Validate counts:
 
 ```bash
 DATABASE_URL='postgres://user:pass@localhost:5432/xmonitor' \
@@ -122,37 +126,57 @@ python3 scripts/migrate/validate_counts.py \
   --sqlite-path data/x_monitor.snapshot.db
 ```
 
-## API surface
+## Deployment and Operations
+
+Amplify release:
+
+```bash
+aws --profile zodldashboard --region us-east-1 amplify start-job \
+  --app-id d2rgmein7vsf2e \
+  --branch-name main \
+  --job-type RELEASE
+```
+
+Reprovision backend Lambda/API:
+
+```bash
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 ./scripts/aws/provision_vpc_api_lambda.sh
+```
+
+Quick checks:
+
+```bash
+curl -sS 'https://www.zodldashboard.com/api/v1/health'
+curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
+```
+
+Ingest auth check (expected `401` without key):
+
+```bash
+curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+  -H 'content-type: application/json' \
+  --data '{"run_at":"2026-02-22T00:00:00Z","mode":"manual"}'
+```
+
+## API Surface
 
 OpenAPI source: `docs/openapi.v1.yaml`
 
-Implemented under `/api/v1`:
-
+Implemented routes:
 - `GET /health`
+- `GET /feed`
+- `GET /posts/{statusId}`
 - `POST /ingest/posts/batch`
 - `POST /ingest/metrics/batch`
 - `POST /ingest/reports/batch`
 - `POST /ingest/runs`
-- `GET /feed`
-- `GET /posts/{statusId}`
 
-Ingest auth:
+## Documentation Map
 
-- All `POST /ingest/*` routes require either:
-  - `x-api-key: <shared-secret>`, or
-  - `Authorization: Bearer <shared-secret>`
-- The shared secret must match runtime env `XMONITOR_INGEST_SHARED_SECRET`.
+Current authoritative documents:
+- `docs/AWS_MIGRATION_RUNBOOK.md`
+- `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
+- `docs/openapi.v1.yaml`
+- `docs/ADR-0001-postgres-over-dynamodb.md`
 
-## Current scope boundaries
-
-In scope here:
-
-- DB schema + migration tooling
-- API + read-only feed UI
-- migration validation helpers
-
-Out of scope here:
-
-- modifying local OpenClaw scripts under `~/.openclaw/workspace/scripts`
-- re-enabling local launchd jobs
-- Signal behavior redesign
+Legacy planning/handoff docs were removed to avoid stale guidance.

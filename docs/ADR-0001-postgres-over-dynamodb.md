@@ -48,7 +48,7 @@ Use PostgreSQL (Aurora PostgreSQL or RDS PostgreSQL) as the canonical cloud data
 
 ## References
 
-- `docs/AWS_MIGRATION_PLAN.md`
-- `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
 - `docs/AWS_MIGRATION_RUNBOOK.md`
+- `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
 - `docs/openapi.v1.yaml`
+- `README.md`
