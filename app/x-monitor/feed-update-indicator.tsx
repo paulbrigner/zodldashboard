@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 
 type FeedUpdateIndicatorProps = {
   pollUrl: string;
@@ -27,7 +26,6 @@ function latestKeyFromPayload(payload: FeedPollResponse): string | null {
 }
 
 export function FeedUpdateIndicator({ pollUrl, refreshUrl, initialLatestKey }: FeedUpdateIndicatorProps) {
-  const router = useRouter();
   const [hasUpdate, setHasUpdate] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
 
@@ -85,8 +83,7 @@ export function FeedUpdateIndicator({ pollUrl, refreshUrl, initialLatestKey }: F
         className={hasUpdate ? "button button-small" : "button button-small button-disabled"}
         disabled={!hasUpdate}
         onClick={() => {
-          router.push(refreshUrl);
-          router.refresh();
+          window.location.assign(refreshUrl);
         }}
         type="button"
       >
