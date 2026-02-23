@@ -4,8 +4,8 @@ import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
-import { getFeed } from "@/lib/xmonitor/repository";
-import type { FeedResponse } from "@/lib/xmonitor/types";
+import { getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
+import type { FeedResponse, WindowSummariesLatestResponse, WindowSummary } from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { DateRangeFields } from "./date-range-fields";
@@ -15,6 +15,13 @@ import { LocalDateTime } from "../components/local-date-time";
 
 type HomePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
+
+const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
+  rolling_2h: "2-hour rolling summary",
+  rolling_12h: "12-hour rolling summary",
 };
 
 function asString(value: string | string[] | undefined): string | undefined {
@@ -88,6 +95,11 @@ function buildFeedApiUrl(baseUrl: string, query: ReturnType<typeof parseFeedQuer
   return url.toString();
 }
 
+function buildWindowSummariesApiUrl(baseUrl: string): string {
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  return `${normalizedBase}/window-summaries/latest`;
+}
+
 async function readApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { error?: unknown };
@@ -120,6 +132,23 @@ async function fetchFeedViaApi(baseUrl: string, query: ReturnType<typeof parseFe
   };
 }
 
+async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummary[]> {
+  const response = await fetch(buildWindowSummariesApiUrl(baseUrl), {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  const payload = (await response.json()) as WindowSummariesLatestResponse;
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("Invalid window summary response payload");
+  }
+
+  return payload.items;
+}
+
 export default async function HomePage({ searchParams }: HomePageProps) {
   const session = await getServerSession(authOptions);
   if (!session?.user?.email) {
@@ -134,6 +163,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   let feed: FeedResponse = { items: [], next_cursor: null };
   let feedError: string | null = null;
+  let summaries: WindowSummary[] = [];
+  let summariesError: string | null = null;
 
   if (apiBaseUrl) {
     try {
@@ -141,18 +172,32 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
     }
+
+    try {
+      summaries = await fetchWindowSummariesViaApi(apiBaseUrl);
+    } catch (error) {
+      summariesError = error instanceof Error ? error.message : "Failed to load summaries";
+    }
   } else if (hasDatabaseConfig()) {
     try {
       feed = await getFeed(query);
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
     }
+
+    try {
+      summaries = await getLatestWindowSummaries();
+    } catch (error) {
+      summariesError = error instanceof Error ? error.message : "Failed to load summaries";
+    }
   } else {
     feedError = "No feed backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
+    summariesError = "No summary backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
   }
 
   const latestItem = feed.items[0];
   const initialLatestKey = latestItem ? `${latestItem.discovered_at}|${latestItem.status_id}` : null;
+  const summariesByType = new Map(summaries.map((summary) => [summary.window_type, summary]));
   const hasActiveFilters = Boolean(
     query.tier ||
       query.handle ||
@@ -184,6 +229,45 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </div>
           </div>
         </header>
+
+        <details className="summary-panel" open>
+          <summary className="summary-panel-header">
+            <span className="summary-panel-title">Summaries</span>
+            <span className="summary-panel-state">{summaries.length} loaded</span>
+          </summary>
+          <div className="summary-panel-grid">
+            {SUMMARY_WINDOW_TYPES.map((windowType) => {
+              const summary = summariesByType.get(windowType);
+              return (
+                <article className="summary-card" key={windowType}>
+                  <div className="summary-card-top">
+                    <h3>{SUMMARY_LABELS[windowType]}</h3>
+                    {summary ? (
+                      <p className="subtle-text">
+                        Generated <LocalDateTime iso={summary.generated_at} />
+                      </p>
+                    ) : null}
+                  </div>
+                  {summary ? (
+                    <>
+                      <p className="subtle-text summary-window">
+                        Window <LocalDateTime iso={summary.window_start} /> -{" "}
+                        <LocalDateTime iso={summary.window_end} />
+                      </p>
+                      <p className="subtle-text summary-counts">
+                        {summary.post_count} posts, {summary.significant_count} significant
+                      </p>
+                      <p className="summary-text">{summary.summary_text}</p>
+                    </>
+                  ) : (
+                    <p className="subtle-text summary-empty">No summary available yet for this window.</p>
+                  )}
+                </article>
+              );
+            })}
+          </div>
+          {summariesError ? <p className="error-text summary-error">{summariesError}</p> : null}
+        </details>
 
         <details className="filter-panel">
           <summary className="filter-summary">

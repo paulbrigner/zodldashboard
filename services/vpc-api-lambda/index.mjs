@@ -313,6 +313,19 @@ function rowToFeedItem(row) {
   };
 }
 
+function rowToWindowSummary(row) {
+  return {
+    summary_key: String(row.summary_key),
+    window_type: String(row.window_type),
+    window_start: toIso(row.window_start) || new Date(0).toISOString(),
+    window_end: toIso(row.window_end) || new Date(0).toISOString(),
+    generated_at: toIso(row.generated_at) || new Date(0).toISOString(),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    summary_text: String(row.summary_text || ""),
+  };
+}
+
 function buildBatchResult(received) {
   return {
     received,
@@ -1183,6 +1196,45 @@ async function getFeed(query) {
   return { items, next_cursor: nextCursor };
 }
 
+async function getLatestWindowSummaries() {
+  const db = getPool();
+  const result = await db.query(
+    `
+      WITH requested(window_type, ord) AS (
+        VALUES ('rolling_2h'::text, 1), ('rolling_12h'::text, 2)
+      )
+      SELECT
+        ws.summary_key,
+        ws.window_type,
+        ws.window_start,
+        ws.window_end,
+        ws.generated_at,
+        ws.post_count,
+        ws.significant_count,
+        ws.summary_text
+      FROM requested r
+      LEFT JOIN LATERAL (
+        SELECT
+          summary_key,
+          window_type,
+          window_start,
+          window_end,
+          generated_at,
+          post_count,
+          significant_count,
+          summary_text
+        FROM window_summaries
+        WHERE window_type = r.window_type
+        ORDER BY window_end DESC, generated_at DESC
+        LIMIT 1
+      ) ws ON true
+      ORDER BY r.ord
+    `
+  );
+
+  return result.rows.filter((row) => row.summary_key).map(rowToWindowSummary);
+}
+
 async function getPostDetail(statusId) {
   const db = getPool();
   const postResult = await db.query(
@@ -1295,6 +1347,19 @@ async function handleFeed(event) {
     return jsonOk(feed);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to query feed", 503);
+  }
+}
+
+async function handleWindowSummariesLatest() {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  try {
+    const items = await getLatestWindowSummaries();
+    return jsonOk({ items });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to query latest window summaries", 503);
   }
 }
 
@@ -1415,6 +1480,10 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/feed") {
     return handleFeed(event);
+  }
+
+  if (method === "GET" && path === "/v1/window-summaries/latest") {
+    return handleWindowSummariesLatest();
   }
 
   if (method === "GET" && /^\/v1\/posts\/[^/]+$/.test(path)) {

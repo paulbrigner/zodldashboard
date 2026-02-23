@@ -101,6 +101,21 @@ export type WindowSummaryUpsert = {
   updated_at?: string | null;
 };
 
+export type WindowSummary = {
+  summary_key: string;
+  window_type: string;
+  window_start: string;
+  window_end: string;
+  generated_at: string;
+  post_count: number;
+  significant_count: number;
+  summary_text: string;
+};
+
+export type WindowSummariesLatestResponse = {
+  items: WindowSummary[];
+};
+
 export type NarrativeShiftUpsert = {
   shift_key: string;
   basis_window_type: string;

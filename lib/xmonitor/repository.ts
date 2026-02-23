@@ -13,6 +13,7 @@ import type {
   PostDetail,
   PostUpsert,
   ReportUpsert,
+  WindowSummary,
   WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 
@@ -42,6 +43,19 @@ function rowToFeedItem(row: QueryResultRow): FeedItem {
     replies: Number(row.replies || 0),
     views: Number(row.views || 0),
     reported_at: toIso(row.reported_at),
+  };
+}
+
+function rowToWindowSummary(row: QueryResultRow): WindowSummary {
+  return {
+    summary_key: String(row.summary_key),
+    window_type: String(row.window_type),
+    window_start: toIso(row.window_start) || new Date(0).toISOString(),
+    window_end: toIso(row.window_end) || new Date(0).toISOString(),
+    generated_at: toIso(row.generated_at) || new Date(0).toISOString(),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    summary_text: String(row.summary_text || ""),
   };
 }
 
@@ -490,6 +504,47 @@ export async function upsertNarrativeShifts(items: NarrativeShiftUpsert[]): Prom
   }
 
   return result;
+}
+
+export async function getLatestWindowSummaries(): Promise<WindowSummary[]> {
+  const pool = getDbPool();
+  const result = await pool.query(
+    `
+      WITH requested(window_type, ord) AS (
+        VALUES ('rolling_2h'::text, 1), ('rolling_12h'::text, 2)
+      )
+      SELECT
+        ws.summary_key,
+        ws.window_type,
+        ws.window_start,
+        ws.window_end,
+        ws.generated_at,
+        ws.post_count,
+        ws.significant_count,
+        ws.summary_text
+      FROM requested r
+      LEFT JOIN LATERAL (
+        SELECT
+          summary_key,
+          window_type,
+          window_start,
+          window_end,
+          generated_at,
+          post_count,
+          significant_count,
+          summary_text
+        FROM window_summaries
+        WHERE window_type = r.window_type
+        ORDER BY window_end DESC, generated_at DESC
+        LIMIT 1
+      ) ws ON true
+      ORDER BY r.ord
+    `
+  );
+
+  return result.rows
+    .filter((row) => row.summary_key)
+    .map(rowToWindowSummary);
 }
 
 export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
