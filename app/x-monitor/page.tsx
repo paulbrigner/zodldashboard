@@ -230,7 +230,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
         </header>
 
-        <details className="summary-panel" open>
+        <details className="summary-panel">
           <summary className="summary-panel-header">
             <span className="summary-panel-title-wrap">
               <span className="summary-panel-title">Summaries</span>
@@ -301,8 +301,13 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </label>
 
             <label>
-              <span>Handle</span>
-              <input name="handle" defaultValue={qsValue(query.handle)} placeholder="zodl" type="text" />
+              <span>HANDLE(S)</span>
+              <input
+                name="handle"
+                defaultValue={qsValue(query.handle)}
+                placeholder="zodl in4crypto @mert"
+                type="text"
+              />
             </label>
 
             <label>

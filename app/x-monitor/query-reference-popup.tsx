@@ -27,6 +27,7 @@ const WATCHLIST_BY_TIER = {
     "dignitycipher",
     "dismad8",
     "ebfull",
+    "in4crypto",
     "ivydngg",
     "lucidzk",
     "maxdesalle",

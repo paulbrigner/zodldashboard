@@ -346,12 +346,17 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
   const limitValue = asInteger(firstValue(input.limit));
   const maxLimit = maxFeedLimit();
   const finalLimit = limitValue ? Math.min(Math.max(limitValue, 1), maxLimit) : defaultFeedLimit();
+  const normalizedHandle = asString(firstValue(input.handle))
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
 
   return {
     since,
     until,
     tier,
-    handle: asString(firstValue(input.handle))?.toLowerCase(),
+    handle: normalizedHandle || undefined,
     significant,
     q: asString(firstValue(input.q)),
     limit: finalLimit,

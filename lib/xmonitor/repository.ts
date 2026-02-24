@@ -28,6 +28,17 @@ function normalizeHandle(value: string): string {
   return value.trim().replace(/^@+/, "").toLowerCase();
 }
 
+function parseHandleFilter(value: string | undefined): string[] {
+  if (!value) return [];
+
+  const handles = value
+    .split(/\s+/)
+    .map((item) => normalizeHandle(item))
+    .filter((item) => item.length > 0);
+
+  return [...new Set(handles)];
+}
+
 function rowToFeedItem(row: QueryResultRow): FeedItem {
   return {
     status_id: String(row.status_id),
@@ -569,8 +580,15 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
   }
 
   if (query.handle) {
-    params.push(normalizeHandle(query.handle));
-    where.push(`p.author_handle = $${params.length}`);
+    const handles = parseHandleFilter(query.handle);
+
+    if (handles.length === 1) {
+      params.push(handles[0]);
+      where.push(`p.author_handle = $${params.length}`);
+    } else if (handles.length > 1) {
+      params.push(handles);
+      where.push(`p.author_handle = ANY($${params.length}::text[])`);
+    }
   }
 
   if (query.significant !== undefined) {
