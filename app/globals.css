@@ -387,10 +387,12 @@ p {
 }
 
 .filter-actions {
+  grid-column: 1 / -1;
   align-self: end;
   display: flex;
+  justify-content: flex-start;
   gap: 0.6rem;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .date-range-row {
@@ -741,6 +743,11 @@ p {
 
   .feed-item-actions .button,
   .feed-item-actions .button-secondary {
+    width: auto;
+  }
+
+  .filter-actions .button,
+  .filter-actions .button-secondary {
     width: auto;
   }
 

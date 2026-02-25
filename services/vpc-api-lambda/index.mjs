@@ -265,6 +265,17 @@ function normalizeHandle(value) {
   return String(value || "").trim().replace(/^@+/, "").toLowerCase();
 }
 
+function parseHandleFilter(value) {
+  if (!value) return [];
+
+  const handles = String(value)
+    .split(/\s+/)
+    .map((item) => normalizeHandle(item))
+    .filter((item) => item.length > 0);
+
+  return [...new Set(handles)];
+}
+
 function firstValue(value) {
   if (typeof value === "string") return value;
   if (Array.isArray(value) && value.length > 0) return value[0];
@@ -1131,8 +1142,15 @@ async function getFeed(query) {
   }
 
   if (query.handle) {
-    params.push(normalizeHandle(query.handle));
-    where.push(`p.author_handle = $${params.length}`);
+    const handles = parseHandleFilter(query.handle);
+
+    if (handles.length === 1) {
+      params.push(handles[0]);
+      where.push(`p.author_handle = $${params.length}`);
+    } else if (handles.length > 1) {
+      params.push(handles);
+      where.push(`p.author_handle = ANY($${params.length}::text[])`);
+    }
   }
 
   if (query.significant !== undefined) {
