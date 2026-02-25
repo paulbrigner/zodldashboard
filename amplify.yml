@@ -16,6 +16,16 @@ frontend:
         - env | grep -e GOOGLE_CLIENT_ID >> .env.production || true
         - env | grep -e GOOGLE_CLIENT_SECRET >> .env.production || true
         - env | grep -e ALLOWED_GOOGLE_DOMAIN >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_ENABLED >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_KILL_SWITCH >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_DDNS_HOST >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_ALLOWLIST_IPS >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_REFRESH_SECONDS >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_IP_SOURCE_STRATEGY >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_TRUSTED_PROXY_IPS >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_CLIENT_IP_HEADER >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_DISPLAY_EMAIL >> .env.production || true
+        - env | grep -e LOCAL_BYPASS_LOG_DECISIONS >> .env.production || true
         - env | grep -e DATABASE_URL >> .env.production || true
         - env | grep -e PGHOST >> .env.production || true
         - env | grep -e PGPORT >> .env.production || true

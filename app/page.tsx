@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
+import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { SignOutButton } from "./sign-out-button";
+
+export const runtime = "nodejs";
 
 type DashboardCard = {
   id: string;
@@ -36,10 +36,11 @@ const dashboards: DashboardCard[] = [
 ];
 
 export default async function HomePage() {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    redirect("/signin");
-  }
+  const viewer = await requireAuthenticatedViewer("/");
+  const identityText =
+    viewer.mode === "local-bypass"
+      ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
+      : `Signed in as ${viewer.email}`;
 
   return (
     <main className="page dashboard-page">
@@ -48,10 +49,10 @@ export default async function HomePage() {
           <div>
             <p className="eyebrow">ZODL Team Dashboards</p>
             <h1>Dashboards</h1>
-            <p className="subtle-text">Signed in as {session.user.email}</p>
+            <p className="subtle-text">{identityText}</p>
           </div>
           <div className="button-row">
-            <SignOutButton />
+            {viewer.canSignOut ? <SignOutButton /> : null}
           </div>
         </header>
 

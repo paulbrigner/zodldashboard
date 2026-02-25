@@ -6,6 +6,7 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 
 ## Functional Summary
 - Google Workspace sign-in gate (`@zodl.com` by default).
+- Optional local-network bypass gate (feature-flagged, kill-switchable, IP allowlist based).
 - Dashboard hub (`/`) with X Monitor as the active dashboard.
 - X Monitor page (`/x-monitor`) with:
   - feed filters (tier, handle, significant flag, date range, text search, limit),
@@ -24,7 +25,7 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 
 ## Technical Summary
 - Frontend/API framework: Next.js 15 (App Router), React 19, Node.js runtime.
-- Auth: NextAuth + Google provider with domain restriction.
+- Auth: NextAuth + Google provider with domain restriction, with optional local bypass based on allowlisted source IP.
 - DB access: `pg` pool, direct Postgres queries/upserts.
 - Dual API execution modes:
   - local Next.js `/api/v1/*` routes (can query DB directly),
@@ -45,7 +46,7 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 4. PostgreSQL is the source of truth.
 
 ### Read Path (browser -> web app -> API/DB)
-1. User signs in through Google Workspace.
+1. User signs in through Google Workspace, unless local bypass is explicitly enabled and the request source IP matches the bypass allowlist.
 2. `/x-monitor` and `/posts/{statusId}` fetch from:
    - `XMONITOR_READ_API_BASE_URL` if set, otherwise
    - direct DB reads if DB env vars are configured.
@@ -154,6 +155,16 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID. |
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret. |
 | `ALLOWED_GOOGLE_DOMAIN` | Yes | Allowed Workspace domain (default `zodl.com`). |
+| `LOCAL_BYPASS_ENABLED` | Optional | Enable local-network auth bypass (`false` by default). |
+| `LOCAL_BYPASS_KILL_SWITCH` | Optional | Emergency disable for bypass (`false` by default). |
+| `LOCAL_BYPASS_DDNS_HOST` | Optional | DDNS host used to resolve current allowlisted egress IPs. |
+| `LOCAL_BYPASS_ALLOWLIST_IPS` | Optional | Static comma-separated IP allowlist merged with DDNS-resolved IPs. |
+| `LOCAL_BYPASS_REFRESH_SECONDS` | Optional | DDNS refresh interval seconds (default `300`, min `15`). |
+| `LOCAL_BYPASS_IP_SOURCE_STRATEGY` | Optional | `strict` (recommended) or `rightmost` for `X-Forwarded-For` parsing. |
+| `LOCAL_BYPASS_TRUSTED_PROXY_IPS` | Optional | Trusted proxy hop IPs required by `strict` strategy. |
+| `LOCAL_BYPASS_CLIENT_IP_HEADER` | Optional | Trusted infra header containing client IP (overrides XFF parsing). |
+| `LOCAL_BYPASS_DISPLAY_EMAIL` | Optional | Identity label shown in UI during bypass sessions. |
+| `LOCAL_BYPASS_LOG_DECISIONS` | Optional | Log bypass allow/deny decisions (default `true`). |
 | `XMONITOR_READ_API_BASE_URL` | Optional | UI data source base for feed/detail/summary reads. |
 | `XMONITOR_BACKEND_API_BASE_URL` | Optional | Proxy target for local `/api/v1/*` routes. |
 | `XMONITOR_API_PROXY_TIMEOUT_MS` | Optional | Upstream proxy timeout in ms (default `15000`). |
@@ -343,6 +354,14 @@ curl -i -X POST "$BACKEND_API_BASE/ingest/runs" \
 - Verify account is in allowed domain and email is verified.
 - Use `/oauth-probe` to isolate Workspace policy blocks.
 
+### Local bypass does not trigger
+
+- Confirm `LOCAL_BYPASS_ENABLED=true` and `LOCAL_BYPASS_KILL_SWITCH=false`.
+- Confirm allowlist is non-empty (`LOCAL_BYPASS_DDNS_HOST` and/or `LOCAL_BYPASS_ALLOWLIST_IPS`).
+- If using `LOCAL_BYPASS_IP_SOURCE_STRATEGY=strict`, set `LOCAL_BYPASS_TRUSTED_PROXY_IPS` to trusted proxy hops.
+- If your platform provides a verified client IP header, set `LOCAL_BYPASS_CLIENT_IP_HEADER` (for example `cloudfront-viewer-address`).
+- Check server logs for `[auth][local-bypass]` allow/deny entries.
+
 ### Feed/detail/summaries do not load
 
 Set one valid backend mode:
@@ -387,3 +406,6 @@ Set one valid backend mode:
 - Keep OAuth credentials and ingest secret in secure runtime config.
 - Rotate secrets immediately if they are exposed.
 - Restrict DB network access to trusted AWS resources (for example VPC Lambda SG to RDS SG).
+- Keep local bypass disabled by default and use the kill switch during incidents.
+- Prefer `strict` client-IP strategy with explicit trusted proxy hops.
+- Treat `rightmost` strategy as less strict and only use it when infrastructure behavior is fully understood.

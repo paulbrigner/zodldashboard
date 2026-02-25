@@ -47,7 +47,7 @@ const WATCHLIST_BY_TIER = {
     "zooko",
     "zpartanll7",
   ],
-  ecosystem: ["genzcash", "shieldedlabs", "zcashcommgrants", "zcashfoundation", "zechub"],
+  ecosystem: ["genzcash", "shieldedlabs", "tachyonzcash", "zcashcommgrants", "zcashfoundation", "zechub"],
 } as const;
 
 const WATCHLIST_TIER_LABELS: Record<keyof typeof WATCHLIST_BY_TIER, string> = {

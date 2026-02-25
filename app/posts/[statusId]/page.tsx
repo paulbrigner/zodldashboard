@@ -1,7 +1,6 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { notFound, redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
+import { notFound } from "next/navigation";
+import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getPostDetail } from "@/lib/xmonitor/repository";
@@ -54,10 +53,7 @@ async function fetchPostDetailViaApi(baseUrl: string, statusId: string): Promise
 }
 
 export default async function PostPage({ params }: PostPageProps) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    redirect("/signin");
-  }
+  await requireAuthenticatedViewer("/posts");
 
   const { statusId } = await params;
   if (!statusId) {

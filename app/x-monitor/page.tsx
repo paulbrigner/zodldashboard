@@ -1,7 +1,5 @@
 import Link from "next/link";
-import { getServerSession } from "next-auth";
-import { redirect } from "next/navigation";
-import { authOptions } from "@/lib/auth";
+import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
@@ -12,6 +10,8 @@ import { DateRangeFields } from "./date-range-fields";
 import { QueryReferencePopup } from "./query-reference-popup";
 import { SignOutButton } from "../sign-out-button";
 import { LocalDateTime } from "../components/local-date-time";
+
+export const runtime = "nodejs";
 
 type HomePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -150,10 +150,11 @@ async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummar
 }
 
 export default async function HomePage({ searchParams }: HomePageProps) {
-  const session = await getServerSession(authOptions);
-  if (!session?.user?.email) {
-    redirect("/signin");
-  }
+  const viewer = await requireAuthenticatedViewer("/x-monitor");
+  const identityText =
+    viewer.mode === "local-bypass"
+      ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
+      : `Signed in as ${viewer.email}`;
 
   const params = (await searchParams) || {};
   const query = parseFeedQuery(params);
@@ -215,14 +216,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           <div>
             <p className="eyebrow">ZODL Team Dashboards</p>
             <h1>X Monitor</h1>
-            <p className="subtle-text">Signed in as {session.user.email}</p>
+            <p className="subtle-text">{identityText}</p>
           </div>
           <div className="feed-header-actions">
             <div className="button-row">
               <Link className="button button-secondary" href="/">
                 All dashboards
               </Link>
-              <SignOutButton />
+              {viewer.canSignOut ? <SignOutButton /> : null}
             </div>
             <div className="header-aux-row">
               <QueryReferencePopup />
