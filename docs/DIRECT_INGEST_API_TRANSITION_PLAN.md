@@ -1,11 +1,16 @@
 # XMonitor Direct Ingest-to-API Transition Plan
 
-_Last updated: 2026-02-22 (ET)_
+_Last updated: 2026-02-25 (ET)_
 
 ## Purpose
 Define how to move from the current **local SQLite + API sync** architecture to a **direct ingest-to-API** architecture where AWS is the only persistent system of record.
 
 This document is a transition plan only (no code changes implied by this doc).
+
+## Decision update (2026-02-25)
+- Direct ingest cutover is now the preferred prerequisite before semantic/NL search implementation.
+- Rationale: semantic retrieval quality depends on corpus freshness; SQLite->API sync lag/drift introduces avoidable relevance and correctness risk.
+- Operational intent: move to one durable source of truth (AWS) and keep only lightweight local buffering for outage tolerance.
 
 ---
 
@@ -81,6 +86,7 @@ Responsibilities:
 - Send metric snapshots to `/ingest/metrics/batch`
 - Send report marks to `/ingest/reports/batch`
 - Send run telemetry to `/ingest/runs`
+- Prepare extension point for embeddings batch writes once `/ingest/embeddings/batch` is available.
 
 Important behavior:
 - Idempotent retries with bounded backoff.
@@ -217,6 +223,7 @@ Transition is complete when:
 - [ ] `x_monitor_sync_api.py` is no longer part of runtime path.
 - [ ] Local SQLite can be removed from active execution (retained only as archive snapshot).
 - [ ] Operational health checks rely on API/DB metrics, not local DB status.
+- [ ] Semantic-plan prerequisite satisfied: data freshness/correctness no longer depends on local SQLite->API migration.
 
 ---
 
@@ -235,3 +242,12 @@ Transition is complete when:
 - If API availability becomes a concern, add a lightweight local queue (append-only JSONL spool) instead of full SQLite state.
 - If team wants selective notifications, reintroduce alerts from API (not local collector) to avoid noisy coupling.
 - Keep scoring logic versioned (`significance_version`) to safely evolve thresholds.
+
+---
+
+## 11) Dependency with semantic search plan
+
+This transition is intentionally sequenced ahead of semantic search implementation:
+- Complete this plan first to remove dual-store drift risk.
+- Then execute Phase 1/2 in `OPENCLAW_NL_QUERY_PARITY_IMPLEMENTATION_PLAN.md` (pgvector + semantic endpoint).
+- Keep embedding generation model-aligned with the current corpus (`Venice.AI text-embedding-bge-m3`) during semantic rollout.

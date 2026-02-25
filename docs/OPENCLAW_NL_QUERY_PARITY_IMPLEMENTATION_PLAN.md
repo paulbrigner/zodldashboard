@@ -1,10 +1,17 @@
 # OpenClaw NL Query Parity on AWS — Implementation Plan
 
 _Drafted: 2026-02-23 (ET)_
+_Updated: 2026-02-25 (ET)_
 
 ## 1) Goal
 
 Restore the original OpenClaw natural-language (NL) query behavior on the AWS-backed system, so users can type plain-language prompts and retrieve relevant X posts via embedding similarity (not just keyword matching).
+
+## 1.1) Decisions captured (2026-02-25)
+- Stored post embeddings are already generated using `Venice.AI text-embedding-bge-m3`.
+- Query-time embeddings for semantic search must use the same model family (`text-embedding-bge-m3`) to preserve vector-space compatibility.
+- Venice API credentials will be supplied when implementation begins; all embedding calls remain server-side.
+- Direct ingest-to-API cutover (removing SQLite+sync as a correctness dependency) is the preferred prerequisite before semantic rollout.
 
 ---
 
@@ -15,6 +22,7 @@ Restore the original OpenClaw natural-language (NL) query behavior on the AWS-ba
 - Migration tooling imports historical embeddings into Postgres.
 - API supports feed/detail + ingest for posts/metrics/reports/runs.
 - Feed search `q` is lexical (`ILIKE`) against body text/handle.
+- Existing embedding corpus was produced with `Venice.AI text-embedding-bge-m3`.
 
 ## Missing for NL parity
 - No semantic retrieval endpoint in API.
@@ -66,8 +74,10 @@ Recommended schema additions:
 
 ## Phase 0: Lock parity contract
 
-1. Confirm embedding provider/model used by original OpenClaw flow.
-2. Confirm expected dimensions (`dims`) and normalization behavior.
+1. Lock embedding provider/model contract:
+   - provider: Venice API
+   - model: `text-embedding-bge-m3`
+2. Confirm expected dimensions (`dims`) from current rows and normalization behavior.
 3. Define semantic ranking semantics:
    - similarity metric (cosine or inner product),
    - default `top_k`,
@@ -77,6 +87,20 @@ Recommended schema additions:
 
 Deliverable:
 - One signed-off parity contract section added to this document before coding.
+
+## Phase 0.5: Value gate (recommended before coding)
+
+1. Build a prompt set of 20-30 real analyst-style NL queries.
+2. Run baseline lexical (`q`) retrieval vs semantic retrieval on the same prompts.
+3. Human-label top-k relevance for both modes.
+4. Compare:
+   - precision@k,
+   - query success rate (at least one useful hit),
+   - time-to-first-useful-post.
+5. Proceed to implementation only if semantic shows clear uplift for real workflows.
+
+Deliverable:
+- Evidence-based go/no-go decision before full buildout.
 
 ## Phase 1: Database enablement (`pgvector`)
 
@@ -193,10 +217,11 @@ Likely files to update:
 
 Add/confirm:
 
-- `XMONITOR_EMBEDDING_PROVIDER` (example: `openai`)
-- `XMONITOR_EMBEDDING_MODEL`
-- `XMONITOR_EMBEDDING_DIMS`
-- `XMONITOR_EMBEDDING_API_KEY` (or provider-specific secret store reference)
+- `XMONITOR_EMBEDDING_PROVIDER` (set to `venice`)
+- `XMONITOR_EMBEDDING_MODEL` (set to `text-embedding-bge-m3`)
+- `XMONITOR_EMBEDDING_DIMS` (match existing stored corpus)
+- `XMONITOR_EMBEDDING_API_KEY` (Venice API key; server-side secret store)
+- optional provider URL setting if needed by implementation (`XMONITOR_EMBEDDING_BASE_URL`)
 - optional:
   - `XMONITOR_SEMANTIC_DEFAULT_LIMIT`
   - `XMONITOR_SEMANTIC_MAX_LIMIT`
@@ -241,10 +266,11 @@ NL parity is complete when all are true:
 
 ## 10) Suggested execution order
 
-1. Phase 0 (contract lock)
-2. Phase 1 (DB + index + backfill)
-3. Phase 2 (API + OpenAPI + Lambda route)
-4. Phase 3 (embedding ingest freshness path)
-5. Phase 4 (UI)
-6. Phase 5 (relevance/load validation and rollout)
-
+1. Complete direct ingest-to-API cutover milestones from `DIRECT_INGEST_API_TRANSITION_PLAN.md` (single source of truth first).
+2. Phase 0 (contract lock; mostly pre-resolved by Venice model decision).
+3. Phase 0.5 (value gate using real prompt evaluation).
+4. Phase 1 (DB + index + backfill)
+5. Phase 2 (API + OpenAPI + Lambda route)
+6. Phase 3 (embedding ingest freshness path)
+7. Phase 4 (UI)
+8. Phase 5 (relevance/load validation and rollout)
