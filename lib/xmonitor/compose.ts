@@ -711,7 +711,24 @@ function enforceDraftGuardrails(
 
   const maxChars = requestedFormat === "x_post" ? composeMaxDraftCharsXPost() : composeMaxDraftChars();
   if (draft.length <= maxChars) return draft;
-  return `${draft.slice(0, Math.max(1, maxChars - 3))}...`;
+
+  const candidate = draft.slice(0, Math.max(1, maxChars)).trim();
+  const sentenceBoundary = Math.max(
+    candidate.lastIndexOf(". "),
+    candidate.lastIndexOf("! "),
+    candidate.lastIndexOf("? "),
+    candidate.lastIndexOf("\n")
+  );
+  if (sentenceBoundary >= Math.floor(maxChars * 0.6)) {
+    return candidate.slice(0, sentenceBoundary + 1).trim();
+  }
+
+  const wordBoundary = candidate.lastIndexOf(" ");
+  if (wordBoundary >= Math.floor(maxChars * 0.8)) {
+    return candidate.slice(0, wordBoundary).trim();
+  }
+
+  return candidate;
 }
 
 function selectCitations(evidence: ComposeQueryResponse, citationStatusIds: string[]): ComposeCitation[] {
