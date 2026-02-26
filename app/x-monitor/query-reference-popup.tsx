@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-const BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL";
+const BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL OR Zashi";
 const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
@@ -39,6 +39,7 @@ const WATCHLIST_BY_TIER = {
     "neuralunlock",
     "rargulati",
     "roommatemusing",
+    "shieldedmark",    
     "shieldedmoney",
     "thecodebuffet",
     "thortorrens",
