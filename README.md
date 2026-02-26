@@ -200,7 +200,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE` | Optional | For Venice thinking models, strips reasoning channel from response (default `true`). |
 | `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
-| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; default includes `zec_88`). |
+| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2`). |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
 | `DATABASE_URL` | Optional* | Postgres DSN. |
 | `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` `PGSSLMODE` | Optional* | Split Postgres settings when `DATABASE_URL` is unset. |

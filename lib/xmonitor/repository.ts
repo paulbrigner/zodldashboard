@@ -31,7 +31,7 @@ function normalizeHandle(value: string): string {
   return value.trim().replace(/^@+/, "").toLowerCase();
 }
 
-const DEFAULT_INGEST_OMIT_HANDLES = ["zec_88"] as const;
+const DEFAULT_INGEST_OMIT_HANDLES = ["zec_88", "zec__2"] as const;
 
 function parseNormalizedHandleList(value: string | undefined): string[] {
   if (!value) return [];
