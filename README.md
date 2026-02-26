@@ -10,6 +10,8 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 - Dashboard hub (`/`) with X Monitor as the active dashboard.
 - X Monitor page (`/x-monitor`) with:
   - feed filters (tier, handle, significant flag, date range, text search, limit),
+  - semantic search mode for natural-language retrieval,
+  - grounded "Answer mode" (retrieve + synthesize + citations + optional draft),
   - cursor-based pagination,
   - freshness indicator with manual refresh,
   - rolling summary panel (2h + 12h).
@@ -172,6 +174,29 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_API_VERSION` | Optional | API version in health response (default `v1`). |
 | `XMONITOR_DEFAULT_FEED_LIMIT` | Optional | Default feed limit (default `50`). |
 | `XMONITOR_MAX_FEED_LIMIT` | Optional | Max feed limit clamp (default `200`). |
+| `XMONITOR_SEMANTIC_ENABLED` | Optional | Enables semantic retrieval route/mode (default `true`). |
+| `XMONITOR_EMBEDDING_BASE_URL` | Optional | Embedding provider base URL for query vectors. |
+| `XMONITOR_EMBEDDING_MODEL` | Optional | Embedding model for query vectors (default `text-embedding-bge-m3`). |
+| `XMONITOR_EMBEDDING_DIMS` | Optional | Expected embedding dimension (default `1024`). |
+| `XMONITOR_EMBEDDING_TIMEOUT_MS` | Optional | Embedding request timeout ms (default `10000`). |
+| `XMONITOR_EMBEDDING_API_KEY` | Optional | Preferred embedding API key secret. |
+| `VENICE_API_KEY` | Optional | Fallback secret for embedding/compose provider calls. |
+| `XMONITOR_COMPOSE_ENABLED` | Optional | Enables compose endpoint/UI panel (default `true`). |
+| `XMONITOR_COMPOSE_DRAFTS_ENABLED` | Optional | Allows draft output (`x_post`/`thread`) when compose is enabled. |
+| `XMONITOR_COMPOSE_BASE_URL` | Optional | Compose provider base URL (default Venice OpenAI-compatible endpoint). |
+| `XMONITOR_COMPOSE_MODEL` | Optional | Text model for grounded answer generation. |
+| `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (default `20000`). |
+| `XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS` | Optional | Max generated tokens per compose request. |
+| `XMONITOR_COMPOSE_MAX_DRAFT_CHARS` | Optional | Max draft length for `thread` output (default `1200`). |
+| `XMONITOR_COMPOSE_MAX_DRAFT_CHARS_X_POST` | Optional | Max draft length for `x_post` output (default `280`). |
+| `XMONITOR_COMPOSE_MAX_CITATIONS` | Optional | Max citations returned in compose response (default `10`). |
+| `XMONITOR_COMPOSE_MAX_REQUESTS_PER_MINUTE` | Optional | In-process rate guard for compose requests. |
+| `XMONITOR_COMPOSE_MAX_CONCURRENCY` | Optional | In-process concurrency guard for compose requests. |
+| `XMONITOR_COMPOSE_MAX_ESTIMATED_COST_USD` | Optional | Per-request projected cost ceiling guard. |
+| `XMONITOR_COMPOSE_INPUT_COST_PER_1M_TOKENS` | Optional | Input token cost basis used for estimate logs/guard. |
+| `XMONITOR_COMPOSE_OUTPUT_COST_PER_1M_TOKENS` | Optional | Output token cost basis used for estimate logs/guard. |
+| `XMONITOR_COMPOSE_USE_JSON_MODE` | Optional | Try model JSON mode before plain prompt-only parsing fallback. |
+| `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
 | `DATABASE_URL` | Optional* | Postgres DSN. |
@@ -215,6 +240,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - `GET /api/v1/health`
 - `GET /api/v1/feed`
+- `POST /api/v1/query/semantic`
+- `POST /api/v1/query/compose`
 - `GET /api/v1/posts/{statusId}`
 - `GET /api/v1/window-summaries/latest`
 - `POST /api/v1/ingest/posts/batch`
@@ -228,6 +255,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - `GET /v1/health`
 - `GET /v1/feed`
+- `POST /v1/query/semantic`
+- `POST /v1/query/compose` (retrieval evidence stage)
 - `GET /v1/posts/{statusId}`
 - `GET /v1/window-summaries/latest`
 - `POST /v1/ingest/posts/batch`

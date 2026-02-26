@@ -51,10 +51,25 @@ frontend:
         - env | grep -e XMONITOR_EMBEDDING_API_KEY >> .env.production || true
         - env | grep -e VENICE_API_KEY >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_ENABLED >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_DRAFTS_ENABLED >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_DEFAULT_RETRIEVAL_LIMIT >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_MAX_RETRIEVAL_LIMIT >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_MAX_CONTEXT_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_BASE_URL >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MODEL >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_TIMEOUT_MS >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_DRAFT_CHARS >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_DRAFT_CHARS_X_POST >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_CITATIONS >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_REQUESTS_PER_MINUTE >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_CONCURRENCY >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_ESTIMATED_COST_USD >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_INPUT_COST_PER_1M_TOKENS >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_OUTPUT_COST_PER_1M_TOKENS >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_USE_JSON_MODE >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_API_KEY >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next

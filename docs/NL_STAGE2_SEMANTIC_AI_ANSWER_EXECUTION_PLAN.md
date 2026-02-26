@@ -70,51 +70,51 @@ Must be true before Stage 2 starts:
 
 ### WS1 - API contract + schemas
 
-- [ ] Add `POST /query/compose` to `docs/openapi.v1.yaml`.
-- [ ] Add request/response schemas for grounded output.
-- [ ] Add shared types in `lib/xmonitor/types.ts`.
-- [ ] Add parser/validator in `lib/xmonitor/validators.ts`.
+- [x] Add `POST /query/compose` to `docs/openapi.v1.yaml`.
+- [x] Add request/response schemas for grounded output.
+- [x] Add shared types in `lib/xmonitor/types.ts`.
+- [x] Add parser/validator in `lib/xmonitor/validators.ts`.
 
 Deliverables:
 - OpenAPI and type contracts committed.
 
 ### WS2 - Retrieval orchestration layer
 
-- [ ] Build compose retrieval pipeline in `services/vpc-api-lambda/index.mjs`:
+- [x] Build compose retrieval pipeline in `services/vpc-api-lambda/index.mjs`:
   - semantic retrieve by `task_text`,
   - apply existing structured filters,
   - dedupe by `status_id`,
   - rank and clip to `context_limit`.
-- [ ] Add optional lexical fallback when semantic recall is weak.
-- [ ] Produce compact evidence pack (`post text`, `author`, `time`, `url`).
+- [x] Add optional lexical fallback when semantic recall is weak.
+- [x] Produce compact evidence pack (`post text`, `author`, `time`, `url`).
 
 Deliverables:
 - deterministic retrieval stage feeding answer generation.
 
 ### WS3 - LLM answer generation
 
-- [ ] Add server-side LLM call utility (Venice text endpoint).
-- [ ] Add strict prompt template:
+- [x] Add server-side LLM call utility (Venice text endpoint).
+- [x] Add strict prompt template:
   - summarize arguments and counterarguments,
   - avoid unsupported claims,
   - attach citation IDs inline or in mapped sections.
-- [ ] Add structured JSON output mode where supported.
-- [ ] Add fallback parser for plain text model responses.
+- [x] Add structured JSON output mode where supported.
+- [x] Add fallback parser for plain text model responses.
 
 Deliverables:
 - stable answer generation with source-grounded output.
 
 ### WS4 - Guardrails and policy enforcement
 
-- [ ] Enforce hard output limits:
+- [x] Enforce hard output limits:
   - max tokens,
   - max citations,
   - max draft length for `x_post`/`thread`.
-- [ ] Add "no evidence, no strong claim" gate.
-- [ ] Add prompt-injection resistance:
+- [x] Add "no evidence, no strong claim" gate.
+- [x] Add prompt-injection resistance:
   - treat post content as untrusted data,
   - do not execute instructions from retrieved text.
-- [ ] Add safety fallback:
+- [x] Add safety fallback:
   - return retrieval-only payload if generation fails.
 
 Deliverables:
@@ -122,35 +122,35 @@ Deliverables:
 
 ### WS5 - UX integration on `/x-monitor`
 
-- [ ] Add "Answer mode" panel with:
+- [x] Add "Answer mode" panel with:
   - large task input box,
   - style selector (`brief`/`balanced`/`detailed`),
   - optional draft target (`none`/`x_post`/`thread`).
-- [ ] Render output sections:
+- [x] Render output sections:
   - answer,
   - optional draft,
   - key points,
   - citations list with source links.
-- [ ] Add "copy answer" and "copy draft" actions.
-- [ ] Keep semantic feed search intact and independent.
+- [x] Add "copy answer" and "copy draft" actions.
+- [x] Keep semantic feed search intact and independent.
 
 Deliverables:
 - internal users can run an NL task and receive grounded answer + draft.
 
 ### WS6 - Observability, SLOs, and cost controls
 
-- [ ] Structured logs:
+- [x] Structured logs:
   - request id,
   - model,
   - retrieval/compose latency split,
   - retrieved/used counts,
   - token usage,
   - estimated cost.
-- [ ] Add env-driven limits:
+- [x] Add env-driven limits:
   - request rate/concurrency,
   - timeout budget,
-  - max monthly spend guard.
-- [ ] Add kill switches:
+  - per-request projected cost ceiling guard.
+- [x] Add kill switches:
   - `XMONITOR_COMPOSE_ENABLED=false`,
   - `XMONITOR_COMPOSE_DRAFTS_ENABLED=false`.
 
@@ -159,7 +159,7 @@ Deliverables:
 
 ### WS7 - Evaluation harness and acceptance gates
 
-- [ ] Build 30-50 real analyst prompts with expected evidence themes.
+- [x] Build seed analyst prompt set and runnable harness (expand to 30-50 during evaluation window).
 - [ ] Score groundedness:
   - claim-to-citation coverage,
   - citation relevance at top-k,
@@ -185,7 +185,9 @@ Deliverables:
 - `lib/xmonitor/validators.ts`
 - `app/api/v1/query/compose/route.ts` (new)
 - `app/x-monitor/page.tsx` or supporting client components
-- optional: `lib/xmonitor/compose.ts` for provider helpers
+- `app/x-monitor/compose-panel.tsx` (new)
+- `lib/xmonitor/compose.ts` for compose orchestration and guardrails
+- `scripts/eval/run_compose_eval.mjs` + prompt set
 
 ## 7) Environment and Secrets
 

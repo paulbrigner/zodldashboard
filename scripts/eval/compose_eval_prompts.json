@@ -1,0 +1,62 @@
+[
+  {
+    "id": "mission_focus_24h",
+    "task_text": "Review top posts from the last 24 hours about protocol direction and summarize the strongest arguments for keeping focus on digital cash user needs over expanding complexity.",
+    "answer_style": "balanced",
+    "draft_format": "x_post"
+  },
+  {
+    "id": "governance_risk",
+    "task_text": "Summarize current concerns about governance risk in protocol changes and highlight counterarguments from supporters.",
+    "answer_style": "detailed",
+    "draft_format": "none"
+  },
+  {
+    "id": "privacy_tradeoffs",
+    "task_text": "Find recent posts discussing privacy tradeoffs in new feature proposals and provide a concise neutral synthesis.",
+    "answer_style": "brief",
+    "draft_format": "none"
+  },
+  {
+    "id": "user_value_vs_narrative",
+    "task_text": "Compare posts emphasizing user value for digital cash versus posts emphasizing experimental protocol narratives, then draft a respectful response post focused on practical adoption.",
+    "answer_style": "balanced",
+    "draft_format": "x_post"
+  },
+  {
+    "id": "implementation_complexity",
+    "task_text": "What implementation complexity concerns are being raised about feature expansion, and what mitigation proposals are cited?",
+    "answer_style": "detailed",
+    "draft_format": "none"
+  },
+  {
+    "id": "decentralization_impact",
+    "task_text": "Summarize arguments about decentralization impact from recent protocol adjustment discussions.",
+    "answer_style": "balanced",
+    "draft_format": "none"
+  },
+  {
+    "id": "policy_message",
+    "task_text": "Draft a short thread that acknowledges diverse viewpoints while arguing for sequencing: ship user-critical digital cash improvements before optional complexity.",
+    "answer_style": "balanced",
+    "draft_format": "thread"
+  },
+  {
+    "id": "critique_quality",
+    "task_text": "Identify the most evidence-backed critiques and the weakest critiques in recent posts about ZSA-related direction.",
+    "answer_style": "detailed",
+    "draft_format": "none"
+  },
+  {
+    "id": "counterposition_strength",
+    "task_text": "Summarize the strongest pro-ZSA arguments represented in the last 48 hours and where those arguments still lack concrete support.",
+    "answer_style": "balanced",
+    "draft_format": "none"
+  },
+  {
+    "id": "community_alignment",
+    "task_text": "What are the main points of agreement across opposing sides in current protocol debates?",
+    "answer_style": "brief",
+    "draft_format": "none"
+  }
+]
