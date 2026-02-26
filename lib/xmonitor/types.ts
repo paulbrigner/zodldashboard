@@ -7,6 +7,12 @@ export type SnapshotType = (typeof SNAPSHOT_TYPES)[number];
 export const RUN_MODES = ["priority", "discovery", "both", "refresh24h", "manual"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
+export const COMPOSE_ANSWER_STYLES = ["brief", "balanced", "detailed"] as const;
+export type ComposeAnswerStyle = (typeof COMPOSE_ANSWER_STYLES)[number];
+
+export const COMPOSE_DRAFT_FORMATS = ["none", "x_post", "thread"] as const;
+export type ComposeDraftFormat = (typeof COMPOSE_DRAFT_FORMATS)[number];
+
 export type BatchUpsertResult = {
   received: number;
   inserted: number;
@@ -213,4 +219,41 @@ export type SemanticQueryResponse = {
   items: FeedItem[];
   model: string;
   retrieved_count: number;
+};
+
+export type ComposeQueryRequest = {
+  task_text: string;
+  since?: string;
+  until?: string;
+  tier?: WatchTier;
+  handle?: string;
+  significant?: boolean;
+  retrieval_limit?: number;
+  context_limit?: number;
+  answer_style?: ComposeAnswerStyle;
+  draft_format?: ComposeDraftFormat;
+};
+
+export type ComposeCitation = {
+  status_id: string;
+  url: string;
+  author_handle: string;
+  excerpt: string;
+  score?: number | null;
+};
+
+export type ComposeRetrievalStats = {
+  retrieved_count: number;
+  used_count: number;
+  model: string;
+  latency_ms: number;
+  coverage_score?: number | null;
+};
+
+export type ComposeQueryResponse = {
+  answer_text: string;
+  draft_text?: string | null;
+  key_points: string[];
+  citations: ComposeCitation[];
+  retrieval_stats: ComposeRetrievalStats;
 };

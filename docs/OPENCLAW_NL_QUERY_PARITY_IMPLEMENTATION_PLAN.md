@@ -6,6 +6,9 @@ _Updated: 2026-02-26 (ET)_
 Detailed Stage 1 (semantic retrieval) execution checklist:
 - `docs/NL_STAGE1_SEMANTIC_EXECUTION_PLAN.md`
 
+Detailed Stage 2 (semantic + AI answer) execution checklist:
+- `docs/NL_STAGE2_SEMANTIC_AI_ANSWER_EXECUTION_PLAN.md`
+
 ## 1) Goal
 
 Restore the original OpenClaw natural-language (NL) query behavior on the AWS-backed system, so users can type plain-language prompts and retrieve relevant X posts via embedding similarity (not just keyword matching).

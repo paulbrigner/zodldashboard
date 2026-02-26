@@ -251,6 +251,24 @@ paths:
               schema:
                 $ref: '#/components/schemas/SemanticQueryResponse'
 
+  /query/compose:
+    post:
+      summary: Grounded semantic retrieval plus AI answer/draft
+      operationId: queryCompose
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComposeQueryRequest'
+      responses:
+        '200':
+          description: Grounded answer with citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposeQueryResponse'
+
   /posts/{statusId}:
     get:
       summary: Get post detail
@@ -528,3 +546,54 @@ components:
             $ref: '#/components/schemas/FeedItem'
         model: { type: string }
         retrieved_count: { type: integer }
+
+    ComposeQueryRequest:
+      type: object
+      required: [task_text]
+      properties:
+        task_text: { type: string }
+        since: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        handle: { type: string }
+        significant: { type: boolean }
+        retrieval_limit: { type: integer, minimum: 1, maximum: 100, default: 40 }
+        context_limit: { type: integer, minimum: 1, maximum: 24, default: 12 }
+        answer_style: { type: string, enum: [brief, balanced, detailed], default: balanced }
+        draft_format: { type: string, enum: [none, x_post, thread], default: none }
+
+    ComposeCitation:
+      type: object
+      required: [status_id, url, author_handle, excerpt]
+      properties:
+        status_id: { type: string }
+        url: { type: string }
+        author_handle: { type: string }
+        excerpt: { type: string }
+        score: { type: number, nullable: true }
+
+    ComposeRetrievalStats:
+      type: object
+      required: [retrieved_count, used_count, model, latency_ms]
+      properties:
+        retrieved_count: { type: integer }
+        used_count: { type: integer }
+        model: { type: string }
+        latency_ms: { type: integer }
+        coverage_score: { type: number, nullable: true }
+
+    ComposeQueryResponse:
+      type: object
+      required: [answer_text, key_points, citations, retrieval_stats]
+      properties:
+        answer_text: { type: string }
+        draft_text: { type: string, nullable: true }
+        key_points:
+          type: array
+          items: { type: string }
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComposeCitation'
+        retrieval_stats:
+          $ref: '#/components/schemas/ComposeRetrievalStats'

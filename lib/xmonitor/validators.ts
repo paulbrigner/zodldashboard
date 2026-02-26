@@ -1,4 +1,7 @@
 import {
+  COMPOSE_ANSWER_STYLES,
+  COMPOSE_DRAFT_FORMATS,
+  type ComposeQueryRequest,
   type EmbeddingUpsert,
   RUN_MODES,
   SNAPSHOT_TYPES,
@@ -13,6 +16,11 @@ import {
   type WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
+
+const COMPOSE_DEFAULT_RETRIEVAL_LIMIT = 40;
+const COMPOSE_MAX_RETRIEVAL_LIMIT = 100;
+const COMPOSE_DEFAULT_CONTEXT_LIMIT = 12;
+const COMPOSE_MAX_CONTEXT_LIMIT = 24;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -446,6 +454,80 @@ export function parseSemanticQueryRequest(
       handle: normalizedHandle || undefined,
       significant,
       limit: finalLimit,
+    },
+  };
+}
+
+export function parseComposeQueryRequest(
+  value: unknown
+): { ok: true; data: ComposeQueryRequest } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+
+  const taskText = asString(value.task_text);
+  if (!taskText) {
+    return { ok: false, error: "task_text is required" };
+  }
+
+  const since = asIsoTimestamp(value.since);
+  const until = asIsoTimestamp(value.until);
+  const tierRaw = asString(value.tier)?.toLowerCase();
+  const tier = WATCH_TIERS.includes(tierRaw as (typeof WATCH_TIERS)[number])
+    ? (tierRaw as (typeof WATCH_TIERS)[number])
+    : undefined;
+  const significant = asBoolean(value.significant);
+
+  const retrievalLimitRaw = asInteger(value.retrieval_limit);
+  const retrievalLimit = retrievalLimitRaw
+    ? Math.min(Math.max(retrievalLimitRaw, 1), COMPOSE_MAX_RETRIEVAL_LIMIT)
+    : COMPOSE_DEFAULT_RETRIEVAL_LIMIT;
+
+  const contextLimitRaw = asInteger(value.context_limit);
+  const contextLimitBounded = contextLimitRaw
+    ? Math.min(Math.max(contextLimitRaw, 1), COMPOSE_MAX_CONTEXT_LIMIT)
+    : COMPOSE_DEFAULT_CONTEXT_LIMIT;
+  const contextLimit = Math.min(contextLimitBounded, retrievalLimit);
+
+  const answerStyleRaw = asString(value.answer_style)?.toLowerCase();
+  if (answerStyleRaw && !COMPOSE_ANSWER_STYLES.includes(answerStyleRaw as (typeof COMPOSE_ANSWER_STYLES)[number])) {
+    return {
+      ok: false,
+      error: `answer_style must be one of ${COMPOSE_ANSWER_STYLES.join(", ")}`,
+    };
+  }
+  const answerStyle = answerStyleRaw
+    ? (answerStyleRaw as (typeof COMPOSE_ANSWER_STYLES)[number])
+    : COMPOSE_ANSWER_STYLES[1];
+
+  const draftFormatRaw = asString(value.draft_format)?.toLowerCase();
+  if (draftFormatRaw && !COMPOSE_DRAFT_FORMATS.includes(draftFormatRaw as (typeof COMPOSE_DRAFT_FORMATS)[number])) {
+    return {
+      ok: false,
+      error: `draft_format must be one of ${COMPOSE_DRAFT_FORMATS.join(", ")}`,
+    };
+  }
+  const draftFormat = draftFormatRaw
+    ? (draftFormatRaw as (typeof COMPOSE_DRAFT_FORMATS)[number])
+    : COMPOSE_DRAFT_FORMATS[0];
+
+  const normalizedHandle = asString(value.handle)
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
+
+  return {
+    ok: true,
+    data: {
+      task_text: taskText,
+      since,
+      until,
+      tier,
+      handle: normalizedHandle || undefined,
+      significant,
+      retrieval_limit: retrievalLimit,
+      context_limit: contextLimit,
+      answer_style: answerStyle,
+      draft_format: draftFormat,
     },
   };
 }
