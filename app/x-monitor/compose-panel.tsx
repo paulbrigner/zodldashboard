@@ -75,8 +75,8 @@ export function ComposePanel(props: ComposePanelProps) {
   const [taskText, setTaskText] = useState("");
   const [answerStyle, setAnswerStyle] = useState<ComposeAnswerStyle>("balanced");
   const [draftFormat, setDraftFormat] = useState<ComposeDraftFormat>("none");
-  const [retrievalLimit, setRetrievalLimit] = useState("40");
-  const [contextLimit, setContextLimit] = useState("12");
+  const [retrievalLimit, setRetrievalLimit] = useState("30");
+  const [contextLimit, setContextLimit] = useState("8");
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeQueryResponse | null>(null);
