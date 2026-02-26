@@ -185,7 +185,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_DRAFTS_ENABLED` | Optional | Allows draft output (`x_post`/`thread`) when compose is enabled. |
 | `XMONITOR_COMPOSE_BASE_URL` | Optional | Compose provider base URL (default Venice OpenAI-compatible endpoint). |
 | `XMONITOR_COMPOSE_MODEL` | Optional | Text model for grounded answer generation. |
-| `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (default `45000`). |
+| `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (default `20000`, with bounded retry). |
 | `XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS` | Optional | Max generated tokens per compose request. |
 | `XMONITOR_COMPOSE_MAX_DRAFT_CHARS` | Optional | Max draft length for `thread` output (default `1200`). |
 | `XMONITOR_COMPOSE_MAX_DRAFT_CHARS_X_POST` | Optional | Max draft length for `x_post` output (default `280`). |

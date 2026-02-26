@@ -10,8 +10,8 @@ import type {
 
 const DEFAULT_COMPOSE_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_COMPOSE_MODEL = "llama-3.2-3b";
-const DEFAULT_COMPOSE_TIMEOUT_MS = 45000;
-const COMPOSE_TIMEOUT_RETRY_DELTA_MS = 15000;
+const DEFAULT_COMPOSE_TIMEOUT_MS = 20000;
+const COMPOSE_TOTAL_TIMEOUT_BUDGET_MS = 26000;
 const DEFAULT_COMPOSE_MAX_OUTPUT_TOKENS = 900;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS = 1200;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS_X_POST = 280;
@@ -582,7 +582,11 @@ async function callComposeModel(
     return await callComposeModelOnce(prompt, initialTimeoutMs);
   } catch (error) {
     if (error instanceof ComposeExecutionError && error.status === 504) {
-      const retryTimeoutMs = Math.max(initialTimeoutMs + COMPOSE_TIMEOUT_RETRY_DELTA_MS, Math.floor(initialTimeoutMs * 1.5));
+      const remainingBudgetMs = COMPOSE_TOTAL_TIMEOUT_BUDGET_MS - initialTimeoutMs;
+      const retryTimeoutMs = Math.min(8000, Math.max(3000, remainingBudgetMs - 500));
+      if (retryTimeoutMs < 3000) {
+        throw error;
+      }
       console.log(
         JSON.stringify({
           event: "compose_model_retry",
