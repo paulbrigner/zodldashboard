@@ -245,9 +245,11 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /api/v1/health`
 - `GET /api/v1/feed`
 - `POST /api/v1/query/semantic`
-- `POST /api/v1/query/compose`
+- `POST /api/v1/query/compose` (full grounded answer flow: evidence retrieval + model synthesis + citations)
 - `GET /api/v1/posts/{statusId}`
 - `GET /api/v1/window-summaries/latest`
+- `GET /api/v1/ops/reconcile-counts`
+- `POST /api/v1/ops/purge-handle`
 - `POST /api/v1/ingest/posts/batch`
 - `POST /api/v1/ingest/metrics/batch`
 - `POST /api/v1/ingest/reports/batch`
@@ -260,9 +262,11 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /v1/health`
 - `GET /v1/feed`
 - `POST /v1/query/semantic`
-- `POST /v1/query/compose` (retrieval evidence stage)
+- `POST /v1/query/compose` (retrieval/evidence stage only; no text generation)
 - `GET /v1/posts/{statusId}`
 - `GET /v1/window-summaries/latest`
+- `GET /v1/ops/reconcile-counts`
+- `POST /v1/ops/purge-handle`
 - `POST /v1/ingest/posts/batch`
 - `POST /v1/ingest/metrics/batch`
 - `POST /v1/ingest/reports/batch`
@@ -276,6 +280,47 @@ Notes:
 - Ingest auth accepts either:
   - `x-api-key: <secret>`
   - `Authorization: Bearer <secret>`
+- Ops routes (`/ops/*`) use the same shared-secret auth as ingest routes.
+
+---
+
+## Search and Answer Modes
+
+### Keyword search mode
+
+- Default mode in the Filters panel.
+- Uses `GET /api/v1/feed` (or `GET /v1/feed` when called directly).
+- Exposes tier, handle, significant, date range, lexical text search, and limit.
+- Supports cursor pagination and feed freshness polling.
+
+### Semantic search mode
+
+- Natural-language retrieval mode powered by embeddings (`text-embedding-bge-m3` by default).
+- UI intentionally simplifies controls to one larger "Semantic prompt" field plus a built-in example prompt.
+- Uses `POST /api/v1/query/semantic` (proxying to `POST /v1/query/semantic`).
+- API supports optional scope filters (`since`, `until`, `tier`, `handle`, `significant`, `limit`) even when not shown in the simplified semantic UI.
+- Returns ranked feed items with `score`, plus retrieval metadata (`model`, `retrieved_count`).
+
+### Answer Mode (grounded RAG)
+
+- Collapsed by default under "Answer Mode" on `/x-monitor`.
+- Uses two-step execution:
+  1. Retrieve evidence posts from backend `POST /v1/query/compose`.
+  2. Synthesize grounded answer/draft in app runtime via `POST /api/v1/query/compose`.
+- Inputs:
+  - `task_text` (required),
+  - scope filters (`since`, `until`, `tier`, `handle`, `significant`),
+  - `retrieval_limit` (bounded to `1..100`),
+  - `context_limit` (bounded to `1..24`, and never above retrieval limit),
+  - `answer_style` (`brief|balanced|detailed`),
+  - `draft_format` (`none|x_post|thread`).
+- Output is structured and citation-backed:
+  - `answer_text`,
+  - optional `draft_text`,
+  - `key_points[]`,
+  - `citations[]` (`status_id`, `url`, `author_handle`, excerpt, score),
+  - `retrieval_stats` (`retrieved_count`, `used_count`, `model`, `latency_ms`, optional `coverage_score`).
+- If generation fails or times out, the response degrades safely to evidence-backed fallback text while still returning citations and retrieval stats.
 
 ---
 
@@ -401,6 +446,35 @@ Set one valid backend mode:
 
 - `XMONITOR_READ_API_BASE_URL`, or
 - direct DB config (`DATABASE_URL` or `PG*`).
+
+### Semantic mode returns errors or empty results
+
+- Confirm `XMONITOR_SEMANTIC_ENABLED=true`.
+- Confirm embedding credentials are present (`XMONITOR_EMBEDDING_API_KEY` or `VENICE_API_KEY`).
+- Confirm the corpus has embeddings for current posts (`embeddings` table populated with matching `model`/`dims`).
+- Confirm `XMONITOR_BACKEND_API_BASE_URL` is set for `/api/v1/query/semantic`.
+
+### Answer Mode falls back with "AI synthesis is temporarily unavailable"
+
+- Confirm `XMONITOR_COMPOSE_ENABLED=true` and `XMONITOR_COMPOSE_API_KEY` (or `VENICE_API_KEY`) is set.
+- Confirm compose model value is valid (`XMONITOR_COMPOSE_MODEL`) and provider endpoint is reachable.
+- If fallbacks are frequent under load, increase `XMONITOR_COMPOSE_TIMEOUT_MS` and/or reduce UI `Retrieval limit` and `Context limit`.
+- Check server logs for `compose_query_fallback`, `compose_model_retry`, and `compose_model_call` events.
+
+### Rolling summaries show stats-style fallback instead of narrative text
+
+- This means the summary producer likely fell back to legacy/statistical text for that run.
+- Verify latest rows in `window_summaries` and inspect `source_version`:
+
+```sql
+SELECT window_type, generated_at, source_version
+FROM window_summaries
+ORDER BY generated_at DESC
+LIMIT 20;
+```
+
+- Expected narrative rows use `source_version='v2_narrative'`.
+- If rows are `v1`, check summary-generation model availability/timeouts on the collector side and rerun summary ingestion.
 
 ### Ingest returns `401 unauthorized`
 
