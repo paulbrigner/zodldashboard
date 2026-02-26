@@ -4,6 +4,7 @@ import { getDbPool } from "@/lib/xmonitor/db";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
 import type {
   BatchUpsertResult,
+  DeletePostsByHandleResult,
   EmbeddingUpsert,
   FeedItem,
   FeedQuery,
@@ -30,15 +31,42 @@ function normalizeHandle(value: string): string {
   return value.trim().replace(/^@+/, "").toLowerCase();
 }
 
-function parseHandleFilter(value: string | undefined): string[] {
+const DEFAULT_INGEST_OMIT_HANDLES = ["zec_88"] as const;
+
+function parseNormalizedHandleList(value: string | undefined): string[] {
   if (!value) return [];
 
   const handles = value
-    .split(/\s+/)
+    .split(/[,\s]+/)
     .map((item) => normalizeHandle(item))
     .filter((item) => item.length > 0);
 
   return [...new Set(handles)];
+}
+
+function ingestOmitHandleSet(): Set<string> {
+  return new Set([
+    ...DEFAULT_INGEST_OMIT_HANDLES,
+    ...parseNormalizedHandleList(process.env.XMONITOR_INGEST_OMIT_HANDLES),
+  ]);
+}
+
+function isKeywordSourceQuery(sourceQuery: string | null | undefined): boolean {
+  const normalized = String(sourceQuery || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "discovery" || normalized === "keyword" || normalized === "both" || normalized === "legacy";
+}
+
+function shouldOmitKeywordOriginPost(item: PostUpsert, authorHandle: string, omitHandles: Set<string>): boolean {
+  if (!omitHandles.has(authorHandle)) return false;
+  if (!isKeywordSourceQuery(item.source_query)) return false;
+  if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
+  return true;
+}
+
+function parseHandleFilter(value: string | undefined): string[] {
+  return parseNormalizedHandleList(value);
 }
 
 function rowToFeedItem(row: QueryResultRow): FeedItem {
@@ -106,6 +134,7 @@ async function runUpsert(
 
 export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResult> {
   const result = buildBatchResult(items.length);
+  const omitHandles = ingestOmitHandleSet();
   const sql = `
     INSERT INTO posts(
       status_id,
@@ -184,11 +213,18 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
   `;
 
   for (const [index, item] of items.entries()) {
+    const authorHandle = normalizeHandle(item.author_handle);
+    if (shouldOmitKeywordOriginPost(item, authorHandle, omitHandles)) {
+      result.errors.push({ index, message: `omitted keyword-origin author handle: ${authorHandle}` });
+      result.skipped += 1;
+      continue;
+    }
+
     try {
       const inserted = await runUpsert(sql, [
         item.status_id,
         item.url,
-        normalizeHandle(item.author_handle),
+        authorHandle,
         item.author_display || null,
         item.body_text || null,
         item.posted_relative || null,
@@ -231,6 +267,23 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
   }
 
   return result;
+}
+
+export async function purgePostsByAuthorHandle(authorHandle: string): Promise<DeletePostsByHandleResult> {
+  const normalizedHandle = normalizeHandle(authorHandle);
+  const pool = getDbPool();
+  const result = await pool.query(
+    `
+      DELETE FROM posts
+      WHERE lower(author_handle) = $1
+    `,
+    [normalizedHandle]
+  );
+
+  return {
+    author_handle: normalizedHandle,
+    deleted: result.rowCount ?? 0,
+  };
 }
 
 export async function upsertMetricSnapshots(items: MetricsSnapshotUpsert[]): Promise<BatchUpsertResult> {

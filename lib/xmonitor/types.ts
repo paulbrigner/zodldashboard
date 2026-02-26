@@ -134,6 +134,11 @@ export type ReconcileCounts = {
   };
 };
 
+export type DeletePostsByHandleResult = {
+  author_handle: string;
+  deleted: number;
+};
+
 export type NarrativeShiftUpsert = {
   shift_key: string;
   basis_window_type: string;

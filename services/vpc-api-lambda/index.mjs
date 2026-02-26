@@ -24,6 +24,7 @@ const DEFAULT_COMPOSE_RETRIEVAL_LIMIT = 40;
 const DEFAULT_COMPOSE_MAX_RETRIEVAL_LIMIT = 100;
 const DEFAULT_COMPOSE_CONTEXT_LIMIT = 12;
 const DEFAULT_COMPOSE_MAX_CONTEXT_LIMIT = 24;
+const DEFAULT_INGEST_OMIT_HANDLES = ["zec_88"];
 
 let pool;
 let summarySchemaEnsured = false;
@@ -199,8 +200,8 @@ function isIngestPath(path) {
   return path === "/v1/ingest/runs" || /^\/v1\/ingest\/[^/]+\/batch$/.test(path);
 }
 
-function isOpsReconcilePath(path) {
-  return path === "/v1/ops/reconcile-counts";
+function isOpsPath(path) {
+  return path === "/v1/ops/reconcile-counts" || path === "/v1/ops/purge-handle";
 }
 
 function timingSafeMatch(expected, actual) {
@@ -375,15 +376,40 @@ function normalizeHandle(value) {
   return String(value || "").trim().replace(/^@+/, "").toLowerCase();
 }
 
-function parseHandleFilter(value) {
+function parseNormalizedHandleList(value) {
   if (!value) return [];
 
   const handles = String(value)
-    .split(/\s+/)
+    .split(/[,\s]+/)
     .map((item) => normalizeHandle(item))
     .filter((item) => item.length > 0);
 
   return [...new Set(handles)];
+}
+
+function ingestOmitHandleSet() {
+  return new Set([
+    ...DEFAULT_INGEST_OMIT_HANDLES,
+    ...parseNormalizedHandleList(process.env.XMONITOR_INGEST_OMIT_HANDLES),
+  ]);
+}
+
+function isKeywordSourceQuery(sourceQuery) {
+  const normalized = String(sourceQuery || "")
+    .trim()
+    .toLowerCase();
+  return normalized === "discovery" || normalized === "keyword" || normalized === "both" || normalized === "legacy";
+}
+
+function shouldOmitKeywordOriginPost(item, authorHandle, omitHandles) {
+  if (!omitHandles.has(authorHandle)) return false;
+  if (!isKeywordSourceQuery(item.source_query)) return false;
+  if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
+  return true;
+}
+
+function parseHandleFilter(value) {
+  return parseNormalizedHandleList(value);
 }
 
 function firstValue(value) {
@@ -967,6 +993,7 @@ async function ensureSummaryAnalyticsSchema() {
 
 async function upsertPosts(items) {
   const result = buildBatchResult(items.length);
+  const omitHandles = ingestOmitHandleSet();
   const sql = `
     INSERT INTO posts(
       status_id,
@@ -1045,11 +1072,18 @@ async function upsertPosts(items) {
   `;
 
   for (const [index, item] of items.entries()) {
+    const authorHandle = normalizeHandle(item.author_handle);
+    if (shouldOmitKeywordOriginPost(item, authorHandle, omitHandles)) {
+      result.errors.push({ index, message: `omitted keyword-origin author handle: ${authorHandle}` });
+      result.skipped += 1;
+      continue;
+    }
+
     try {
       const inserted = await runUpsert(sql, [
         item.status_id,
         item.url,
-        normalizeHandle(item.author_handle),
+        authorHandle,
         item.author_display || null,
         item.body_text || null,
         item.posted_relative || null,
@@ -1092,6 +1126,23 @@ async function upsertPosts(items) {
   }
 
   return result;
+}
+
+async function purgePostsByAuthorHandle(authorHandle) {
+  const normalizedHandle = normalizeHandle(authorHandle);
+  const db = getPool();
+  const result = await db.query(
+    `
+      DELETE FROM posts
+      WHERE lower(author_handle) = $1
+    `,
+    [normalizedHandle]
+  );
+
+  return {
+    author_handle: normalizedHandle,
+    deleted: result.rowCount ?? 0,
+  };
 }
 
 async function upsertMetricSnapshots(items) {
@@ -2221,6 +2272,34 @@ async function handleOpsReconcileCounts(event) {
   }
 }
 
+async function handleOpsPurgeHandle(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const payload = asObject(parsedBody.body);
+  const handle = asString(payload?.author_handle ?? payload?.handle);
+  if (!handle) {
+    return jsonError("author_handle is required", 400);
+  }
+
+  try {
+    const result = await purgePostsByAuthorHandle(handle);
+    return jsonOk({
+      author_handle: result.author_handle,
+      deleted: result.deleted,
+      purged_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to purge posts", 503);
+  }
+}
+
 async function handleIngestBatch(event, parser, upsertFn, dbErrorMessage) {
   if (!hasDatabaseConfig()) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
@@ -2310,7 +2389,7 @@ export async function handler(event) {
     }
   }
 
-  if (method === "GET" && isOpsReconcilePath(path)) {
+  if ((method === "GET" || method === "POST") && isOpsPath(path)) {
     const auth = validateIngestAuthorization(event);
     if (!auth.ok) {
       return jsonError(auth.error, auth.status);
@@ -2343,6 +2422,10 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/ops/reconcile-counts") {
     return handleOpsReconcileCounts(event);
+  }
+
+  if (method === "POST" && path === "/v1/ops/purge-handle") {
+    return handleOpsPurgeHandle(event);
   }
 
   if (method === "POST" && path === "/v1/ingest/posts/batch") {

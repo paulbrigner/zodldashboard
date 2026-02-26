@@ -38,6 +38,7 @@ frontend:
         - env | grep -e XMONITOR_DEFAULT_FEED_LIMIT >> .env.production || true
         - env | grep -e XMONITOR_MAX_FEED_LIMIT >> .env.production || true
         - env | grep -e XMONITOR_INGEST_SHARED_SECRET >> .env.production || true
+        - env | grep -e XMONITOR_INGEST_OMIT_HANDLES >> .env.production || true
         - env | grep -e XMONITOR_BACKEND_API_BASE_URL >> .env.production || true
         - env | grep -e XMONITOR_READ_API_BASE_URL >> .env.production || true
         - env | grep -e XMONITOR_SEMANTIC_ENABLED >> .env.production || true
