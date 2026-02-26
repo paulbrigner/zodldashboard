@@ -50,6 +50,11 @@ frontend:
         - env | grep -e XMONITOR_EMBEDDING_TIMEOUT_MS >> .env.production || true
         - env | grep -e XMONITOR_EMBEDDING_API_KEY >> .env.production || true
         - env | grep -e VENICE_API_KEY >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_ENABLED >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_DEFAULT_RETRIEVAL_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_RETRIEVAL_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_MAX_CONTEXT_LIMIT >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next

@@ -4,6 +4,8 @@ import { timingSafeEqual } from "node:crypto";
 const WATCH_TIERS = new Set(["teammate", "influencer", "ecosystem"]);
 const SNAPSHOT_TYPES = new Set(["initial_capture", "latest_observed", "refresh_24h"]);
 const RUN_MODES = new Set(["priority", "discovery", "both", "refresh24h", "manual"]);
+const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
+const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread"]);
 
 const DEFAULT_SERVICE_NAME = "xmonitor-api";
 const DEFAULT_API_VERSION = "v1";
@@ -17,6 +19,11 @@ const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
+const DEFAULT_COMPOSE_ENABLED = true;
+const DEFAULT_COMPOSE_RETRIEVAL_LIMIT = 40;
+const DEFAULT_COMPOSE_MAX_RETRIEVAL_LIMIT = 100;
+const DEFAULT_COMPOSE_CONTEXT_LIMIT = 12;
+const DEFAULT_COMPOSE_MAX_CONTEXT_LIMIT = 24;
 
 let pool;
 let summarySchemaEnsured = false;
@@ -68,6 +75,31 @@ function semanticMinScore() {
 
 function semanticRetrievalFactor() {
   return parsePositiveInt(process.env.XMONITOR_SEMANTIC_RETRIEVAL_FACTOR, DEFAULT_SEMANTIC_RETRIEVAL_FACTOR);
+}
+
+function composeEnabled() {
+  const value = asString(process.env.XMONITOR_COMPOSE_ENABLED);
+  if (!value) return DEFAULT_COMPOSE_ENABLED;
+  const normalized = value.toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") return true;
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return DEFAULT_COMPOSE_ENABLED;
+}
+
+function composeDefaultRetrievalLimit() {
+  return parsePositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_RETRIEVAL_LIMIT, DEFAULT_COMPOSE_RETRIEVAL_LIMIT);
+}
+
+function composeMaxRetrievalLimit() {
+  return parsePositiveInt(process.env.XMONITOR_COMPOSE_MAX_RETRIEVAL_LIMIT, DEFAULT_COMPOSE_MAX_RETRIEVAL_LIMIT);
+}
+
+function composeDefaultContextLimit() {
+  return parsePositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT, DEFAULT_COMPOSE_CONTEXT_LIMIT);
+}
+
+function composeMaxContextLimit() {
+  return parsePositiveInt(process.env.XMONITOR_COMPOSE_MAX_CONTEXT_LIMIT, DEFAULT_COMPOSE_MAX_CONTEXT_LIMIT);
 }
 
 function embeddingBaseUrl() {
@@ -781,6 +813,74 @@ function parseSemanticQueryBody(value) {
       significant,
       limit: finalLimit,
       min_score: Number.isFinite(minScoreRaw) ? minScoreRaw : undefined,
+    },
+  };
+}
+
+function parseComposeQueryBody(value) {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+
+  const taskText = asString(value.task_text);
+  if (!taskText) {
+    return { ok: false, error: "task_text is required" };
+  }
+
+  const queryVector = asNumberArray(value.query_vector);
+  if (queryVector && queryVector.length !== embeddingDims()) {
+    return { ok: false, error: `query_vector length must equal embedding dims (${embeddingDims()})` };
+  }
+
+  const since = asIsoTimestamp(value.since);
+  const until = asIsoTimestamp(value.until);
+  const tierRaw = asString(value.tier)?.toLowerCase();
+  const tier = tierRaw && WATCH_TIERS.has(tierRaw) ? tierRaw : undefined;
+  const significant = asBoolean(value.significant);
+
+  const retrievalLimitValue = asInteger(value.retrieval_limit);
+  const maxRetrievalLimit = composeMaxRetrievalLimit();
+  const retrievalLimit = retrievalLimitValue
+    ? Math.min(Math.max(retrievalLimitValue, 1), maxRetrievalLimit)
+    : composeDefaultRetrievalLimit();
+
+  const contextLimitValue = asInteger(value.context_limit);
+  const maxContextLimit = composeMaxContextLimit();
+  const rawContextLimit = contextLimitValue
+    ? Math.min(Math.max(contextLimitValue, 1), maxContextLimit)
+    : composeDefaultContextLimit();
+  const contextLimit = Math.min(rawContextLimit, retrievalLimit);
+
+  const answerStyleRaw = asString(value.answer_style)?.toLowerCase();
+  if (answerStyleRaw && !COMPOSE_ANSWER_STYLES.has(answerStyleRaw)) {
+    return { ok: false, error: "answer_style must be one of brief, balanced, detailed" };
+  }
+  const answerStyle = answerStyleRaw || "balanced";
+
+  const draftFormatRaw = asString(value.draft_format)?.toLowerCase();
+  if (draftFormatRaw && !COMPOSE_DRAFT_FORMATS.has(draftFormatRaw)) {
+    return { ok: false, error: "draft_format must be one of none, x_post, thread" };
+  }
+  const draftFormat = draftFormatRaw || "none";
+
+  const normalizedHandle = asString(value.handle)
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
+
+  return {
+    ok: true,
+    data: {
+      task_text: taskText,
+      query_vector: queryVector,
+      since,
+      until,
+      tier,
+      handle: normalizedHandle || undefined,
+      significant,
+      retrieval_limit: retrievalLimit,
+      context_limit: contextLimit,
+      answer_style: answerStyle,
+      draft_format: draftFormat,
     },
   };
 }
@@ -1502,6 +1602,235 @@ async function querySemanticFeed(query, embeddingVector) {
   };
 }
 
+function addStandardPostFilters(query, params, where, postAlias) {
+  if (query.since) {
+    params.push(query.since);
+    where.push(`${postAlias}.discovered_at >= $${params.length}`);
+  }
+
+  if (query.until) {
+    params.push(query.until);
+    where.push(`${postAlias}.discovered_at <= $${params.length}`);
+  }
+
+  if (query.tier) {
+    params.push(query.tier);
+    where.push(`${postAlias}.watch_tier = $${params.length}`);
+  }
+
+  if (query.handle) {
+    const handles = parseHandleFilter(query.handle);
+    if (handles.length === 1) {
+      params.push(handles[0]);
+      where.push(`${postAlias}.author_handle = $${params.length}`);
+    } else if (handles.length > 1) {
+      params.push(handles);
+      where.push(`${postAlias}.author_handle = ANY($${params.length}::text[])`);
+    }
+  }
+
+  if (query.significant !== undefined) {
+    params.push(query.significant);
+    where.push(`${postAlias}.is_significant = $${params.length}`);
+  }
+}
+
+function buildLexicalPatterns(taskText) {
+  const full = asString(taskText);
+  if (!full) return [];
+
+  const tokens = String(full)
+    .toLowerCase()
+    .split(/[^a-z0-9_@#]+/g)
+    .map((item) => item.trim().replace(/^[@#]+/, ""))
+    .filter((item) => item.length >= 3);
+
+  const unique = [];
+  const seen = new Set();
+  const seed = [full.toLowerCase(), ...tokens];
+  for (const item of seed) {
+    const key = item.trim();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(`%${key}%`);
+    if (unique.length >= 9) break;
+  }
+
+  return unique;
+}
+
+function buildCitationExcerpt(bodyText) {
+  const raw = asString(bodyText) || "(no text captured)";
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  if (normalized.length <= 220) return normalized;
+  return `${normalized.slice(0, 217)}...`;
+}
+
+async function queryComposeEvidence(query, embeddingVector) {
+  const startedAt = Date.now();
+  const db = getPool();
+  const dims = embeddingDims();
+  if (!Array.isArray(embeddingVector) || embeddingVector.length !== dims) {
+    throw new Error(`embedding dimension mismatch: expected ${dims}, got ${embeddingVector?.length || 0}`);
+  }
+
+  const retrievalLimit = Math.min(Math.max(query.retrieval_limit || composeDefaultRetrievalLimit(), 1), composeMaxRetrievalLimit());
+  const contextLimit = Math.min(
+    Math.max(query.context_limit || composeDefaultContextLimit(), 1),
+    composeMaxContextLimit(),
+    retrievalLimit
+  );
+  const semanticCandidateLimit = Math.max(retrievalLimit, contextLimit);
+
+  const semanticParams = [vectorLiteral(embeddingVector), dims, embeddingModel()];
+  const semanticWhere = [];
+  addStandardPostFilters(query, semanticParams, semanticWhere, "p");
+
+  semanticParams.push(semanticCandidateLimit);
+  const semanticLimitParam = semanticParams.length;
+
+  semanticParams.push(semanticMinScore());
+  const semanticMinScoreParam = semanticParams.length;
+
+  const semanticFilters = [...semanticWhere, `c.score >= $${semanticMinScoreParam}`];
+  const semanticWhereClause = semanticFilters.length > 0 ? `WHERE ${semanticFilters.join(" AND ")}` : "";
+  const dimLiteral = Math.max(1, dims);
+  const semanticSql = `
+    WITH semantic_candidates AS (
+      SELECT
+        e.status_id,
+        1 - ((e.embedding::vector(${dimLiteral})) <=> ($1::vector(${dimLiteral}))) AS score
+      FROM embeddings e
+      WHERE e.embedding IS NOT NULL
+        AND e.dims = $2
+        AND e.model = $3
+      ORDER BY (e.embedding::vector(${dimLiteral})) <=> ($1::vector(${dimLiteral})) ASC
+      LIMIT $${semanticLimitParam}
+    )
+    SELECT
+      p.status_id,
+      p.discovered_at,
+      p.author_handle,
+      p.watch_tier,
+      p.body_text,
+      p.url,
+      p.is_significant,
+      p.significance_reason,
+      p.likes,
+      p.reposts,
+      p.replies,
+      p.views,
+      r.reported_at,
+      c.score
+    FROM semantic_candidates c
+    JOIN posts p ON p.status_id = c.status_id
+    LEFT JOIN reports r ON r.status_id = p.status_id
+    ${semanticWhereClause}
+    ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
+  `;
+
+  const semanticResult = await db.query(semanticSql, semanticParams);
+  const semanticItems = semanticResult.rows.map(rowToFeedItem);
+
+  const deduped = [];
+  const seenStatusIds = new Set();
+  for (const item of semanticItems) {
+    if (seenStatusIds.has(item.status_id)) continue;
+    seenStatusIds.add(item.status_id);
+    deduped.push(item);
+    if (deduped.length >= retrievalLimit) break;
+  }
+
+  if (deduped.length < contextLimit) {
+    const patterns = buildLexicalPatterns(query.task_text);
+    if (patterns.length > 0) {
+      const lexicalWhere = [];
+      const lexicalParams = [];
+      addStandardPostFilters(query, lexicalParams, lexicalWhere, "p");
+
+      lexicalParams.push(patterns);
+      lexicalWhere.push(`(p.body_text ILIKE ANY($${lexicalParams.length}::text[]) OR p.author_handle::text ILIKE ANY($${lexicalParams.length}::text[]))`);
+
+      if (seenStatusIds.size > 0) {
+        lexicalParams.push(Array.from(seenStatusIds));
+        lexicalWhere.push(`p.status_id <> ALL($${lexicalParams.length}::text[])`);
+      }
+
+      const lexicalLimit = Math.max((contextLimit - deduped.length) * 2, 8);
+      lexicalParams.push(lexicalLimit);
+      const lexicalLimitParam = lexicalParams.length;
+      const lexicalWhereClause = lexicalWhere.length > 0 ? `WHERE ${lexicalWhere.join(" AND ")}` : "";
+
+      const lexicalSql = `
+        SELECT
+          p.status_id,
+          p.discovered_at,
+          p.author_handle,
+          p.watch_tier,
+          p.body_text,
+          p.url,
+          p.is_significant,
+          p.significance_reason,
+          p.likes,
+          p.reposts,
+          p.replies,
+          p.views,
+          r.reported_at,
+          NULL::double precision AS score
+        FROM posts p
+        LEFT JOIN reports r ON r.status_id = p.status_id
+        ${lexicalWhereClause}
+        ORDER BY p.discovered_at DESC, p.status_id DESC
+        LIMIT $${lexicalLimitParam}
+      `;
+
+      const lexicalResult = await db.query(lexicalSql, lexicalParams);
+      const lexicalItems = lexicalResult.rows.map(rowToFeedItem);
+
+      for (const item of lexicalItems) {
+        if (seenStatusIds.has(item.status_id)) continue;
+        seenStatusIds.add(item.status_id);
+        deduped.push(item);
+        if (deduped.length >= retrievalLimit) break;
+      }
+    }
+  }
+
+  const evidenceItems = deduped.slice(0, contextLimit);
+  const citations = evidenceItems.map((item) => ({
+    status_id: item.status_id,
+    url: item.url,
+    author_handle: item.author_handle,
+    excerpt: buildCitationExcerpt(item.body_text),
+    score: item.score !== undefined ? item.score : null,
+  }));
+
+  const keyPoints = evidenceItems.slice(0, 5).map((item) => {
+    const excerpt = buildCitationExcerpt(item.body_text);
+    return `@${item.author_handle}: ${excerpt}`;
+  });
+
+  const answerText = evidenceItems.length
+    ? `Retrieved ${evidenceItems.length} relevant posts for this task. Evidence is attached with citations; AI synthesis is added in WS3.`
+    : "No sufficiently relevant posts found for this task in the selected scope.";
+
+  const coverage = contextLimit > 0 ? Number((evidenceItems.length / contextLimit).toFixed(3)) : null;
+
+  return {
+    answer_text: answerText,
+    draft_text: null,
+    key_points: keyPoints,
+    citations,
+    retrieval_stats: {
+      retrieved_count: deduped.length,
+      used_count: evidenceItems.length,
+      model: embeddingModel(),
+      latency_ms: Date.now() - startedAt,
+      coverage_score: coverage,
+    },
+  };
+}
+
 async function getFeed(query) {
   const db = getPool();
   const where = [];
@@ -1810,6 +2139,34 @@ async function handleSemanticQuery(event) {
   }
 }
 
+async function handleComposeQuery(event) {
+  if (!composeEnabled()) {
+    return jsonError("compose query is disabled", 503);
+  }
+
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsedQuery = parseComposeQueryBody(parsedBody.body);
+  if (!parsedQuery.ok) {
+    return jsonError(parsedQuery.error, 400);
+  }
+
+  try {
+    const queryEmbedding = parsedQuery.data.query_vector || await createQueryEmbedding(parsedQuery.data.task_text);
+    const payload = await queryComposeEvidence(parsedQuery.data, queryEmbedding);
+    return jsonOk(payload);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to execute compose query", 503);
+  }
+}
+
 async function handleWindowSummariesLatest() {
   if (!hasDatabaseConfig()) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
@@ -1970,6 +2327,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/query/semantic") {
     return handleSemanticQuery(event);
+  }
+
+  if (method === "POST" && path === "/v1/query/compose") {
+    return handleComposeQuery(event);
   }
 
   if (method === "GET" && path === "/v1/window-summaries/latest") {
