@@ -170,6 +170,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/BatchUpsertResult'
 
+  /ingest/embeddings/batch:
+    post:
+      summary: Upsert post embeddings
+      operationId: ingestEmbeddingsBatch
+      security:
+        - IngestSharedSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/EmbeddingUpsert'
+      responses:
+        '200':
+          description: Upsert summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BatchUpsertResult'
+
   /feed:
     get:
       summary: Query timeline feed
@@ -206,6 +232,24 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FeedResponse'
+
+  /query/semantic:
+    post:
+      summary: Semantic retrieval over post embeddings
+      operationId: querySemantic
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SemanticQueryRequest'
+      responses:
+        '200':
+          description: Semantic query results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SemanticQueryResponse'
 
   /posts/{statusId}:
     get:
@@ -407,6 +451,21 @@ components:
         created_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time, nullable: true }
 
+    EmbeddingUpsert:
+      type: object
+      required: [status_id, backend, model, dims, vector, text_hash, created_at, updated_at]
+      properties:
+        status_id: { type: string }
+        backend: { type: string }
+        model: { type: string }
+        dims: { type: integer, minimum: 1 }
+        vector:
+          type: array
+          items: { type: number }
+        text_hash: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
     FeedItem:
       type: object
       properties:
@@ -423,6 +482,7 @@ components:
         replies: { type: integer }
         views: { type: integer }
         reported_at: { type: string, format: date-time, nullable: true }
+        score: { type: number, nullable: true }
 
     FeedResponse:
       type: object
@@ -446,3 +506,25 @@ components:
             $ref: '#/components/schemas/MetricsSnapshotUpsert'
         report:
           $ref: '#/components/schemas/ReportUpsert'
+
+    SemanticQueryRequest:
+      type: object
+      required: [query_text]
+      properties:
+        query_text: { type: string }
+        since: { type: string, format: date-time }
+        until: { type: string, format: date-time }
+        tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        handle: { type: string }
+        significant: { type: boolean }
+        limit: { type: integer, minimum: 1, maximum: 200 }
+
+    SemanticQueryResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FeedItem'
+        model: { type: string }
+        retrieved_count: { type: integer }

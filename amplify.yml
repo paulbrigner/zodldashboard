@@ -40,6 +40,16 @@ frontend:
         - env | grep -e XMONITOR_INGEST_SHARED_SECRET >> .env.production || true
         - env | grep -e XMONITOR_BACKEND_API_BASE_URL >> .env.production || true
         - env | grep -e XMONITOR_READ_API_BASE_URL >> .env.production || true
+        - env | grep -e XMONITOR_SEMANTIC_ENABLED >> .env.production || true
+        - env | grep -e XMONITOR_SEMANTIC_DEFAULT_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_SEMANTIC_MAX_LIMIT >> .env.production || true
+        - env | grep -e XMONITOR_SEMANTIC_MIN_SCORE >> .env.production || true
+        - env | grep -e XMONITOR_EMBEDDING_BASE_URL >> .env.production || true
+        - env | grep -e XMONITOR_EMBEDDING_MODEL >> .env.production || true
+        - env | grep -e XMONITOR_EMBEDDING_DIMS >> .env.production || true
+        - env | grep -e XMONITOR_EMBEDDING_TIMEOUT_MS >> .env.production || true
+        - env | grep -e XMONITOR_EMBEDDING_API_KEY >> .env.production || true
+        - env | grep -e VENICE_API_KEY >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next

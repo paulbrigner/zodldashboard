@@ -4,6 +4,7 @@ import { getDbPool } from "@/lib/xmonitor/db";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
 import type {
   BatchUpsertResult,
+  EmbeddingUpsert,
   FeedItem,
   FeedQuery,
   FeedResponse,
@@ -88,6 +89,10 @@ function errorMessage(error: unknown): string {
 
 function asJson(value: unknown): string {
   return JSON.stringify(value ?? null);
+}
+
+function vectorLiteral(values: number[]): string {
+  return `[${values.map((value) => Number(value)).join(",")}]`;
 }
 
 async function runUpsert(
@@ -502,6 +507,63 @@ export async function upsertNarrativeShifts(items: NarrativeShiftUpsert[]): Prom
         asJson(item.embedding_vector ?? null),
         item.created_at || item.generated_at,
         item.updated_at || item.generated_at,
+      ]);
+
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
+  }
+
+  return result;
+}
+
+export async function upsertEmbeddings(items: EmbeddingUpsert[]): Promise<BatchUpsertResult> {
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO embeddings(
+      status_id,
+      backend,
+      model,
+      dims,
+      vector_json,
+      embedding,
+      text_hash,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, $5::jsonb, ($6)::vector, $7, $8, $9
+    )
+    ON CONFLICT (status_id) DO UPDATE SET
+      backend = EXCLUDED.backend,
+      model = EXCLUDED.model,
+      dims = EXCLUDED.dims,
+      vector_json = EXCLUDED.vector_json,
+      embedding = EXCLUDED.embedding,
+      text_hash = EXCLUDED.text_hash,
+      created_at = EXCLUDED.created_at,
+      updated_at = EXCLUDED.updated_at
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.status_id,
+        item.backend,
+        item.model,
+        item.dims,
+        asJson(item.vector),
+        vectorLiteral(item.vector),
+        item.text_hash,
+        item.created_at,
+        item.updated_at,
       ]);
 
       if (inserted.inserted) {

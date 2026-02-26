@@ -1,17 +1,32 @@
 # OpenClaw NL Query Parity on AWS — Implementation Plan
 
 _Drafted: 2026-02-23 (ET)_
-_Updated: 2026-02-25 (ET)_
+_Updated: 2026-02-26 (ET)_
+
+Detailed Stage 1 (semantic retrieval) execution checklist:
+- `docs/NL_STAGE1_SEMANTIC_EXECUTION_PLAN.md`
 
 ## 1) Goal
 
 Restore the original OpenClaw natural-language (NL) query behavior on the AWS-backed system, so users can type plain-language prompts and retrieve relevant X posts via embedding similarity (not just keyword matching).
+
+Extended goal for dashboard workflows:
+- support grounded "retrieve + synthesize" output for operator actions (for example, drafting an X response post based on retrieved posts within a selected time window).
 
 ## 1.1) Decisions captured (2026-02-25)
 - Stored post embeddings are already generated using `Venice.AI text-embedding-bge-m3`.
 - Query-time embeddings for semantic search must use the same model family (`text-embedding-bge-m3`) to preserve vector-space compatibility.
 - Venice API credentials will be supplied when implementation begins; all embedding calls remain server-side.
 - Direct ingest-to-API cutover (removing SQLite+sync as a correctness dependency) is the preferred prerequisite before semantic rollout.
+
+## 1.2) Additional decisions captured (2026-02-26)
+- Semantic retrieval and AI composition are separate stages:
+  - stage 1: retrieve and rank relevant posts,
+  - stage 2: generate grounded narrative/draft output from retrieved evidence.
+- Composition output must be source-grounded:
+  - response payload includes cited source posts (`status_id`, `url`, `author_handle`),
+  - UI displays traceable evidence for operator review before publishing.
+- LLM generation can use Venice text models with server-side credentials and explicit token/cost controls.
 
 ---
 
@@ -30,6 +45,7 @@ Restore the original OpenClaw natural-language (NL) query behavior on the AWS-ba
 - No `pgvector` extension or ANN index in current DB schema.
 - No NL query UI flow in dashboard.
 - No server-side embedding generation path for user NL prompts.
+- No grounded composition endpoint for NL "draft a response/post" tasks.
 
 ---
 
@@ -42,6 +58,17 @@ When a user enters a natural-language query (example: "show high-signal posts ab
 3. Apply existing filters (tier, handle, date range, significant, limit) as optional constraints.
 4. Return ranked results with a relevance score (or distance).
 5. Allow opening post detail like the existing feed flow.
+
+When a user enters a natural-language task (example: "review top posts in last 24h on protocol adjustments and draft a response centered on digital cash"), the system should:
+
+1. Run the semantic retrieval flow above.
+2. Build a grounded evidence set from top-k results.
+3. Generate a draft output constrained to that evidence set.
+4. Return:
+   - `answer_text` / `draft_post_text`,
+   - `key_points`,
+   - `citations` (post IDs/links used),
+   - optional "confidence/coverage" metadata.
 
 ---
 
@@ -67,6 +94,38 @@ Recommended schema additions:
 - Add `POST /v1/query/semantic` for NL search.
 - Add `POST /v1/ingest/embeddings/batch` for ongoing embedding upserts.
 - Keep current `GET /v1/feed` unchanged for lexical/filter-only use.
+
+## 4.4 Grounded composition model (RAG over X posts)
+
+Recommended execution flow:
+1. Parse user task into retrieval constraints:
+   - time window,
+   - optional tier/handle/significant filters,
+   - topic focus.
+2. Retrieve semantic candidates (`top_k_retrieve`, for example 50).
+3. Re-rank/select evidence set (`top_k_context`, for example 12-20).
+4. Build a bounded context pack (post snippets + metadata + links).
+5. Invoke LLM to produce structured output:
+   - neutral summary of arguments and counterarguments,
+   - requested draft (for example X post thread),
+   - citations list tied to source posts.
+6. Enforce response policy:
+   - no unsupported claims outside evidence set,
+   - optional refusal/fallback when evidence is weak.
+
+Recommended API additions:
+- `POST /v1/query/compose` (or `/v1/query/assistant`)
+  - request:
+    - `task_text` (required),
+    - retrieval filters (`since`, `until`, `tier`, `handle`, `significant`),
+    - `retrieval_limit`,
+    - `context_limit`,
+    - optional `tone`/`audience` controls.
+  - response:
+    - `answer_text`,
+    - `draft_text` (optional),
+    - `citations[]`,
+    - `retrieval_stats`.
 
 ---
 
@@ -147,6 +206,22 @@ Deliverables:
 - Lambda supports semantic query and embedding ingest.
 - OpenAPI and docs updated.
 
+## Phase 2.5: Composition endpoint and grounding contract
+
+1. Extend OpenAPI with composition route:
+   - `POST /query/compose`
+   - explicit request/response schema for grounded draft generation.
+2. Lambda updates:
+   - add prompt-template layer for grounded synthesis and draft generation,
+   - enforce citation attachment,
+   - return trace metadata (`retrieved_count`, `used_count`, `model`).
+3. Add failure/fallback behavior:
+   - if retrieval returns low coverage, return "insufficient evidence" style response.
+
+Deliverables:
+- Grounded generation endpoint available for dashboard use.
+- Response includes traceable citations.
+
 ## Phase 3: Embedding generation and ingest pipeline
 
 1. Decide generation owner:
@@ -167,13 +242,19 @@ Deliverables:
 2. Add search mode control:
    - `Keyword` (existing feed `q`),
    - `Semantic` (new API),
-   - optional `Hybrid` (future).
+   - optional `Hybrid` (future),
+   - `Compose` (grounded AI summary/draft mode).
 3. Show relevance score when semantic mode is used.
 4. Keep current filters reusable for semantic calls.
 5. Keep pagination behavior explicit (cursor or page token strategy).
+6. Add composition workspace UI:
+   - free-text task input,
+   - output sections (`summary`, `draft`, `citations`),
+   - "copy draft" action and source links.
 
 Deliverables:
 - User can run NL query from UI and view ranked results.
+- User can request a grounded draft response from retrieved posts.
 
 ## Phase 5: Validation and rollout
 
@@ -227,9 +308,25 @@ Add/confirm:
   - `XMONITOR_SEMANTIC_MAX_LIMIT`
   - `XMONITOR_SEMANTIC_MIN_SCORE`
 
+For grounded generation:
+- `XMONITOR_LLM_PROVIDER` (set to `venice`)
+- `XMONITOR_LLM_BASE_URL` (for Venice OpenAI-compatible chat endpoint)
+- `XMONITOR_LLM_MODEL` (text generation model used for compose step)
+- `XMONITOR_LLM_API_KEY` (server-side secret; may be same provider key if policy permits)
+- `XMONITOR_COMPOSE_MAX_CONTEXT_POSTS`
+- `XMONITOR_COMPOSE_MAX_INPUT_TOKENS`
+- `XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS`
+- `XMONITOR_COMPOSE_TIMEOUT_MS`
+- optional spend guardrails:
+  - `XMONITOR_COMPOSE_DAILY_BUDGET_USD`
+  - `XMONITOR_COMPOSE_HARD_DISABLE`
+
 Security notes:
 - Do not expose provider keys to browser clients.
 - Keep NL query embedding generation server-side.
+- Keep composition generation server-side.
+- Sanitize and bound prompt/context payload sizes.
+- Log model usage and token estimates for cost control.
 
 ---
 
@@ -249,6 +346,14 @@ Security notes:
    - ANN indexing,
    - timeout budget,
    - graceful fallback to lexical mode.
+5. Hallucinated or weakly-supported drafts:
+   - require citations in response,
+   - constrain generation to retrieved context,
+   - return "insufficient evidence" when retrieval coverage is low.
+6. Cost spikes from generation:
+   - strict context limits,
+   - model tiering (small default model, optional larger model),
+   - per-day budget caps and kill switch.
 
 ---
 
@@ -259,7 +364,9 @@ NL parity is complete when all are true:
 - `pgvector`-based semantic retrieval is live in AWS.
 - Embedding ingest is part of the production pipeline.
 - Dashboard supports NL query and returns ranked results.
+- Dashboard supports grounded compose mode (summary + draft + citations).
 - Original OpenClaw-style NL prompts produce acceptable relevance.
+- Compose outputs for analyst prompts are evidence-grounded and operator-acceptable.
 - Runbook and API docs include semantic operations and rollback steps.
 
 ---
@@ -271,6 +378,7 @@ NL parity is complete when all are true:
 3. Phase 0.5 (value gate using real prompt evaluation).
 4. Phase 1 (DB + index + backfill)
 5. Phase 2 (API + OpenAPI + Lambda route)
-6. Phase 3 (embedding ingest freshness path)
-7. Phase 4 (UI)
-8. Phase 5 (relevance/load validation and rollout)
+6. Phase 2.5 (grounded compose endpoint)
+7. Phase 3 (embedding ingest freshness path)
+8. Phase 4 (UI)
+9. Phase 5 (relevance/load validation and rollout)

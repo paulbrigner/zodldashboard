@@ -149,6 +149,17 @@ export type NarrativeShiftUpsert = {
   updated_at?: string | null;
 };
 
+export type EmbeddingUpsert = {
+  status_id: string;
+  backend: string;
+  model: string;
+  dims: number;
+  vector: number[];
+  text_hash: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export type FeedItem = {
   status_id: string;
   discovered_at: string;
@@ -163,6 +174,7 @@ export type FeedItem = {
   replies: number;
   views: number;
   reported_at: string | null;
+  score?: number | null;
 };
 
 export type FeedResponse = {
@@ -185,4 +197,20 @@ export type FeedQuery = {
   q?: string;
   limit?: number;
   cursor?: string;
+};
+
+export type SemanticQueryRequest = {
+  query_text: string;
+  since?: string;
+  until?: string;
+  tier?: WatchTier;
+  handle?: string;
+  significant?: boolean;
+  limit?: number;
+};
+
+export type SemanticQueryResponse = {
+  items: FeedItem[];
+  model: string;
+  retrieved_count: number;
 };

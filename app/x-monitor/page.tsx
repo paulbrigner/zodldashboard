@@ -3,7 +3,8 @@ import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
-import type { FeedResponse, WindowSummariesLatestResponse, WindowSummary } from "@/lib/xmonitor/types";
+import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
+import type { FeedResponse, SemanticQueryResponse, WindowSummariesLatestResponse, WindowSummary } from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { DateRangeFields } from "./date-range-fields";
@@ -18,6 +19,7 @@ type HomePageProps = {
 };
 
 const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
+type SearchMode = "keyword" | "semantic";
 
 const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
   rolling_2h: "2-hour rolling summary",
@@ -34,12 +36,17 @@ function qsValue(value: string | undefined): string {
   return value ?? "";
 }
 
+function parseSearchMode(value: string | string[] | undefined): SearchMode {
+  const text = asString(value);
+  return text === "semantic" ? "semantic" : "keyword";
+}
+
 function buildQuery(
   params: Record<string, string | string[] | undefined>,
   nextCursor: string
 ): string {
   const query = new URLSearchParams();
-  const keys: Array<keyof typeof params> = ["since", "until", "tier", "handle", "significant", "q", "limit"];
+  const keys: Array<keyof typeof params> = ["search_mode", "since", "until", "tier", "handle", "significant", "q", "limit"];
 
   keys.forEach((key) => {
     const value = asString(params[key]);
@@ -68,13 +75,17 @@ function buildFilterSearchParams(query: ReturnType<typeof parseFeedQuery>, limit
   return params;
 }
 
-function buildRefreshUrl(query: ReturnType<typeof parseFeedQuery>): string {
+function buildRefreshUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: SearchMode): string {
   const params = buildFilterSearchParams(query);
+  if (searchMode === "semantic") params.set("search_mode", "semantic");
   const serialized = params.toString();
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
-function buildPollUrl(query: ReturnType<typeof parseFeedQuery>): string {
+function buildPollUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: SearchMode): string {
+  if (searchMode === "semantic") {
+    return "";
+  }
   const params = buildFilterSearchParams(query, 1);
   return `/api/v1/feed?${params.toString()}`;
 }
@@ -132,6 +143,47 @@ async function fetchFeedViaApi(baseUrl: string, query: ReturnType<typeof parseFe
   };
 }
 
+async function fetchSemanticViaApi(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): Promise<FeedResponse> {
+  if (!query.q) {
+    return { items: [], next_cursor: null };
+  }
+
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const vector = await createQueryEmbedding(query.q);
+  const response = await fetch(`${normalizedBase}/query/semantic`, {
+    method: "POST",
+    cache: "no-store",
+    headers: {
+      accept: "application/json",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      query_text: query.q,
+      query_vector: vector,
+      since: query.since,
+      until: query.until,
+      tier: query.tier,
+      handle: query.handle,
+      significant: query.significant,
+      limit: query.limit,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  const payload = (await response.json()) as SemanticQueryResponse;
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("Invalid semantic query response payload");
+  }
+
+  return {
+    items: payload.items,
+    next_cursor: null,
+  };
+}
+
 async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummary[]> {
   const response = await fetch(buildWindowSummariesApiUrl(baseUrl), {
     cache: "no-store",
@@ -158,9 +210,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   const params = (await searchParams) || {};
   const query = parseFeedQuery(params);
+  const searchMode = parseSearchMode(params.search_mode);
   const apiBaseUrl = readApiBaseUrl();
-  const refreshUrl = buildRefreshUrl(query);
-  const pollUrl = buildPollUrl(query);
+  const refreshUrl = buildRefreshUrl(query, searchMode);
+  const pollUrl = buildPollUrl(query, searchMode);
 
   let feed: FeedResponse = { items: [], next_cursor: null };
   let feedError: string | null = null;
@@ -169,7 +222,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   if (apiBaseUrl) {
     try {
-      feed = await fetchFeedViaApi(apiBaseUrl, query);
+      if (searchMode === "semantic") {
+        if (!semanticEnabled()) {
+          feedError = "Semantic mode is disabled.";
+        } else if (!query.q) {
+          feed = { items: [], next_cursor: null };
+        } else {
+          feed = await fetchSemanticViaApi(apiBaseUrl, query);
+        }
+      } else {
+        feed = await fetchFeedViaApi(apiBaseUrl, query);
+      }
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
     }
@@ -181,7 +244,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
   } else if (hasDatabaseConfig()) {
     try {
-      feed = await getFeed(query);
+      if (searchMode === "semantic") {
+        feedError = "Semantic mode requires XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL.";
+      } else {
+        feed = await getFeed(query);
+      }
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
     }
@@ -206,7 +273,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       query.since ||
       query.until ||
       query.q ||
-      (query.limit && query.limit !== 50)
+      (query.limit && query.limit !== 50) ||
+      searchMode === "semantic"
   );
 
   return (
@@ -292,6 +360,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
           <form className="filter-grid" method="GET">
             <label>
+              <span>Search mode</span>
+              <select name="search_mode" defaultValue={searchMode}>
+                <option value="keyword">Keyword</option>
+                <option value="semantic">Semantic</option>
+              </select>
+            </label>
+
+            <label>
               <span>Tier</span>
               <select name="tier" defaultValue={query.tier || ""}>
                 <option value="">All tiers</option>
@@ -323,7 +399,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <DateRangeFields initialSince={query.since} initialUntil={query.until} />
 
             <label>
-              <span>Text search</span>
+              <span>{searchMode === "semantic" ? "Semantic query" : "Text search"}</span>
               <input name="q" defaultValue={qsValue(query.q)} placeholder="keyword" type="text" />
             </label>
 
@@ -346,7 +422,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         {feedError ? <p className="error-text">{feedError}</p> : null}
         <div className="feed-meta-row">
           <p>{feed.items.length} item(s) loaded</p>
-          {!feedError ? (
+          {!feedError && searchMode !== "semantic" ? (
             <FeedUpdateIndicator
               initialLatestKey={initialLatestKey}
               pollUrl={pollUrl}
@@ -360,9 +436,14 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             <li className="feed-item" key={item.status_id}>
               <div className="feed-item-top">
                 <p className="feed-handle">@{item.author_handle}</p>
-                <p className="subtle-text">
-                  <LocalDateTime iso={item.discovered_at} />
-                </p>
+                <div className="feed-item-meta-right">
+                  {item.score !== undefined && item.score !== null ? (
+                    <p className="subtle-text">score {item.score.toFixed(3)}</p>
+                  ) : null}
+                  <p className="subtle-text">
+                    <LocalDateTime iso={item.discovered_at} />
+                  </p>
+                </div>
               </div>
 
               <p className="feed-body">{item.body_text || "(no text captured)"}</p>
@@ -381,7 +462,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         {feed.items.length === 0 && !feedError ? <p className="subtle-text">No posts matched your filters.</p> : null}
 
-        {feed.next_cursor ? (
+        {searchMode !== "semantic" && feed.next_cursor ? (
           <div className="pagination-row">
             <Link className="button" href={`/x-monitor?${buildQuery(params, feed.next_cursor)}`}>
               Load older items

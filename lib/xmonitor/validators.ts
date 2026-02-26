@@ -1,4 +1,5 @@
 import {
+  type EmbeddingUpsert,
   RUN_MODES,
   SNAPSHOT_TYPES,
   WATCH_TIERS,
@@ -8,6 +9,7 @@ import {
   type PipelineRunUpsert,
   type PostUpsert,
   type ReportUpsert,
+  type SemanticQueryRequest,
   type WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
@@ -321,6 +323,48 @@ export function parseNarrativeShiftUpsert(
   };
 }
 
+export function parseEmbeddingUpsert(value: unknown): { ok: true; data: EmbeddingUpsert } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const statusId = asString(value.status_id);
+  const backend = asString(value.backend);
+  const model = asString(value.model);
+  const dims = asInteger(value.dims);
+  const vector = asNumberArray(value.vector);
+  const textHash = asString(value.text_hash);
+  const createdAt = asIsoTimestamp(value.created_at);
+  const updatedAt = asIsoTimestamp(value.updated_at);
+
+  if (!statusId || !backend || !model || !dims || !vector || !textHash || !createdAt || !updatedAt) {
+    return {
+      ok: false,
+      error: "status_id, backend, model, dims, vector, text_hash, created_at, and updated_at are required",
+    };
+  }
+
+  if (dims <= 0) {
+    return { ok: false, error: "dims must be a positive integer" };
+  }
+
+  if (vector.length !== dims) {
+    return { ok: false, error: "vector length must match dims" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      status_id: statusId,
+      backend,
+      model,
+      dims,
+      vector,
+      text_hash: textHash,
+      created_at: createdAt,
+      updated_at: updatedAt,
+    },
+  };
+}
+
 export function parseBatchItems(value: unknown): { ok: true; items: unknown[] } | { ok: false; error: string } {
   if (!isRecord(value)) return { ok: false, error: "body must be an object" };
   if (!Array.isArray(value.items)) return { ok: false, error: "body.items must be an array" };
@@ -361,5 +405,47 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
     q: asString(firstValue(input.q)),
     limit: finalLimit,
     cursor: asString(firstValue(input.cursor)),
+  };
+}
+
+export function parseSemanticQueryRequest(
+  value: unknown
+): { ok: true; data: SemanticQueryRequest } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+
+  const queryText = asString(value.query_text);
+  if (!queryText) {
+    return { ok: false, error: "query_text is required" };
+  }
+
+  const since = asIsoTimestamp(value.since);
+  const until = asIsoTimestamp(value.until);
+  const tierRaw = asString(value.tier)?.toLowerCase();
+  const tier = WATCH_TIERS.includes(tierRaw as (typeof WATCH_TIERS)[number])
+    ? (tierRaw as (typeof WATCH_TIERS)[number])
+    : undefined;
+  const significant = asBoolean(value.significant);
+
+  const limitValue = asInteger(value.limit);
+  const maxLimit = maxFeedLimit();
+  const finalLimit = limitValue ? Math.min(Math.max(limitValue, 1), maxLimit) : defaultFeedLimit();
+
+  const normalizedHandle = asString(value.handle)
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
+
+  return {
+    ok: true,
+    data: {
+      query_text: queryText,
+      since,
+      until,
+      tier,
+      handle: normalizedHandle || undefined,
+      significant,
+      limit: finalLimit,
+    },
   };
 }

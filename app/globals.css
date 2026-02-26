@@ -598,6 +598,13 @@ p {
   flex-wrap: wrap;
 }
 
+.feed-item-meta-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.15rem;
+}
+
 .feed-handle {
   margin: 0;
   font-weight: 700;

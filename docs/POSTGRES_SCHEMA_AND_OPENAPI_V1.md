@@ -197,7 +197,7 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_mode_run_at_desc ON pipeline_runs (mode, run_at DESC);
 ```
 
-## 3.6 `embeddings` (v1 compatibility)
+## 3.6 `embeddings` (semantic-ready)
 
 ```sql
 CREATE TABLE IF NOT EXISTS embeddings (
@@ -207,9 +207,8 @@ CREATE TABLE IF NOT EXISTS embeddings (
   model TEXT NOT NULL,
   dims INTEGER NOT NULL,
 
-  -- Keep JSON payload for simple migration parity with SQLite.
-  -- Optional future: pgvector column + ANN index.
   vector_json JSONB NOT NULL,
+  embedding vector,
 
   text_hash TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL,
@@ -217,6 +216,7 @@ CREATE TABLE IF NOT EXISTS embeddings (
 );
 
 CREATE INDEX IF NOT EXISTS idx_embeddings_model ON embeddings (model);
+CREATE INDEX IF NOT EXISTS idx_embeddings_model_dims ON embeddings (model, dims);
 ```
 
 ---
@@ -494,7 +494,6 @@ components:
 
 ## 8) Future-compatible extensions (not required for v1)
 
-- Add `pgvector` and ANN indexing for semantic retrieval.
 - Add websocket/subscription stream for near-real-time UI updates.
 - Add role-based auth (admin vs viewer).
 - Add S3 archive export for long-term cold storage.

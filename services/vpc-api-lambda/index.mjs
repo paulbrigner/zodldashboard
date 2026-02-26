@@ -9,6 +9,14 @@ const DEFAULT_SERVICE_NAME = "xmonitor-api";
 const DEFAULT_API_VERSION = "v1";
 const DEFAULT_FEED_LIMIT = 50;
 const DEFAULT_MAX_FEED_LIMIT = 200;
+const DEFAULT_SEMANTIC_DEFAULT_LIMIT = 25;
+const DEFAULT_SEMANTIC_MAX_LIMIT = 100;
+const DEFAULT_SEMANTIC_MIN_SCORE = 0;
+const DEFAULT_SEMANTIC_RETRIEVAL_FACTOR = 4;
+const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
+const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
+const DEFAULT_EMBEDDING_DIMS = 1024;
+const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
 
 let pool;
 let summarySchemaEnsured = false;
@@ -16,6 +24,11 @@ let summarySchemaEnsured = false;
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseFloatOr(value, fallback) {
+  const parsed = Number.parseFloat(String(value ?? ""));
+  return Number.isFinite(parsed) ? parsed : fallback;
 }
 
 function serviceName() {
@@ -32,6 +45,50 @@ function defaultFeedLimit() {
 
 function maxFeedLimit() {
   return parsePositiveInt(process.env.XMONITOR_MAX_FEED_LIMIT, DEFAULT_MAX_FEED_LIMIT);
+}
+
+function semanticEnabled() {
+  const value = asString(process.env.XMONITOR_SEMANTIC_ENABLED);
+  if (!value) return true;
+  const normalized = value.toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function semanticDefaultLimit() {
+  return parsePositiveInt(process.env.XMONITOR_SEMANTIC_DEFAULT_LIMIT, DEFAULT_SEMANTIC_DEFAULT_LIMIT);
+}
+
+function semanticMaxLimit() {
+  return parsePositiveInt(process.env.XMONITOR_SEMANTIC_MAX_LIMIT, DEFAULT_SEMANTIC_MAX_LIMIT);
+}
+
+function semanticMinScore() {
+  return parseFloatOr(process.env.XMONITOR_SEMANTIC_MIN_SCORE, DEFAULT_SEMANTIC_MIN_SCORE);
+}
+
+function semanticRetrievalFactor() {
+  return parsePositiveInt(process.env.XMONITOR_SEMANTIC_RETRIEVAL_FACTOR, DEFAULT_SEMANTIC_RETRIEVAL_FACTOR);
+}
+
+function embeddingBaseUrl() {
+  const configured = asString(process.env.XMONITOR_EMBEDDING_BASE_URL);
+  return (configured || DEFAULT_EMBEDDING_BASE_URL).replace(/\/+$/, "");
+}
+
+function embeddingModel() {
+  return asString(process.env.XMONITOR_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL;
+}
+
+function embeddingDims() {
+  return parsePositiveInt(process.env.XMONITOR_EMBEDDING_DIMS, DEFAULT_EMBEDDING_DIMS);
+}
+
+function embeddingTimeoutMs() {
+  return parsePositiveInt(process.env.XMONITOR_EMBEDDING_TIMEOUT_MS, DEFAULT_EMBEDDING_TIMEOUT_MS);
+}
+
+function embeddingApiKey() {
+  return asString(process.env.XMONITOR_EMBEDDING_API_KEY) || asString(process.env.VENICE_API_KEY);
 }
 
 function ingestSharedSecret() {
@@ -238,6 +295,11 @@ function asJson(value) {
   return JSON.stringify(value ?? null);
 }
 
+function vectorLiteral(values) {
+  if (!Array.isArray(values)) return "[]";
+  return `[${values.map((value) => Number(value)).join(",")}]`;
+}
+
 function asBoolean(value) {
   if (typeof value === "boolean") return value;
   if (typeof value === "string") {
@@ -337,6 +399,7 @@ function rowToFeedItem(row) {
     replies: Number(row.replies || 0),
     views: Number(row.views || 0),
     reported_at: toIso(row.reported_at),
+    score: row.score !== undefined && row.score !== null ? Number(row.score) : null,
   };
 }
 
@@ -610,6 +673,48 @@ function parseNarrativeShiftUpsert(value) {
   };
 }
 
+function parseEmbeddingUpsert(value) {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const statusId = asString(value.status_id);
+  const backend = asString(value.backend);
+  const model = asString(value.model);
+  const dims = asInteger(value.dims);
+  const vector = asNumberArray(value.vector);
+  const textHash = asString(value.text_hash);
+  const createdAt = asIsoTimestamp(value.created_at);
+  const updatedAt = asIsoTimestamp(value.updated_at);
+
+  if (!statusId || !backend || !model || !dims || !vector || !textHash || !createdAt || !updatedAt) {
+    return {
+      ok: false,
+      error: "status_id, backend, model, dims, vector, text_hash, created_at, and updated_at are required",
+    };
+  }
+
+  if (dims <= 0) {
+    return { ok: false, error: "dims must be a positive integer" };
+  }
+
+  if (vector.length !== dims) {
+    return { ok: false, error: "vector length must match dims" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      status_id: statusId,
+      backend,
+      model,
+      dims,
+      vector,
+      text_hash: textHash,
+      created_at: createdAt,
+      updated_at: updatedAt,
+    },
+  };
+}
+
 function parseFeedQuery(input) {
   const since = asIsoTimestamp(firstValue(input.since));
   const until = asIsoTimestamp(firstValue(input.until));
@@ -631,6 +736,52 @@ function parseFeedQuery(input) {
     q: asString(firstValue(input.q)),
     limit: finalLimit,
     cursor: asString(firstValue(input.cursor)),
+  };
+}
+
+function parseSemanticQueryBody(value) {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+
+  const queryText = asString(value.query_text);
+  const queryVector = asNumberArray(value.query_vector);
+  if (!queryText && !queryVector) {
+    return { ok: false, error: "query_text or query_vector is required" };
+  }
+
+  if (queryVector && queryVector.length !== embeddingDims()) {
+    return { ok: false, error: `query_vector length must equal embedding dims (${embeddingDims()})` };
+  }
+
+  const since = asIsoTimestamp(value.since);
+  const until = asIsoTimestamp(value.until);
+  const tierRaw = asString(value.tier)?.toLowerCase();
+  const tier = tierRaw && WATCH_TIERS.has(tierRaw) ? tierRaw : undefined;
+  const significant = asBoolean(value.significant);
+
+  const limitValue = asInteger(value.limit);
+  const maxLimit = semanticMaxLimit();
+  const finalLimit = limitValue ? Math.min(Math.max(limitValue, 1), maxLimit) : semanticDefaultLimit();
+  const minScoreRaw = parseFloatOr(value.min_score, Number.NaN);
+
+  const normalizedHandle = asString(value.handle)
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
+
+  return {
+    ok: true,
+    data: {
+      query_text: queryText,
+      query_vector: queryVector,
+      since,
+      until,
+      tier,
+      handle: normalizedHandle || undefined,
+      significant,
+      limit: finalLimit,
+      min_score: Number.isFinite(minScoreRaw) ? minScoreRaw : undefined,
+    },
   };
 }
 
@@ -1137,6 +1288,220 @@ async function upsertNarrativeShifts(items) {
   return result;
 }
 
+async function upsertEmbeddings(items) {
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO embeddings(
+      status_id,
+      backend,
+      model,
+      dims,
+      vector_json,
+      embedding,
+      text_hash,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      $1, $2, $3, $4, $5::jsonb, ($6)::vector, $7, $8, $9
+    )
+    ON CONFLICT (status_id) DO UPDATE SET
+      backend = EXCLUDED.backend,
+      model = EXCLUDED.model,
+      dims = EXCLUDED.dims,
+      vector_json = EXCLUDED.vector_json,
+      embedding = EXCLUDED.embedding,
+      text_hash = EXCLUDED.text_hash,
+      created_at = EXCLUDED.created_at,
+      updated_at = EXCLUDED.updated_at
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.status_id,
+        item.backend,
+        item.model,
+        item.dims,
+        asJson(item.vector),
+        vectorLiteral(item.vector),
+        item.text_hash,
+        item.created_at,
+        item.updated_at,
+      ]);
+
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
+  }
+
+  return result;
+}
+
+async function createQueryEmbedding(queryText) {
+  const apiKey = embeddingApiKey();
+  if (!apiKey) {
+    throw new Error("embedding API key is not configured. Set XMONITOR_EMBEDDING_API_KEY.");
+  }
+
+  const endpoint = `${embeddingBaseUrl()}/embeddings`;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), embeddingTimeoutMs());
+
+  try {
+    const response = await fetch(endpoint, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "accept": "application/json",
+        "authorization": `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: embeddingModel(),
+        input: queryText,
+      }),
+      signal: controller.signal,
+    });
+
+    if (!response.ok) {
+      let detail = "";
+      try {
+        detail = await response.text();
+      } catch {
+        // ignore
+      }
+      const snippet = (detail || "").trim().split("\n")[0]?.slice(0, 240);
+      throw new Error(`embedding request failed (${response.status})${snippet ? `: ${snippet}` : ""}`);
+    }
+
+    const payload = await response.json();
+    const vector = payload?.data?.[0]?.embedding;
+    if (!Array.isArray(vector) || vector.length === 0) {
+      throw new Error("embedding response missing data[0].embedding");
+    }
+
+    const parsed = vector.map((value) => Number(value));
+    if (parsed.some((value) => !Number.isFinite(value))) {
+      throw new Error("embedding vector contains non-numeric values");
+    }
+
+    return parsed;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+async function querySemanticFeed(query, embeddingVector) {
+  const db = getPool();
+  const dims = embeddingDims();
+  if (!Array.isArray(embeddingVector) || embeddingVector.length !== dims) {
+    throw new Error(`embedding dimension mismatch: expected ${dims}, got ${embeddingVector?.length || 0}`);
+  }
+
+  const where = [];
+  const params = [];
+  const vectorParam = vectorLiteral(embeddingVector);
+  params.push(vectorParam);
+  params.push(dims);
+  params.push(embeddingModel());
+
+  if (query.since) {
+    params.push(query.since);
+    where.push(`p.discovered_at >= $${params.length}`);
+  }
+
+  if (query.until) {
+    params.push(query.until);
+    where.push(`p.discovered_at <= $${params.length}`);
+  }
+
+  if (query.tier) {
+    params.push(query.tier);
+    where.push(`p.watch_tier = $${params.length}`);
+  }
+
+  if (query.handle) {
+    const handles = parseHandleFilter(query.handle);
+    if (handles.length === 1) {
+      params.push(handles[0]);
+      where.push(`p.author_handle = $${params.length}`);
+    } else if (handles.length > 1) {
+      params.push(handles);
+      where.push(`p.author_handle = ANY($${params.length}::text[])`);
+    }
+  }
+
+  if (query.significant !== undefined) {
+    params.push(query.significant);
+    where.push(`p.is_significant = $${params.length}`);
+  }
+
+  const requestedLimit = query.limit || semanticDefaultLimit();
+  const finalLimit = Math.min(Math.max(requestedLimit, 1), semanticMaxLimit());
+  const retrievalLimit = Math.min(finalLimit * semanticRetrievalFactor(), semanticMaxLimit() * 5);
+
+  params.push(retrievalLimit);
+  const retrievalLimitParam = params.length;
+
+  params.push(finalLimit);
+  const finalLimitParam = params.length;
+
+  params.push(Number.isFinite(query.min_score) ? query.min_score : semanticMinScore());
+  const minScoreParam = params.length;
+
+  const postFilters = [...where, `c.score >= $${minScoreParam}`];
+  const whereClause = `WHERE ${postFilters.join(" AND ")}`;
+  const dimLiteral = Math.max(1, dims);
+  const sql = `
+    WITH semantic_candidates AS (
+      SELECT
+        e.status_id,
+        1 - ((e.embedding::vector(${dimLiteral})) <=> ($1::vector(${dimLiteral}))) AS score
+      FROM embeddings e
+      WHERE e.embedding IS NOT NULL
+        AND e.dims = $2
+        AND e.model = $3
+      ORDER BY (e.embedding::vector(${dimLiteral})) <=> ($1::vector(${dimLiteral})) ASC
+      LIMIT $${retrievalLimitParam}
+    )
+    SELECT
+      p.status_id,
+      p.discovered_at,
+      p.author_handle,
+      p.watch_tier,
+      p.body_text,
+      p.url,
+      p.is_significant,
+      p.significance_reason,
+      p.likes,
+      p.reposts,
+      p.replies,
+      p.views,
+      r.reported_at,
+      c.score
+    FROM semantic_candidates c
+    JOIN posts p ON p.status_id = c.status_id
+    LEFT JOIN reports r ON r.status_id = p.status_id
+    ${whereClause}
+    ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
+    LIMIT $${finalLimitParam}
+  `;
+
+  const result = await db.query(sql, params);
+  return {
+    items: result.rows.map(rowToFeedItem),
+    model: embeddingModel(),
+    retrieved_count: result.rows.length,
+  };
+}
+
 async function getFeed(query) {
   const db = getPool();
   const where = [];
@@ -1417,6 +1782,34 @@ async function handleFeed(event) {
   }
 }
 
+async function handleSemanticQuery(event) {
+  if (!semanticEnabled()) {
+    return jsonError("semantic query is disabled", 503);
+  }
+
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsedQuery = parseSemanticQueryBody(parsedBody.body);
+  if (!parsedQuery.ok) {
+    return jsonError(parsedQuery.error, 400);
+  }
+
+  try {
+    const queryEmbedding = parsedQuery.data.query_vector || await createQueryEmbedding(parsedQuery.data.query_text);
+    const payload = await querySemanticFeed(parsedQuery.data, queryEmbedding);
+    return jsonOk(payload);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to execute semantic query", 503);
+  }
+}
+
 async function handleWindowSummariesLatest() {
   if (!hasDatabaseConfig()) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
@@ -1575,6 +1968,10 @@ export async function handler(event) {
     return handleFeed(event);
   }
 
+  if (method === "POST" && path === "/v1/query/semantic") {
+    return handleSemanticQuery(event);
+  }
+
   if (method === "GET" && path === "/v1/window-summaries/latest") {
     return handleWindowSummariesLatest();
   }
@@ -1629,6 +2026,15 @@ export async function handler(event) {
       parseNarrativeShiftUpsert,
       upsertNarrativeShifts,
       "failed to upsert narrative shifts"
+    );
+  }
+
+  if (method === "POST" && path === "/v1/ingest/embeddings/batch") {
+    return handleIngestBatch(
+      event,
+      parseEmbeddingUpsert,
+      upsertEmbeddings,
+      "failed to upsert embeddings"
     );
   }
 
