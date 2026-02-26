@@ -7,7 +7,7 @@ import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
 import type { FeedResponse, SemanticQueryResponse, WindowSummariesLatestResponse, WindowSummary } from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
-import { DateRangeFields } from "./date-range-fields";
+import { FilterPanel } from "./filter-panel";
 import { QueryReferencePopup } from "./query-reference-popup";
 import { SignOutButton } from "../sign-out-button";
 import { LocalDateTime } from "../components/local-date-time";
@@ -343,81 +343,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           {summariesError ? <p className="error-text summary-error">{summariesError}</p> : null}
         </details>
 
-        <details className="filter-panel">
-          <summary className="filter-summary">
-            <span className="filter-summary-title-wrap">
-              <span className="filter-summary-title">Filters</span>
-              <span aria-hidden className="disclosure-caret">
-                ▾
-              </span>
-            </span>
-            {hasActiveFilters ? (
-              <div className="filter-summary-controls">
-                <span className="filter-summary-state">Active</span>
-              </div>
-            ) : null}
-          </summary>
-
-          <form className="filter-grid" method="GET">
-            <label>
-              <span>Search mode</span>
-              <select name="search_mode" defaultValue={searchMode}>
-                <option value="keyword">Keyword</option>
-                <option value="semantic">Semantic</option>
-              </select>
-            </label>
-
-            <label>
-              <span>Tier</span>
-              <select name="tier" defaultValue={query.tier || ""}>
-                <option value="">All tiers</option>
-                <option value="teammate">Teammate</option>
-                <option value="influencer">Influencer</option>
-                <option value="ecosystem">Ecosystem</option>
-              </select>
-            </label>
-
-            <label>
-              <span>HANDLE(S)</span>
-              <input
-                name="handle"
-                defaultValue={qsValue(query.handle)}
-                placeholder="zodl in4crypto @mert"
-                type="text"
-              />
-            </label>
-
-            <label>
-              <span>Significant</span>
-              <select name="significant" defaultValue={query.significant === undefined ? "" : String(query.significant)}>
-                <option value="">Either</option>
-                <option value="true">True</option>
-                <option value="false">False</option>
-              </select>
-            </label>
-
-            <DateRangeFields initialSince={query.since} initialUntil={query.until} />
-
-            <label>
-              <span>{searchMode === "semantic" ? "Semantic query" : "Text search"}</span>
-              <input name="q" defaultValue={qsValue(query.q)} placeholder="keyword" type="text" />
-            </label>
-
-            <label>
-              <span>Limit</span>
-              <input name="limit" defaultValue={String(query.limit || 50)} max={200} min={1} step={1} type="number" />
-            </label>
-
-            <div className="filter-actions">
-              <button className="button" type="submit">
-                Apply filters
-              </button>
-              <Link className="button button-secondary" href="/x-monitor">
-                Reset
-              </Link>
-            </div>
-          </form>
-        </details>
+        <FilterPanel
+          initialHandle={qsValue(query.handle)}
+          initialHasActiveFilters={hasActiveFilters}
+          initialLimit={query.limit || 50}
+          initialQuery={qsValue(query.q)}
+          initialSearchMode={searchMode}
+          initialSignificant={query.significant}
+          initialSince={query.since}
+          initialTier={query.tier}
+          initialUntil={query.until}
+        />
 
         {feedError ? <p className="error-text">{feedError}</p> : null}
         <div className="feed-meta-row">

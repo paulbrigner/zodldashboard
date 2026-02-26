@@ -376,7 +376,8 @@ p {
 }
 
 .filter-grid input,
-.filter-grid select {
+.filter-grid select,
+.filter-grid textarea {
   width: 100%;
   border: 1px solid var(--border);
   border-radius: 0.58rem;
@@ -384,6 +385,36 @@ p {
   font-size: 0.92rem;
   background: #ffffff;
   color: var(--text-primary);
+}
+
+.filter-grid-semantic {
+  grid-template-columns: 1fr;
+}
+
+.semantic-query-field {
+  grid-column: 1 / -1;
+}
+
+.semantic-query-field textarea {
+  min-height: 8.5rem;
+  resize: vertical;
+}
+
+.semantic-example-block {
+  grid-column: 1 / -1;
+  margin-top: -0.1rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.semantic-example-label,
+.semantic-example-text {
+  margin: 0;
+}
+
+.semantic-example-text {
+  font-size: 0.93rem;
+  line-height: 1.45;
 }
 
 .filter-actions {
