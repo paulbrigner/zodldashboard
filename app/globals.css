@@ -248,7 +248,8 @@ p {
 }
 
 .summary-panel[open] .disclosure-caret,
-.filter-panel[open] .disclosure-caret {
+.filter-panel[open] .disclosure-caret,
+.compose-panel[open] .disclosure-caret {
   transform: rotate(0deg);
 }
 
@@ -296,6 +297,192 @@ p {
 
 .summary-error {
   margin: 0 0.95rem 0.95rem;
+}
+
+.compose-panel {
+  margin-top: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 0.95rem;
+  background: var(--surface-alt);
+}
+
+.compose-panel-summary {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.8rem 0.95rem;
+}
+
+.compose-panel-summary::-webkit-details-marker {
+  display: none;
+}
+
+.compose-panel-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.compose-panel-title {
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #3358aa;
+}
+
+.compose-panel[open] .compose-panel-summary {
+  border-bottom: 1px solid var(--border);
+}
+
+.compose-panel-body {
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.compose-form {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.compose-task-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.compose-task-field textarea {
+  width: 100%;
+  min-height: 7rem;
+  border: 1px solid var(--border);
+  border-radius: 0.58rem;
+  padding: 0.58rem 0.65rem;
+  font-size: 0.95rem;
+  background: #ffffff;
+  color: var(--text-primary);
+  resize: vertical;
+}
+
+.compose-form span {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #3358aa;
+  font-weight: 700;
+}
+
+.compose-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.8rem;
+}
+
+.compose-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.compose-controls input,
+.compose-controls select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.58rem;
+  padding: 0.52rem 0.64rem;
+  font-size: 0.92rem;
+  background: #ffffff;
+  color: var(--text-primary);
+}
+
+.compose-scope {
+  margin: 0;
+}
+
+.compose-actions {
+  display: flex;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.compose-result {
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+  display: grid;
+  gap: 0.8rem;
+}
+
+.compose-result-meta p {
+  margin: 0;
+}
+
+.compose-section {
+  border: 1px solid var(--border);
+  border-radius: 0.72rem;
+  background: #ffffff;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.compose-section h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.compose-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.compose-answer-text {
+  margin: 0;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.compose-key-points {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.compose-citations {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.compose-citation-item {
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  background: #f8fbff;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.compose-citation-top {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.compose-citation-excerpt {
+  margin: 0;
+  line-height: 1.45;
 }
 
 .filter-panel {
