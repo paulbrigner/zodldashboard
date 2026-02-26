@@ -493,7 +493,8 @@ function isAbortLikeError(error: unknown): boolean {
 
 async function callComposeModelOnce(
   prompt: { systemPrompt: string; userPrompt: string },
-  timeoutMs: number
+  timeoutMs: number,
+  maxTokensOverride?: number
 ): Promise<ComposeModelReply> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -504,7 +505,7 @@ async function callComposeModelOnce(
     const basePayload: Record<string, unknown> = {
       model,
       temperature: 0.2,
-      max_tokens: composeMaxOutputTokens(),
+      max_tokens: maxTokensOverride || composeMaxOutputTokens(),
       messages: [
         { role: "system", content: prompt.systemPrompt },
         { role: "user", content: prompt.userPrompt },
@@ -587,6 +588,7 @@ async function callComposeModel(
       if (retryTimeoutMs < 3000) {
         throw error;
       }
+      const retryMaxTokens = Math.max(220, Math.floor(composeMaxOutputTokens() * 0.4));
       console.log(
         JSON.stringify({
           event: "compose_model_retry",
@@ -594,9 +596,10 @@ async function callComposeModel(
           model: composeModel(),
           initial_timeout_ms: initialTimeoutMs,
           retry_timeout_ms: retryTimeoutMs,
+          retry_max_tokens: retryMaxTokens,
         })
       );
-      return callComposeModelOnce(prompt, retryTimeoutMs);
+      return callComposeModelOnce(prompt, retryTimeoutMs, retryMaxTokens);
     }
     throw error;
   }
