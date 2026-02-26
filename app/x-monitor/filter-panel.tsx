@@ -33,7 +33,13 @@ export function FilterPanel({
   initialHasActiveFilters,
 }: FilterPanelProps) {
   const [searchMode, setSearchMode] = useState<SearchMode>(initialSearchMode);
-  const [queryText, setQueryText] = useState<string>(initialQuery || "");
+  const [queryText, setQueryText] = useState<string>(() => {
+    const initial = initialQuery || "";
+    if (initialSearchMode === "semantic" && initial.trim() === SEMANTIC_EXAMPLE_QUERY) {
+      return "";
+    }
+    return initial;
+  });
 
   const semanticActive = useMemo(() => queryText.trim().length > 0, [queryText]);
   const hasActiveFilters = searchMode === "semantic" ? semanticActive : initialHasActiveFilters;
@@ -59,7 +65,13 @@ export function FilterPanel({
           <span>Search mode</span>
           <select
             name="search_mode"
-            onChange={(event) => setSearchMode(event.target.value === "semantic" ? "semantic" : "keyword")}
+            onChange={(event) => {
+              const nextMode = event.target.value === "semantic" ? "semantic" : "keyword";
+              setSearchMode(nextMode);
+              if (nextMode === "semantic") {
+                setQueryText("");
+              }
+            }}
             value={searchMode}
           >
             <option value="keyword">Keyword</option>
