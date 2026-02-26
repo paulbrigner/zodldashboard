@@ -10,7 +10,8 @@ import type {
 
 const DEFAULT_COMPOSE_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_COMPOSE_MODEL = "llama-3.2-3b";
-const DEFAULT_COMPOSE_TIMEOUT_MS = 20000;
+const DEFAULT_COMPOSE_TIMEOUT_MS = 45000;
+const COMPOSE_TIMEOUT_RETRY_DELTA_MS = 15000;
 const DEFAULT_COMPOSE_MAX_OUTPUT_TOKENS = 900;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS = 1200;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS_X_POST = 280;
@@ -483,11 +484,19 @@ async function postComposeCompletion(
   return { response, bodyTextSnippet };
 }
 
-async function callComposeModel(
-  prompt: { systemPrompt: string; userPrompt: string }
+function isAbortLikeError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybeName = "name" in error ? String((error as { name?: unknown }).name || "") : "";
+  const maybeMessage = "message" in error ? String((error as { message?: unknown }).message || "") : "";
+  return maybeName === "AbortError" || /aborted/i.test(maybeMessage);
+}
+
+async function callComposeModelOnce(
+  prompt: { systemPrompt: string; userPrompt: string },
+  timeoutMs: number
 ): Promise<ComposeModelReply> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), composeTimeoutMs());
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
   const startedAt = Date.now();
   const model = composeModel();
 
@@ -552,8 +561,40 @@ async function callComposeModel(
       latency_ms: latencyMs,
       model,
     };
+  } catch (error) {
+    if (isAbortLikeError(error)) {
+      throw new ComposeExecutionError(`compose model request timed out after ${timeoutMs}ms`, 504);
+    }
+    if (error instanceof ComposeExecutionError) {
+      throw error;
+    }
+    throw new ComposeExecutionError(error instanceof Error ? error.message : "compose model request failed", 503);
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function callComposeModel(
+  prompt: { systemPrompt: string; userPrompt: string }
+): Promise<ComposeModelReply> {
+  const initialTimeoutMs = composeTimeoutMs();
+  try {
+    return await callComposeModelOnce(prompt, initialTimeoutMs);
+  } catch (error) {
+    if (error instanceof ComposeExecutionError && error.status === 504) {
+      const retryTimeoutMs = Math.max(initialTimeoutMs + COMPOSE_TIMEOUT_RETRY_DELTA_MS, Math.floor(initialTimeoutMs * 1.5));
+      console.log(
+        JSON.stringify({
+          event: "compose_model_retry",
+          reason: "timeout_abort",
+          model: composeModel(),
+          initial_timeout_ms: initialTimeoutMs,
+          retry_timeout_ms: retryTimeoutMs,
+        })
+      );
+      return callComposeModelOnce(prompt, retryTimeoutMs);
+    }
+    throw error;
   }
 }
 
