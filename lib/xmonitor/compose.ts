@@ -106,7 +106,11 @@ function trimBaseUrl(value: string | undefined): string {
 }
 
 function composeApiKey(): string | null {
-  return asString(process.env.XMONITOR_COMPOSE_API_KEY) || asString(process.env.VENICE_API_KEY);
+  return (
+    asString(process.env.XMONITOR_COMPOSE_API_KEY) ||
+    asString(process.env.VENICE_API_KEY) ||
+    asString(process.env.XMONITOR_EMBEDDING_API_KEY)
+  );
 }
 
 function composeBaseUrl(): string {
@@ -432,7 +436,7 @@ async function postComposeCompletion(
   const apiKey = composeApiKey();
   if (!apiKey) {
     throw new ComposeExecutionError(
-      "compose API key is not configured. Set XMONITOR_COMPOSE_API_KEY or VENICE_API_KEY.",
+      "compose API key is not configured. Set XMONITOR_COMPOSE_API_KEY, VENICE_API_KEY, or XMONITOR_EMBEDDING_API_KEY.",
       503
     );
   }
