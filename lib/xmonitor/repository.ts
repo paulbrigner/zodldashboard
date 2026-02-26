@@ -12,6 +12,7 @@ import type {
   PipelineRunUpsert,
   PostDetail,
   PostUpsert,
+  ReconcileCounts,
   ReportUpsert,
   WindowSummary,
   WindowSummaryUpsert,
@@ -722,6 +723,38 @@ export async function getPostDetail(statusId: string): Promise<PostDetail | null
       source: row.source ? String(row.source) : "ingest",
     })),
     report,
+  };
+}
+
+export async function getReconcileCounts(since: string): Promise<ReconcileCounts> {
+  const pool = getDbPool();
+  const result = await pool.query(
+    `
+      SELECT
+        (SELECT COUNT(*)
+         FROM posts p
+         WHERE p.discovered_at >= $1
+            OR p.last_seen_at >= $1
+            OR (p.refresh_24h_at IS NOT NULL AND p.refresh_24h_at >= $1)) AS posts,
+        (SELECT COUNT(*) FROM reports r WHERE r.reported_at >= $1) AS reports,
+        (SELECT COUNT(*) FROM pipeline_runs pr WHERE pr.run_at >= $1) AS pipeline_runs,
+        (SELECT COUNT(*) FROM window_summaries ws WHERE ws.generated_at >= $1) AS window_summaries,
+        (SELECT COUNT(*) FROM narrative_shifts ns WHERE ns.generated_at >= $1) AS narrative_shifts
+    `,
+    [since]
+  );
+
+  const row = result.rows[0] || {};
+  return {
+    since,
+    generated_at: new Date().toISOString(),
+    counts: {
+      posts: Number(row.posts || 0),
+      reports: Number(row.reports || 0),
+      pipeline_runs: Number(row.pipeline_runs || 0),
+      window_summaries: Number(row.window_summaries || 0),
+      narrative_shifts: Number(row.narrative_shifts || 0),
+    },
   };
 }
 

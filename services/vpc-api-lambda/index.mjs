@@ -110,6 +110,10 @@ function isIngestPath(path) {
   return path === "/v1/ingest/runs" || /^\/v1\/ingest\/[^/]+\/batch$/.test(path);
 }
 
+function isOpsReconcilePath(path) {
+  return path === "/v1/ops/reconcile-counts";
+}
+
 function timingSafeMatch(expected, actual) {
   const expectedBytes = Buffer.from(expected, "utf8");
   const actualBytes = Buffer.from(actual, "utf8");
@@ -256,6 +260,18 @@ function asInteger(value) {
 function asIsoTimestamp(value) {
   const text = asString(value);
   if (!text) return undefined;
+  const parsed = new Date(text);
+  if (Number.isNaN(parsed.getTime())) return undefined;
+  return parsed.toISOString();
+}
+
+function defaultSinceIso() {
+  return new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+}
+
+function parseSinceIso(value) {
+  const text = asString(value);
+  if (!text) return defaultSinceIso();
   const parsed = new Date(text);
   if (Number.isNaN(parsed.getTime())) return undefined;
   return parsed.toISOString();
@@ -1325,6 +1341,38 @@ async function getPostDetail(statusId) {
   };
 }
 
+async function getReconcileCounts(since) {
+  const db = getPool();
+  const result = await db.query(
+    `
+      SELECT
+        (SELECT COUNT(*)
+         FROM posts p
+         WHERE p.discovered_at >= $1
+            OR p.last_seen_at >= $1
+            OR (p.refresh_24h_at IS NOT NULL AND p.refresh_24h_at >= $1)) AS posts,
+        (SELECT COUNT(*) FROM reports r WHERE r.reported_at >= $1) AS reports,
+        (SELECT COUNT(*) FROM pipeline_runs pr WHERE pr.run_at >= $1) AS pipeline_runs,
+        (SELECT COUNT(*) FROM window_summaries ws WHERE ws.generated_at >= $1) AS window_summaries,
+        (SELECT COUNT(*) FROM narrative_shifts ns WHERE ns.generated_at >= $1) AS narrative_shifts
+    `,
+    [since]
+  );
+
+  const row = result.rows[0] || {};
+  return {
+    since,
+    generated_at: new Date().toISOString(),
+    counts: {
+      posts: Number(row.posts || 0),
+      reports: Number(row.reports || 0),
+      pipeline_runs: Number(row.pipeline_runs || 0),
+      window_summaries: Number(row.window_summaries || 0),
+      narrative_shifts: Number(row.narrative_shifts || 0),
+    },
+  };
+}
+
 async function handleHealth() {
   const dbConfigured = hasDatabaseConfig();
   let database = "not_configured";
@@ -1401,6 +1449,25 @@ async function handlePostDetail(path) {
     return jsonOk(detail);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to query post detail", 503);
+  }
+}
+
+async function handleOpsReconcileCounts(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const params = event?.queryStringParameters || {};
+  const since = parseSinceIso(params.since);
+  if (!since) {
+    return jsonError("invalid since parameter (expected ISO-8601 timestamp)", 400);
+  }
+
+  try {
+    const payload = await getReconcileCounts(since);
+    return jsonOk(payload);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to compute reconciliation counts", 503);
   }
 }
 
@@ -1493,6 +1560,13 @@ export async function handler(event) {
     }
   }
 
+  if (method === "GET" && isOpsReconcilePath(path)) {
+    const auth = validateIngestAuthorization(event);
+    if (!auth.ok) {
+      return jsonError(auth.error, auth.status);
+    }
+  }
+
   if (method === "GET" && path === "/v1/health") {
     return handleHealth();
   }
@@ -1507,6 +1581,10 @@ export async function handler(event) {
 
   if (method === "GET" && /^\/v1\/posts\/[^/]+$/.test(path)) {
     return handlePostDetail(path);
+  }
+
+  if (method === "GET" && path === "/v1/ops/reconcile-counts") {
+    return handleOpsReconcileCounts(event);
   }
 
   if (method === "POST" && path === "/v1/ingest/posts/batch") {

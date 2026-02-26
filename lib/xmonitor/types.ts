@@ -116,6 +116,18 @@ export type WindowSummariesLatestResponse = {
   items: WindowSummary[];
 };
 
+export type ReconcileCounts = {
+  since: string;
+  generated_at: string;
+  counts: {
+    posts: number;
+    reports: number;
+    pipeline_runs: number;
+    window_summaries: number;
+    narrative_shifts: number;
+  };
+};
+
 export type NarrativeShiftUpsert = {
   shift_key: string;
   basis_window_type: string;

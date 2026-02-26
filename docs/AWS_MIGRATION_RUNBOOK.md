@@ -1,6 +1,6 @@
 # XMonitor AWS Operations Runbook (Current)
 
-_Last updated: 2026-02-22 (ET)_
+_Last updated: 2026-02-26 (ET)_
 
 This runbook describes current production operations for this repository.
 
@@ -8,8 +8,8 @@ This runbook describes current production operations for this repository.
 
 Data path:
 1. Local OpenClaw jobs run `x_monitor_dispatch.py`.
-2. Dispatcher invokes `x_monitor_sync_api.py`.
-3. Sync script posts ingest payloads to hosted API.
+2. Dispatcher invokes `x_monitor_ingest_api.py` with run-scoped `--since` selection.
+3. Ingest script posts payloads directly to hosted API (`/ingest/*`) with idempotent upserts and bounded retries.
 4. Hosted API routes to VPC Lambda API.
 5. Lambda writes to RDS PostgreSQL in private subnets.
 
@@ -58,6 +58,7 @@ Routes protected:
 - `POST /v1/ingest/metrics/batch`
 - `POST /v1/ingest/reports/batch`
 - `POST /v1/ingest/runs`
+- `GET /v1/ops/reconcile-counts`
 
 Read routes remain accessible to authenticated app users:
 - `GET /v1/health`
@@ -153,16 +154,23 @@ If a full re-import is required, use a fresh snapshot and rerun import/validate 
 
 ## 9) Launchd and local runtime notes
 
-LaunchAgents are currently expected to run local collection/sync on schedule.
+LaunchAgents are currently expected to run local collection + direct ingest on schedule.
 
 If you need to inspect or reconfigure:
 - `~/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist`
 - `~/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist`
+- `~/Library/LaunchAgents/com.openclaw.xmonitor.reconcile.plist`
 
 If local jobs run but API writes fail, validate:
 1. `XMONITOR_API_BASE_URL` points to `https://www.zodldashboard.com/api/v1`
 2. `XMONITOR_API_KEY` matches server shared secret
-3. ingest endpoint returns `200` for authenticated test payload
+3. `~/.openclaw/workspace/scripts/x_monitor_ingest_api.py --dry-run` returns expected outbound counts
+4. ingest endpoint returns `200` for authenticated test payload
+
+Daily reconciliation:
+1. LaunchAgent `com.openclaw.xmonitor.reconcile` runs at 05:10 ET.
+2. Log path: `~/.openclaw/workspace/logs/xmonitor-reconcile.log`
+3. Expected healthy output: `reconcile PASS` with small/zero deltas.
 
 ## 10) Incident quick triage
 
@@ -171,3 +179,36 @@ If local jobs run but API writes fail, validate:
 3. Check Amplify latest job status/logs.
 4. Re-run Lambda provisioning script if backend config drift is suspected.
 5. Check CloudWatch logs for Lambda-level SQL or validation failures.
+
+## 11) Guardrails and future migration note
+
+- Guardrail implementation plan: `docs/DIRECT_INGEST_GUARDRAILS_EXECUTION_PLAN.md`
+- Full local-SQLite dependency removal is intentionally deferred until guardrail metrics justify the larger refactor.
+
+## 12) Outage recovery and guardrails operations
+
+Recovery replay command (from outage start, with overlap):
+
+```bash
+python3 ~/.openclaw/workspace/scripts/x_monitor_ingest_api.py \
+  --db ~/.openclaw/workspace/memory/x_monitor.db \
+  --api-base-url https://www.zodldashboard.com/api/v1 \
+  --api-key "$XMONITOR_API_KEY" \
+  --since "<outage_start_utc_iso>" \
+  --lookback-seconds 3600 \
+  --max-attempts 5
+```
+
+Post-recovery checks:
+1. `curl -sS 'https://www.zodldashboard.com/api/v1/health'` returns database `ok`.
+2. Feed freshness looks current in app/API.
+3. Run reconciliation and confirm pass:
+
+```bash
+/usr/bin/python3 ~/.openclaw/workspace/scripts/x_monitor_reconcile.py \
+  --api-base-url https://84kb8ehtp2.execute-api.us-east-1.amazonaws.com/v1 \
+  --since-last-hours 24
+```
+
+Failure-alert state file:
+- `~/.openclaw/workspace/memory/x_monitor_ingest_health.json`

@@ -234,6 +234,7 @@ Transition is complete when:
 3. Add pre-cutover validation checklist script.
 4. Execute controlled cutover.
 5. Remove sync layer and local DB runtime dependency.
+6. Run the operator flow in `docs/DIRECT_INGEST_EXECUTION_CHECKLIST.md` and capture sign-off evidence.
 
 ---
 
@@ -242,6 +243,8 @@ Transition is complete when:
 - If API availability becomes a concern, add a lightweight local queue (append-only JSONL spool) instead of full SQLite state.
 - If team wants selective notifications, reintroduce alerts from API (not local collector) to avoid noisy coupling.
 - Keep scoring logic versioned (`significance_version`) to safely evolve thresholds.
+- Guardrail-first option is documented in `docs/DIRECT_INGEST_GUARDRAILS_EXECUTION_PLAN.md` (catch-up window, failure alerts, daily reconciliation, outage recovery).
+- Revisit full local-SQLite dependency removal when guardrail metrics degrade (for example: frequent recoveries, repeated lock incidents, or multi-collector consistency requirements).
 
 ---
 
