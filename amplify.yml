@@ -69,6 +69,8 @@ frontend:
         - env | grep -e XMONITOR_COMPOSE_INPUT_COST_PER_1M_TOKENS >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_OUTPUT_COST_PER_1M_TOKENS >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_USE_JSON_MODE >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_DISABLE_THINKING >> .env.production || true
+        - env | grep -e XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_API_KEY >> .env.production || true
         - npm run build
   artifacts:

@@ -1,13 +1,11 @@
 import Link from "next/link";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
-import { composeEnabled } from "@/lib/xmonitor/compose";
+import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
 import type { FeedResponse, SemanticQueryResponse, WindowSummariesLatestResponse, WindowSummary } from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
-import { ComposePanel } from "./compose-panel";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { FilterPanel } from "./filter-panel";
 import { QueryReferencePopup } from "./query-reference-popup";
@@ -212,17 +210,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   const params = (await searchParams) || {};
   const query = parseFeedQuery(params);
-  const semanticAvailable = semanticEnabled();
-  const composeFeatureEnabled = composeEnabled();
-  const composeBackendConfigured = Boolean(backendApiBaseUrl());
-  const composePanelEnabled = composeFeatureEnabled && semanticAvailable && composeBackendConfigured;
-  const composeUnavailableReason = !composeFeatureEnabled
-    ? "Compose mode is disabled by XMONITOR_COMPOSE_ENABLED."
-    : !semanticAvailable
-      ? "Compose mode requires semantic mode to be enabled."
-      : !composeBackendConfigured
-        ? "Compose mode requires XMONITOR_BACKEND_API_BASE_URL."
-        : null;
   const searchMode = parseSearchMode(params.search_mode);
   const apiBaseUrl = readApiBaseUrl();
   const refreshUrl = buildRefreshUrl(query, searchMode);
@@ -236,7 +223,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   if (apiBaseUrl) {
     try {
       if (searchMode === "semantic") {
-        if (!semanticAvailable) {
+        if (!semanticEnabled()) {
           feedError = "Semantic mode is disabled.";
         } else if (!query.q) {
           feed = { items: [], next_cursor: null };
@@ -355,16 +342,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
           {summariesError ? <p className="error-text summary-error">{summariesError}</p> : null}
         </details>
-
-        <ComposePanel
-          enabled={composePanelEnabled}
-          initialHandle={query.handle}
-          initialSignificant={query.significant}
-          initialSince={query.since}
-          initialTier={query.tier}
-          initialUntil={query.until}
-          unavailableReason={composeUnavailableReason}
-        />
 
         <FilterPanel
           initialHandle={qsValue(query.handle)}

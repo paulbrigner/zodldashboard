@@ -13,8 +13,7 @@
     "db:migrate": "bash scripts/db/apply_migrations.sh",
     "migrate:export": "python3 scripts/migrate/export_sqlite.py",
     "migrate:import": "python3 scripts/migrate/import_sqlite_jsonl_to_postgres.py",
-    "migrate:validate": "python3 scripts/migrate/validate_counts.py",
-    "eval:compose": "node scripts/eval/run_compose_eval.mjs"
+    "migrate:validate": "python3 scripts/migrate/validate_counts.py"
   },
   "dependencies": {
     "next": "^15.5.12",

@@ -20,6 +20,8 @@ const DEFAULT_COMPOSE_MAX_CONCURRENCY = 4;
 const DEFAULT_COMPOSE_MAX_ESTIMATED_COST_USD = 0.05;
 const DEFAULT_INPUT_COST_PER_1M_TOKENS = 0.15;
 const DEFAULT_OUTPUT_COST_PER_1M_TOKENS = 0.6;
+const DEFAULT_COMPOSE_DISABLE_THINKING = true;
+const DEFAULT_COMPOSE_STRIP_THINKING_RESPONSE = true;
 
 type ComposeModelResult = {
   answer_text: string;
@@ -163,6 +165,21 @@ function composeOutputCostPer1MTokens(): number {
 
 function composeUseJsonMode(): boolean {
   return parseBoolean(process.env.XMONITOR_COMPOSE_USE_JSON_MODE, true);
+}
+
+function composeDisableThinking(): boolean {
+  return parseBoolean(process.env.XMONITOR_COMPOSE_DISABLE_THINKING, DEFAULT_COMPOSE_DISABLE_THINKING);
+}
+
+function composeStripThinkingResponse(): boolean {
+  return parseBoolean(
+    process.env.XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE,
+    DEFAULT_COMPOSE_STRIP_THINKING_RESPONSE
+  );
+}
+
+function composeUsesVeniceProvider(): boolean {
+  return composeBaseUrl().includes("venice.ai");
 }
 
 export function composeEnabled(): boolean {
@@ -484,6 +501,12 @@ async function callComposeModel(
         { role: "user", content: prompt.userPrompt },
       ],
     };
+    if (composeUsesVeniceProvider()) {
+      basePayload.venice_parameters = {
+        disable_thinking: composeDisableThinking(),
+        strip_thinking_response: composeStripThinkingResponse(),
+      };
+    }
 
     let posted = await postComposeCompletion(
       composeUseJsonMode() ? { ...basePayload, response_format: { type: "json_object" } } : basePayload,

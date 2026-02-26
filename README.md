@@ -196,6 +196,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_INPUT_COST_PER_1M_TOKENS` | Optional | Input token cost basis used for estimate logs/guard. |
 | `XMONITOR_COMPOSE_OUTPUT_COST_PER_1M_TOKENS` | Optional | Output token cost basis used for estimate logs/guard. |
 | `XMONITOR_COMPOSE_USE_JSON_MODE` | Optional | Try model JSON mode before plain prompt-only parsing fallback. |
+| `XMONITOR_COMPOSE_DISABLE_THINKING` | Optional | For Venice thinking models, requests direct answer output (default `true`). |
+| `XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE` | Optional | For Venice thinking models, strips reasoning channel from response (default `true`). |
 | `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
