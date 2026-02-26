@@ -2,6 +2,7 @@ const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
+const EMBEDDING_MAX_ATTEMPTS = 2;
 
 function asString(value: string | undefined): string | null {
   if (!value) return null;
@@ -48,6 +49,21 @@ export function embeddingApiKey(): string | null {
   return asString(process.env.XMONITOR_EMBEDDING_API_KEY) || asString(process.env.VENICE_API_KEY);
 }
 
+function isAbortLikeError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const maybeName = "name" in error ? String((error as { name?: unknown }).name || "") : "";
+  const maybeMessage = "message" in error ? String((error as { message?: unknown }).message || "") : "";
+  return maybeName === "AbortError" || /aborted/i.test(maybeMessage);
+}
+
+function isRetryableEmbeddingStatus(status: number): boolean {
+  return status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+async function sleep(ms: number): Promise<void> {
+  await new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export async function createQueryEmbedding(queryText: string): Promise<number[]> {
   const apiKey = embeddingApiKey();
   if (!apiKey) {
@@ -55,52 +71,85 @@ export async function createQueryEmbedding(queryText: string): Promise<number[]>
   }
 
   const endpoint = `${embeddingBaseUrl()}/embeddings`;
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), embeddingTimeoutMs());
+  const timeoutMs = embeddingTimeoutMs();
+  let lastError: Error | null = null;
 
-  try {
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        accept: "application/json",
-        authorization: `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: embeddingModel(),
-        input: queryText,
-      }),
-      signal: controller.signal,
-    });
+  for (let attempt = 1; attempt <= EMBEDDING_MAX_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-    if (!response.ok) {
-      let detail = "";
-      try {
-        detail = await response.text();
-      } catch {
-        // ignore
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          accept: "application/json",
+          authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: embeddingModel(),
+          input: queryText,
+        }),
+        signal: controller.signal,
+      });
+
+      if (!response.ok) {
+        let detail = "";
+        try {
+          detail = await response.text();
+        } catch {
+          // ignore
+        }
+        const snippet = (detail || "").trim().split("\n")[0]?.slice(0, 240);
+        const error = new Error(`embedding request failed (${response.status})${snippet ? `: ${snippet}` : ""}`);
+        if (attempt < EMBEDDING_MAX_ATTEMPTS && isRetryableEmbeddingStatus(response.status)) {
+          lastError = error;
+          await sleep(300 * attempt);
+          continue;
+        }
+        throw error;
       }
-      const snippet = (detail || "").trim().split("\n")[0]?.slice(0, 240);
-      throw new Error(`embedding request failed (${response.status})${snippet ? `: ${snippet}` : ""}`);
-    }
 
-    const payload = (await response.json()) as { data?: Array<{ embedding?: unknown }> };
-    const vector = payload?.data?.[0]?.embedding;
-    if (!Array.isArray(vector) || vector.length === 0) {
-      throw new Error("embedding response missing data[0].embedding");
-    }
+      const payload = (await response.json()) as { data?: Array<{ embedding?: unknown }> };
+      const vector = payload?.data?.[0]?.embedding;
+      if (!Array.isArray(vector) || vector.length === 0) {
+        throw new Error("embedding response missing data[0].embedding");
+      }
 
-    const parsed = vector.map((value) => Number(value));
-    if (parsed.some((value) => !Number.isFinite(value))) {
-      throw new Error("embedding vector contains non-numeric values");
-    }
+      const parsed = vector.map((value) => Number(value));
+      if (parsed.some((value) => !Number.isFinite(value))) {
+        throw new Error("embedding vector contains non-numeric values");
+      }
 
-    if (parsed.length !== embeddingDims()) {
-      throw new Error(`embedding dimension mismatch: expected ${embeddingDims()}, got ${parsed.length}`);
-    }
+      if (parsed.length !== embeddingDims()) {
+        throw new Error(`embedding dimension mismatch: expected ${embeddingDims()}, got ${parsed.length}`);
+      }
 
-    return parsed;
-  } finally {
-    clearTimeout(timeoutId);
+      return parsed;
+    } catch (error) {
+      if (isAbortLikeError(error)) {
+        const timeoutError = new Error(`embedding request timed out after ${timeoutMs}ms`);
+        if (attempt < EMBEDDING_MAX_ATTEMPTS) {
+          lastError = timeoutError;
+          await sleep(300 * attempt);
+          continue;
+        }
+        throw timeoutError;
+      }
+
+      if (attempt < EMBEDDING_MAX_ATTEMPTS) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/inference processing failed/i.test(message)) {
+          lastError = new Error(message);
+          await sleep(300 * attempt);
+          continue;
+        }
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
   }
+
+  throw lastError || new Error("embedding request failed");
 }
