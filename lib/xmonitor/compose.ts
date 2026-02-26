@@ -239,13 +239,29 @@ function sanitizeKeyPoints(value: unknown): string[] {
 
 function parseComposeModelResult(rawContent: string): ComposeModelResult | null {
   const jsonText = extractJsonObject(rawContent);
-  if (!jsonText) return null;
+  if (!jsonText) {
+    const plainText = rawContent.replace(/\s+/g, " ").trim();
+    if (!plainText) return null;
+    return {
+      answer_text: plainText,
+      draft_text: null,
+      key_points: [],
+      citation_status_ids: [],
+    };
+  }
 
   let parsed: unknown;
   try {
     parsed = JSON.parse(jsonText);
   } catch {
-    return null;
+    const plainText = rawContent.replace(/\s+/g, " ").trim();
+    if (!plainText) return null;
+    return {
+      answer_text: plainText,
+      draft_text: null,
+      key_points: [],
+      citation_status_ids: [],
+    };
   }
 
   if (!parsed || typeof parsed !== "object") return null;
