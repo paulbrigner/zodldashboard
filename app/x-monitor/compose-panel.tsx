@@ -71,6 +71,19 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+function FieldHelp({ label, text }: { label: string; text: string }) {
+  return (
+    <details className="field-help">
+      <summary aria-label={`${label} help`} className="field-help-trigger" title={`${label} help`}>
+        i
+      </summary>
+      <div className="field-help-popover">
+        <p>{text}</p>
+      </div>
+    </details>
+  );
+}
+
 export function ComposePanel(props: ComposePanelProps) {
   const [taskText, setTaskText] = useState("");
   const [answerStyle, setAnswerStyle] = useState<ComposeAnswerStyle>("balanced");
@@ -155,7 +168,7 @@ export function ComposePanel(props: ComposePanelProps) {
   }
 
   return (
-    <details className="compose-panel" open>
+    <details className="compose-panel">
       <summary className="compose-panel-summary">
         <span className="compose-panel-title-wrap">
           <span className="compose-panel-title">Answer Mode</span>
@@ -200,7 +213,13 @@ export function ComposePanel(props: ComposePanelProps) {
             </label>
 
             <label>
-              <span>Retrieval limit</span>
+              <div className="compose-label-row">
+                <span>Retrieval limit</span>
+                <FieldHelp
+                  label="Retrieval limit"
+                  text="Higher values search more candidate posts, which can improve coverage but increase latency. Keep this moderate for routine use."
+                />
+              </div>
               <input
                 min={1}
                 onChange={(event) => setRetrievalLimit(event.target.value)}
@@ -211,7 +230,13 @@ export function ComposePanel(props: ComposePanelProps) {
             </label>
 
             <label>
-              <span>Context limit</span>
+              <div className="compose-label-row">
+                <span>Context limit</span>
+                <FieldHelp
+                  label="Context limit"
+                  text="Higher values pass more evidence into synthesis, which may improve detail but can increase model timeouts. Increase only when needed."
+                />
+              </div>
               <input
                 min={1}
                 onChange={(event) => setContextLimit(event.target.value)}
@@ -253,9 +278,6 @@ export function ComposePanel(props: ComposePanelProps) {
             <div className="compose-result-meta">
               <p className="subtle-text">
                 Retrieved {result.retrieval_stats.retrieved_count} candidates, used {result.retrieval_stats.used_count} evidence posts.
-              </p>
-              <p className="subtle-text">
-                Retrieval model {result.retrieval_stats.model}, latency {result.retrieval_stats.latency_ms} ms.
               </p>
             </div>
 

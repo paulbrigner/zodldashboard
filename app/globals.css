@@ -388,6 +388,58 @@ p {
   gap: 0.35rem;
 }
 
+.compose-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
+.field-help {
+  position: relative;
+  display: inline-block;
+}
+
+.field-help-trigger {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  width: 1rem;
+  height: 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.68rem;
+  line-height: 1;
+  color: #21488f;
+  background: #ffffff;
+}
+
+.field-help-trigger::-webkit-details-marker {
+  display: none;
+}
+
+.field-help-popover {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  right: 0;
+  z-index: 20;
+  width: min(300px, 70vw);
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  background: #ffffff;
+  box-shadow: 0 14px 32px rgba(13, 28, 61, 0.18);
+  padding: 0.55rem 0.62rem;
+}
+
+.field-help-popover p {
+  margin: 0;
+  font-size: 0.83rem;
+  line-height: 1.35;
+  color: var(--text-primary);
+}
+
 .compose-controls input,
 .compose-controls select {
   width: 100%;

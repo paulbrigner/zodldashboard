@@ -237,47 +237,125 @@ function sanitizeKeyPoints(value: unknown): string[] {
   return parsed.map((item) => item.replace(/\s+/g, " ").trim()).filter((item) => item.length > 0).slice(0, 8);
 }
 
-function parseComposeModelResult(rawContent: string): ComposeModelResult | null {
-  const jsonText = extractJsonObject(rawContent);
-  if (!jsonText) {
-    const plainText = rawContent.replace(/\s+/g, " ").trim();
-    if (!plainText) return null;
-    return {
-      answer_text: plainText,
-      draft_text: null,
-      key_points: [],
-      citation_status_ids: [],
-    };
-  }
-
-  let parsed: unknown;
+function decodeJsonStringFragment(value: string): string {
   try {
-    parsed = JSON.parse(jsonText);
+    return JSON.parse(`"${value}"`);
   } catch {
-    const plainText = rawContent.replace(/\s+/g, " ").trim();
-    if (!plainText) return null;
-    return {
-      answer_text: plainText,
-      draft_text: null,
-      key_points: [],
-      citation_status_ids: [],
-    };
+    return value
+      .replace(/\\"/g, "\"")
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\\\/g, "\\");
   }
+}
 
-  if (!parsed || typeof parsed !== "object") return null;
-  const record = parsed as Record<string, unknown>;
-  const answerText = asString(record.answer_text);
+function parseJsonLikeComposeText(rawContent: string): ComposeModelResult | null {
+  const text = rawContent.trim();
+  if (!text || !text.includes("\"answer_text\"")) return null;
+
+  const answerMatch =
+    text.match(/"answer_text"\s*:\s*"([\s\S]*?)"\s*,\s*"draft_text"/) ||
+    text.match(/"answer_text"\s*:\s*"([\s\S]*?)"\s*(?:,\s*"key_points"|,\s*"citation_status_ids"|})/);
+  if (!answerMatch || !answerMatch[1]) return null;
+
+  const answerText = decodeJsonStringFragment(answerMatch[1]).replace(/\s+/g, " ").trim();
   if (!answerText) return null;
 
-  const keyPoints = sanitizeKeyPoints(record.key_points);
-  const citationIds = asStringArray(record.citation_status_ids) || [];
-  const draftText = asString(record.draft_text);
+  const draftMatch = text.match(/"draft_text"\s*:\s*(null|"([\s\S]*?)")/);
+  const draftText =
+    draftMatch && draftMatch[1] !== "null" && draftMatch[2]
+      ? decodeJsonStringFragment(draftMatch[2]).replace(/\s+/g, " ").trim()
+      : null;
+
+  const keyPointsMatch = text.match(/"key_points"\s*:\s*\[([\s\S]*?)\]/);
+  const keyPoints = keyPointsMatch
+    ? (keyPointsMatch[1].match(/"((?:\\.|[^"\\])*)"/g) || [])
+        .map((item) => decodeJsonStringFragment(item.slice(1, -1)))
+        .map((item) => item.replace(/\s+/g, " ").trim())
+        .filter((item) => item.length > 0)
+        .slice(0, 8)
+    : [];
+
+  const citationMatch = text.match(/"citation_status_ids"\s*:\s*\[([\s\S]*?)\]/);
+  const citationStatusIds = citationMatch
+    ? (citationMatch[1].match(/"((?:\\.|[^"\\])*)"/g) || [])
+        .map((item) => decodeJsonStringFragment(item.slice(1, -1)))
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0)
+        .slice(0, 20)
+    : [];
 
   return {
     answer_text: answerText,
     draft_text: draftText || null,
     key_points: keyPoints,
-    citation_status_ids: citationIds,
+    citation_status_ids: citationStatusIds,
+  };
+}
+
+function normalizeAnswerText(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+
+  const nested = parseJsonLikeComposeText(trimmed);
+  if (nested?.answer_text) {
+    return nested.answer_text;
+  }
+
+  const jsonText = extractJsonObject(trimmed);
+  if (jsonText) {
+    try {
+      const parsed = JSON.parse(jsonText) as { answer_text?: unknown };
+      const answer = asString(parsed.answer_text);
+      if (answer) {
+        return answer;
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return trimmed;
+}
+
+function parseComposeModelResult(rawContent: string): ComposeModelResult | null {
+  const jsonText = extractJsonObject(rawContent);
+  if (jsonText) {
+    try {
+      const parsed = JSON.parse(jsonText);
+      if (parsed && typeof parsed === "object") {
+        const record = parsed as Record<string, unknown>;
+        const answerTextRaw = asString(record.answer_text);
+        if (answerTextRaw) {
+          const keyPoints = sanitizeKeyPoints(record.key_points);
+          const citationIds = asStringArray(record.citation_status_ids) || [];
+          const draftText = asString(record.draft_text);
+
+          return {
+            answer_text: normalizeAnswerText(answerTextRaw),
+            draft_text: draftText || null,
+            key_points: keyPoints,
+            citation_status_ids: citationIds,
+          };
+        }
+      }
+    } catch {
+      // fall through
+    }
+  }
+
+  const jsonLike = parseJsonLikeComposeText(rawContent);
+  if (jsonLike) {
+    return jsonLike;
+  }
+
+  const plainText = rawContent.replace(/\s+/g, " ").trim();
+  if (!plainText) return null;
+  return {
+    answer_text: plainText,
+    draft_text: null,
+    key_points: [],
+    citation_status_ids: [],
   };
 }
 
