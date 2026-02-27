@@ -31,6 +31,9 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "juan_sanchez13",
   "zeki82086538826",
   "sucveceza_35",
+  "windymint1",
+  "usa_trader06",
+  "roger_welch1",
 ];
 
 let pool;
