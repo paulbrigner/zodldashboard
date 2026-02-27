@@ -194,7 +194,8 @@ p {
 }
 
 .dashboard-open-button {
-  min-width: 8.6rem;
+  width: 100%;
+  min-height: 3.25rem;
 }
 
 .summary-panel {
