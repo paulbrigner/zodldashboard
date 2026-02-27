@@ -63,11 +63,11 @@ export default async function HomePage() {
               <h2>{dashboard.name}</h2>
               <p className="subtle-text">{dashboard.description}</p>
               {dashboard.href ? (
-                <Link className="button" href={dashboard.href}>
+                <Link className="button dashboard-open-button" href={dashboard.href}>
                   Open dashboard
                 </Link>
               ) : (
-                <span className="button button-disabled" aria-disabled="true">
+                <span className="button button-disabled dashboard-open-button" aria-disabled="true">
                   Coming soon
                 </span>
               )}

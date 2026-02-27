@@ -142,6 +142,10 @@ p {
   background: var(--accent-hover);
 }
 
+.button:visited {
+  color: #ffffff;
+}
+
 .button-secondary {
   background: var(--surface-alt);
   border-color: var(--border);
@@ -150,6 +154,10 @@ p {
 
 .button-secondary:hover {
   background: #e8f1ff;
+}
+
+.button-secondary:visited {
+  color: #21488f;
 }
 
 .button-small {
@@ -183,6 +191,10 @@ p {
 
 .dashboard-tile p {
   margin-top: 0;
+}
+
+.dashboard-open-button {
+  min-width: 8.6rem;
 }
 
 .summary-panel {
@@ -1017,8 +1029,11 @@ p {
   margin-top: 0.85rem;
 }
 
-.regulatory-page-body {
+.regulatory-content {
   margin-top: 1.15rem;
+}
+
+.regulatory-page-body {
   display: grid;
   gap: 1.2rem;
 }

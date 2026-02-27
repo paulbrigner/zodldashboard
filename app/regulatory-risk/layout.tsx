@@ -45,7 +45,7 @@ export default async function RegulatoryRiskLayout({
 
         {warning ? <p className="error-text regulatory-inline-alert">{warning}</p> : null}
 
-        {children}
+        <div className="regulatory-content">{children}</div>
       </section>
     </main>
   );
