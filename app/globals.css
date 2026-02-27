@@ -194,8 +194,13 @@ p {
 }
 
 .dashboard-open-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 100%;
-  min-height: 3.25rem;
+  height: 3.25rem;
+  padding: 0 0.96rem;
+  box-sizing: border-box;
 }
 
 .summary-panel {
