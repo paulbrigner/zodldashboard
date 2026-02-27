@@ -186,6 +186,7 @@ p {
   background: #ffffff;
   padding: 0.95rem;
   display: grid;
+  grid-template-rows: auto 1fr auto;
   gap: 0.7rem;
 }
 
