@@ -24,7 +24,14 @@ const DEFAULT_COMPOSE_RETRIEVAL_LIMIT = 40;
 const DEFAULT_COMPOSE_MAX_RETRIEVAL_LIMIT = 100;
 const DEFAULT_COMPOSE_CONTEXT_LIMIT = 12;
 const DEFAULT_COMPOSE_MAX_CONTEXT_LIMIT = 24;
-const DEFAULT_INGEST_OMIT_HANDLES = ["zec_88", "zec__2"];
+const DEFAULT_INGEST_OMIT_HANDLES = [
+  "zec_88",
+  "zec__2",
+  "spaljeni_zec",
+  "juan_sanchez13",
+  "zeki82086538826",
+  "sucveceza_35",
+];
 
 let pool;
 let summarySchemaEnsured = false;

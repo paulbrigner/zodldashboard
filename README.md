@@ -76,6 +76,7 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 - `scripts/db/`: migration runner.
 - `scripts/migrate/`: SQLite export/import/validation utilities.
 - `scripts/aws/`: backend provisioning script.
+- `scripts/ops/`: operational utilities (for example omit-list + purge helper).
 - `services/vpc-api-lambda/`: Lambda API implementation (`/v1/*`).
 - `docs/`: runbooks, OpenAPI, schema notes, ADRs, migration plans.
 
@@ -200,7 +201,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE` | Optional | For Venice thinking models, strips reasoning channel from response (default `true`). |
 | `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
-| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2`). |
+| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35`). |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
 | `DATABASE_URL` | Optional* | Postgres DSN. |
 | `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` `PGSSLMODE` | Optional* | Split Postgres settings when `DATABASE_URL` is unset. |
@@ -411,6 +412,20 @@ curl -sS 'https://www.zodldashboard.com/api/v1/health'
 curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
 curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
 ```
+
+### Add omit handles + purge existing rows (local + remote)
+
+```bash
+python3 scripts/ops/omit_and_purge_handles.py @handle_one @handle_two
+```
+
+Notes:
+- Handles can be space-separated or comma-separated, with or without `@`.
+- Script updates omit defaults in both local collector scripts and server-side repo files.
+- Script purges matching rows from local SQLite and remote API (`/v1/ops/purge-handle`).
+- Script pauses/resumes the local launchd ingest jobs automatically.
+- For remote purge auth it uses `--api-key`, then `XMONITOR_API_KEY`, then `launchctl getenv XMONITOR_API_KEY`.
+- Add `--update-lambda-env --aws-profile zodldashboard --aws-region us-east-1` to also update live Lambda env var `XMONITOR_INGEST_OMIT_HANDLES`.
 
 Ingest auth check (expected `401` without key):
 

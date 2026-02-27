@@ -14,12 +14,12 @@ This document describes the actual query logic currently used to pull data from 
 
 ## Base terms
 ```text
-Zcash OR ZEC OR Zodl OR #ZODL
+Zcash OR ZEC OR Zodl OR #ZODL OR Zashi
 ```
 
 Defined in script constant:
 ```python
-BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL"
+BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL OR Zashi"
 ```
 
 ## Priority mode query (watchlist-driven)
@@ -34,6 +34,32 @@ Implementation snippet:
 handles_expr = " OR ".join(f"from:{h}" for h in handles)
 q = f"({handles_expr}) ({BASE_TERMS})"
 ```
+
+### Optional reply capture (feature-flagged)
+
+Reply capture for watchlist handles is now configurable and disabled by default.
+
+Flags:
+- `XMON_WATCHLIST_REPLY_CAPTURE_ENABLED=0|1` (default `0`)
+- `XMON_WATCHLIST_REPLY_MODE=term_constrained|selected_handles` (default `term_constrained`)
+- `XMON_WATCHLIST_REPLY_TIERS=teammate,influencer,ecosystem` (tier filter)
+- `XMON_WATCHLIST_REPLY_HANDLES=...` (only used in `selected_handles`)
+
+When enabled:
+
+1) `term_constrained` mode adds reply queries that still require base terms:
+```text
+(from:<handles...>) filter:replies (Zcash OR ZEC OR Zodl OR #ZODL OR Zashi)
+```
+
+2) `selected_handles` mode adds reply queries for explicitly listed watchlist handles:
+```text
+(from:<selected_handles...>) filter:replies
+```
+
+Stored provenance:
+- `source_query=priority_reply_term`
+- `source_query=priority_reply_selected`
 
 ## Discovery mode query
 Discovery mode uses only the base terms:
