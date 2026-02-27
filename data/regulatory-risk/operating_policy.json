@@ -1,0 +1,51 @@
+{
+  "modes": [
+    {
+      "id": "normal",
+      "label": "Normal operations",
+      "applies_to": [
+        "GREEN"
+      ],
+      "description": "Standard approvals and guardrails apply."
+    },
+    {
+      "id": "caution",
+      "label": "Caution mode",
+      "applies_to": [
+        "AMBER"
+      ],
+      "description": "Wallet-only posture preferred; avoid releases and public marketing without review."
+    },
+    {
+      "id": "restricted",
+      "label": "Restricted mode",
+      "applies_to": [
+        "RED"
+      ],
+      "description": "No privacy-asset service work; no release keys; escalate."
+    }
+  ],
+  "permission_matrix": [
+    {
+      "scenario": "Residing/working full-time",
+      "RED": "No privacy-asset work. No release/keys. Escalate.",
+      "AMBER": "R&D ok if non-custodial. No marketing. Legal review.",
+      "GREEN": "Full scope (guardrails). Prefer for leads/releases."
+    },
+    {
+      "scenario": "Traveling/temporary (<30 days)",
+      "RED": "Restricted mode. Pause privacy tasks. Avoid demos.",
+      "AMBER": "Ok with caution. Avoid releases. Non-sensitive work.",
+      "GREEN": "Normal operations. Standard approvals."
+    }
+  ],
+  "implementation_controls": [
+    "Repo segmentation: privacy modules behind separate access group.",
+    "Release controls: app store submission and signing keys only from GREEN (or pre-cleared AMBER) locations.",
+    "Distribution/GTM: geo-fence privacy-asset services in RED; treat AMBER as wallet-only unless counsel approves.",
+    "Travel mode: enable restricted mode and revoke sensitive access while in RED zones."
+  ],
+  "source_refs": [
+    "Deck slides 11, 12"
+  ]
+}

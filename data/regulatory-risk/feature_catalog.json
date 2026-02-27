@@ -1,0 +1,107 @@
+[
+  {
+    "id": "non_custodial_core",
+    "name": "Non-custodial wallet core (user-controlled keys)",
+    "category": "WALLET",
+    "regulatory_triggers": [
+      "reduced_perimeter"
+    ],
+    "notes": "Core design choice that keeps the provider outside custody/service perimeters in many regimes.",
+    "recommended_controls": [
+      "No key escrow; no hosted signing; no recovery custody.",
+      "Document threat model: provider has no access/control of funds."
+    ]
+  },
+  {
+    "id": "shielded_transactions",
+    "name": "Shielded / privacy-preserving transactions",
+    "category": "WALLET",
+    "regulatory_triggers": [
+      "anonymity_feature"
+    ],
+    "notes": "High scrutiny feature; restrictions often fall on regulated intermediaries rather than code itself.",
+    "recommended_controls": [
+      "Keep wallet self-hosted and non-custodial.",
+      "Provide selective disclosure tooling where protocol supports it."
+    ]
+  },
+  {
+    "id": "in_app_swaps",
+    "name": "In-app swaps / DEX aggregation",
+    "category": "SERVICE",
+    "regulatory_triggers": [
+      "brokerage_or_exchange_like",
+      "jurisdiction_gating_needed"
+    ],
+    "notes": "Often treated as a regulated activity when operated/controlled by the provider or integrated with custodial partners.",
+    "recommended_controls": [
+      "Make swaps modular and disable-by-jurisdiction.",
+      "Avoid operating custody or routing as a managed service."
+    ]
+  },
+  {
+    "id": "fiat_on_off_ramp",
+    "name": "Fiat on/off-ramp integrations",
+    "category": "SERVICE",
+    "regulatory_triggers": [
+      "payment_services",
+      "vasp_partner_dependency"
+    ],
+    "notes": "High partner dependency; many PSPs will refuse privacy-asset flows.",
+    "recommended_controls": [
+      "Separate on-ramp from core wallet; gate by jurisdiction.",
+      "Maintain fallback flows that do not require PSP rails where feasible."
+    ]
+  },
+  {
+    "id": "custody",
+    "name": "Custody (provider holds keys)",
+    "category": "SERVICE",
+    "regulatory_triggers": [
+      "custody",
+      "vasp_casp_perimeter"
+    ],
+    "notes": "Most likely to trigger licensing and to be prohibited/unsupported for privacy assets in RED jurisdictions.",
+    "recommended_controls": [
+      "Avoid for privacy-asset roadmap; if ever considered, require dedicated counsel review per jurisdiction."
+    ]
+  },
+  {
+    "id": "hosted_signing",
+    "name": "Hosted signing / transaction relay operated by us",
+    "category": "SERVICE",
+    "regulatory_triggers": [
+      "control",
+      "vasp_casp_perimeter"
+    ],
+    "notes": "Can be characterized as providing an anonymising service depending on design.",
+    "recommended_controls": [
+      "Avoid; keep signing local on device."
+    ]
+  },
+  {
+    "id": "marketing_privacy_claims",
+    "name": "Marketing claims emphasizing anonymity/obfuscation",
+    "category": "GTM",
+    "regulatory_triggers": [
+      "promotion_restrictions",
+      "reputational_risk"
+    ],
+    "notes": "Increases scrutiny; avoid framing that implies evasion.",
+    "recommended_controls": [
+      "Message around lawful privacy, safety, and user-controlled disclosure; avoid evasion framing."
+    ]
+  },
+  {
+    "id": "selective_disclosure",
+    "name": "Selective disclosure / compliance export tools (user-controlled)",
+    "category": "WALLET",
+    "regulatory_triggers": [
+      "compliance_enablement"
+    ],
+    "notes": "Helps partners and users demonstrate lawful use while preserving privacy by default.",
+    "recommended_controls": [
+      "Keep disclosures user-initiated and user-controlled; do not collect keys."
+    ]
+  }
+]

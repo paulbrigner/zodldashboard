@@ -20,8 +20,9 @@ const dashboards: DashboardCard[] = [
   },
   {
     id: "placeholder-1",
-    name: "Dashboard Placeholder 1",
-    description: "Reserved for a future dashboard.",
+    name: "Regulatory Risk by Geography",
+    description: "Tiered jurisdiction risk, recommendations, policy posture, and activity feed.",
+    href: "/regulatory-risk",
   },
   {
     id: "placeholder-2",

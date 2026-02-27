@@ -1,0 +1,26 @@
+{
+  "RED": {
+    "label": "Avoid",
+    "definition": "Assume privacy-asset services are blocked (explicit bans or practical inability to obtain regulated rails).",
+    "default_team_guidance": [
+      "Do not offer privacy-asset services (custody, swap, brokerage, payment facilitation) into these jurisdictions without local counsel approval.",
+      "Treat partner availability (banks/PSPs/exchanges) as a hard constraint."
+    ]
+  },
+  "AMBER": {
+    "label": "Caution",
+    "definition": "Non-custodial software is often acceptable, but regulated rails are constrained and partner delistings are likely.",
+    "default_team_guidance": [
+      "Prefer wallet-only posture (non-custodial, no hosted signing).",
+      "Expect exchange/fiat partner refusals; design fallbacks."
+    ]
+  },
+  "GREEN": {
+    "label": "Friendlier for non-custodial R&D",
+    "definition": "Clearer rules and no categorical ban identified for non-custodial wallet development; still requires AML/partner diligence.",
+    "default_team_guidance": [
+      "Use as preferred bases for R&D, hiring, and release operations.",
+      "Maintain non-custodial guardrails; avoid implying evasion."
+    ]
+  }
+}

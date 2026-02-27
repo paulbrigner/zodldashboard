@@ -1,0 +1,657 @@
+{
+  "meta": {
+    "title": "Privacy-Enhancing Crypto Wallets \u2014 Regulatory Risk Dashboard Data",
+    "version": "v1.0",
+    "generated_on": "2026-02-27",
+    "source_deck": "20260216 (DRAFT) Regulatory Risks by Geography and Implications.pptx",
+    "notes": [
+      "This data is a planning input derived from the internal deck. It is not legal advice.",
+      "Tier labels (RED/AMBER/GREEN) reflect risk for privacy-asset services and partner availability, not end-user legality.",
+      "Update tiers and notes with counsel review before making launch/distribution decisions."
+    ]
+  },
+  "tiers": {
+    "RED": {
+      "label": "Avoid",
+      "definition": "Assume privacy-asset services are blocked (explicit bans or practical inability to obtain regulated rails).",
+      "default_team_guidance": [
+        "Do not offer privacy-asset services (custody, swap, brokerage, payment facilitation) into these jurisdictions without local counsel approval.",
+        "Treat partner availability (banks/PSPs/exchanges) as a hard constraint."
+      ]
+    },
+    "AMBER": {
+      "label": "Caution",
+      "definition": "Non-custodial software is often acceptable, but regulated rails are constrained and partner delistings are likely.",
+      "default_team_guidance": [
+        "Prefer wallet-only posture (non-custodial, no hosted signing).",
+        "Expect exchange/fiat partner refusals; design fallbacks."
+      ]
+    },
+    "GREEN": {
+      "label": "Friendlier for non-custodial R&D",
+      "definition": "Clearer rules and no categorical ban identified for non-custodial wallet development; still requires AML/partner diligence.",
+      "default_team_guidance": [
+        "Use as preferred bases for R&D, hiring, and release operations.",
+        "Maintain non-custodial guardrails; avoid implying evasion."
+      ]
+    }
+  },
+  "jurisdictions": [
+    {
+      "id": "uae",
+      "name": "United Arab Emirates (UAE)",
+      "region": "Middle East",
+      "tier": "RED",
+      "scope": [
+        "privacy-asset services",
+        "promotion/marketing risk"
+      ],
+      "risk_summary": "Layered restrictions across Dubai (VARA), DIFC (DFSA), and federal payments (CBUAE) with explicit prohibitions for anonymity-enhanced / privacy tokens in regulated contexts.",
+      "team_guidance": [
+        "Avoid locating regulated operations supporting privacy assets (custody/exchange/payment services).",
+        "Avoid marketing or distributing privacy-token services into UAE without specific local legal approval.",
+        "Assume partners (banks/PSPs/exchanges) will refuse privacy-asset integrations."
+      ],
+      "confidence": 5,
+      "source_refs": [
+        "Deck slides 3, 4, 6"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "japan",
+      "name": "Japan",
+      "region": "APAC",
+      "tier": "RED",
+      "scope": [
+        "regulated rails (exchanges/VASPs)"
+      ],
+      "risk_summary": "Registered exchanges have delisted high-anonymity assets under JVCEA/FSA pressure; commercial rails for privacy assets are constrained.",
+      "team_guidance": [
+        "Assume exchange/partner support for privacy assets will be limited or unavailable.",
+        "Wallet-only distribution may be possible but partner-dependent features should be treated as incompatible."
+      ],
+      "confidence": 4,
+      "source_refs": [
+        "Deck slides 3, 4, 7"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "south_korea",
+      "name": "South Korea",
+      "region": "APAC",
+      "tier": "RED",
+      "scope": [
+        "regulated rails (VASPs)"
+      ],
+      "risk_summary": "VASP regulation forbids transactions with 'dark coins' / privacy coins; licensed partners will not support privacy assets.",
+      "team_guidance": [
+        "Treat as incompatible for custody/exchange roadmap involving privacy assets.",
+        "Avoid local-facing marketing or support for privacy-asset services."
+      ],
+      "confidence": 4,
+      "source_refs": [
+        "Deck slides 3, 4, 7"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "thailand",
+      "name": "Thailand",
+      "region": "APAC",
+      "tier": "RED",
+      "scope": [
+        "licensed operator restrictions"
+      ],
+      "risk_summary": "Licensed digital asset business operators are prohibited from providing privacy coin services that conceal key transaction data.",
+      "team_guidance": [
+        "Do not build or operate licensed service models involving privacy-coin services in Thailand.",
+        "Wallet-only distribution may still face partner and marketing constraints."
+      ],
+      "confidence": 4,
+      "source_refs": [
+        "Deck slides 3, 4, 7"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "eu",
+      "name": "European Union (EU)",
+      "region": "Europe",
+      "tier": "AMBER",
+      "scope": [
+        "CASP/VASP restrictions",
+        "partner delisting pressure"
+      ],
+      "risk_summary": "EU AMLR restricts anonymous/obfuscated accounts for CASPs; software/self-hosted wallets can be acceptable if the provider has no access/control. Regulated rails are likely to delist/refuse privacy assets.",
+      "team_guidance": [
+        "Keep the wallet strictly non-custodial (no key escrow, no hosted signing).",
+        "Avoid EU CASP strategy depending on privacy-coin listings.",
+        "Expect friction with banks/PSPs; design fallbacks."
+      ],
+      "confidence": 4,
+      "source_refs": [
+        "Deck slides 3, 5"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "india",
+      "name": "India",
+      "region": "South Asia",
+      "tier": "AMBER",
+      "scope": [
+        "watchlist",
+        "partner delisting risk"
+      ],
+      "risk_summary": "Watch jurisdiction due to likely partner delistings and evolving AML posture toward privacy tokens.",
+      "team_guidance": [
+        "Treat as wallet-only unless counsel confirms otherwise.",
+        "Plan for sudden exchange/partner restrictions on privacy assets."
+      ],
+      "confidence": 3,
+      "source_refs": [
+        "Deck slide 3"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "switzerland",
+      "name": "Switzerland",
+      "region": "Europe",
+      "tier": "GREEN",
+      "scope": [
+        "non-custodial R&D base"
+      ],
+      "risk_summary": "Comparatively stable, pro-innovation environment for non-custodial software development; no categorical software ban identified in the deck.",
+      "team_guidance": [
+        "Good base for R&D and operations for a non-custodial wallet.",
+        "Still perform AML/partner diligence; do not treat as a safe harbor."
+      ],
+      "confidence": 3,
+      "source_refs": [
+        "Deck slide 8"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "united_states",
+      "name": "United States",
+      "region": "North America",
+      "tier": "GREEN",
+      "scope": [
+        "non-custodial R&D base"
+      ],
+      "risk_summary": "Non-custodial architecture reduces licensing perimeter versus running a hosted service; enforcement risk rises for hosted services and sanctions-sensitive activity.",
+      "team_guidance": [
+        "Keep non-custodial posture; avoid hosted services around privacy assets.",
+        "Be conservative around sanctions/compliance sensitive integrations."
+      ],
+      "confidence": 3,
+      "source_refs": [
+        "Deck slide 8"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    },
+    {
+      "id": "singapore",
+      "name": "Singapore",
+      "region": "APAC",
+      "tier": "GREEN",
+      "scope": [
+        "non-custodial R&D base",
+        "strict AML expectations"
+      ],
+      "risk_summary": "Clear licensing frameworks with strict AML/CFT expectations; treat privacy features as higher risk for partners.",
+      "team_guidance": [
+        "Good hub for compliant product teams; maintain conservative posture for retail marketing.",
+        "Assume partners may impose extra diligence for privacy assets."
+      ],
+      "confidence": 3,
+      "source_refs": [
+        "Deck slide 8"
+      ],
+      "primary_sources": [],
+      "last_verified_on": "2026-02-16",
+      "next_verification_due_on": "2026-05-16"
+    }
+  ],
+  "feature_catalog": [
+    {
+      "id": "non_custodial_core",
+      "name": "Non-custodial wallet core (user-controlled keys)",
+      "category": "WALLET",
+      "regulatory_triggers": [
+        "reduced_perimeter"
+      ],
+      "notes": "Core design choice that keeps the provider outside custody/service perimeters in many regimes.",
+      "recommended_controls": [
+        "No key escrow; no hosted signing; no recovery custody.",
+        "Document threat model: provider has no access/control of funds."
+      ]
+    },
+    {
+      "id": "shielded_transactions",
+      "name": "Shielded / privacy-preserving transactions",
+      "category": "WALLET",
+      "regulatory_triggers": [
+        "anonymity_feature"
+      ],
+      "notes": "High scrutiny feature; restrictions often fall on regulated intermediaries rather than code itself.",
+      "recommended_controls": [
+        "Keep wallet self-hosted and non-custodial.",
+        "Provide selective disclosure tooling where protocol supports it."
+      ]
+    },
+    {
+      "id": "in_app_swaps",
+      "name": "In-app swaps / DEX aggregation",
+      "category": "SERVICE",
+      "regulatory_triggers": [
+        "brokerage_or_exchange_like",
+        "jurisdiction_gating_needed"
+      ],
+      "notes": "Often treated as a regulated activity when operated/controlled by the provider or integrated with custodial partners.",
+      "recommended_controls": [
+        "Make swaps modular and disable-by-jurisdiction.",
+        "Avoid operating custody or routing as a managed service."
+      ]
+    },
+    {
+      "id": "fiat_on_off_ramp",
+      "name": "Fiat on/off-ramp integrations",
+      "category": "SERVICE",
+      "regulatory_triggers": [
+        "payment_services",
+        "vasp_partner_dependency"
+      ],
+      "notes": "High partner dependency; many PSPs will refuse privacy-asset flows.",
+      "recommended_controls": [
+        "Separate on-ramp from core wallet; gate by jurisdiction.",
+        "Maintain fallback flows that do not require PSP rails where feasible."
+      ]
+    },
+    {
+      "id": "custody",
+      "name": "Custody (provider holds keys)",
+      "category": "SERVICE",
+      "regulatory_triggers": [
+        "custody",
+        "vasp_casp_perimeter"
+      ],
+      "notes": "Most likely to trigger licensing and to be prohibited/unsupported for privacy assets in RED jurisdictions.",
+      "recommended_controls": [
+        "Avoid for privacy-asset roadmap; if ever considered, require dedicated counsel review per jurisdiction."
+      ]
+    },
+    {
+      "id": "hosted_signing",
+      "name": "Hosted signing / transaction relay operated by us",
+      "category": "SERVICE",
+      "regulatory_triggers": [
+        "control",
+        "vasp_casp_perimeter"
+      ],
+      "notes": "Can be characterized as providing an anonymising service depending on design.",
+      "recommended_controls": [
+        "Avoid; keep signing local on device."
+      ]
+    },
+    {
+      "id": "marketing_privacy_claims",
+      "name": "Marketing claims emphasizing anonymity/obfuscation",
+      "category": "GTM",
+      "regulatory_triggers": [
+        "promotion_restrictions",
+        "reputational_risk"
+      ],
+      "notes": "Increases scrutiny; avoid framing that implies evasion.",
+      "recommended_controls": [
+        "Message around lawful privacy, safety, and user-controlled disclosure; avoid evasion framing."
+      ]
+    },
+    {
+      "id": "selective_disclosure",
+      "name": "Selective disclosure / compliance export tools (user-controlled)",
+      "category": "WALLET",
+      "regulatory_triggers": [
+        "compliance_enablement"
+      ],
+      "notes": "Helps partners and users demonstrate lawful use while preserving privacy by default.",
+      "recommended_controls": [
+        "Keep disclosures user-initiated and user-controlled; do not collect keys."
+      ]
+    }
+  ],
+  "guardrails": [
+    {
+      "id": "non_custodial_only",
+      "title": "Non-custodial only",
+      "type": "ARCHITECTURE",
+      "status": "required",
+      "detail": "No key escrow, no hosted signing, no custody, no provider control of user funds.",
+      "source_refs": [
+        "Deck slides 2, 9"
+      ]
+    },
+    {
+      "id": "avoid_privacy_as_service",
+      "title": "Avoid 'privacy-as-a-service' components operated by us",
+      "type": "ARCHITECTURE",
+      "status": "required",
+      "detail": "Do not operate infrastructure that could be characterized as providing anonymisation as a managed service.",
+      "source_refs": [
+        "Deck slide 9"
+      ]
+    },
+    {
+      "id": "geo_gate_services",
+      "title": "Geo-gate service features in RED jurisdictions",
+      "type": "GTM",
+      "status": "recommended",
+      "detail": "Disable swaps/on-ramps/brokerage-like features in UAE/JP/KR/TH by default; treat AMBER as wallet-only unless counsel approves.",
+      "source_refs": [
+        "Deck slides 9, 11, 12"
+      ]
+    },
+    {
+      "id": "partner_fallbacks",
+      "title": "Plan for partner refusal",
+      "type": "PARTNERS",
+      "status": "recommended",
+      "detail": "Assume banks/PSPs/exchanges may refuse privacy-asset integrations; design fallbacks that do not depend on centralized rails.",
+      "source_refs": [
+        "Deck slides 2, 4, 5, 9"
+      ]
+    },
+    {
+      "id": "avoid_evasion_marketing",
+      "title": "Avoid marketing that implies evasion",
+      "type": "GTM",
+      "status": "required",
+      "detail": "Do not frame privacy features as hiding from law enforcement or sanctions; emphasize lawful privacy.",
+      "source_refs": [
+        "Deck slide 9"
+      ]
+    },
+    {
+      "id": "restricted_mode",
+      "title": "Restricted mode for teammates in RED locations",
+      "type": "SECURITY",
+      "status": "recommended",
+      "detail": "Block access to privacy-asset modules, signing keys, release pipelines, and marketing accounts while in RED zones.",
+      "source_refs": [
+        "Deck slides 11, 12"
+      ]
+    }
+  ],
+  "internal_processes": [
+    {
+      "id": "feature_to_reg_map",
+      "name": "Feature-to-regulation map",
+      "cadence": "as-needed (new features)",
+      "owner_role": "Policy/Legal + Product",
+      "output": "A mapping from features to regulatory perimeters and required controls (geo-gating, counsel review, redesign).",
+      "status": "planned",
+      "source_refs": [
+        "Deck slide 10"
+      ]
+    },
+    {
+      "id": "launch_matrix",
+      "name": "Launch matrix by jurisdiction",
+      "cadence": "quarterly + prior to launches",
+      "owner_role": "Policy/Legal + Product",
+      "output": "Allowed / Restricted / Counsel-required / Do-not-launch matrix for features and distribution channels.",
+      "status": "planned",
+      "source_refs": [
+        "Deck slide 10"
+      ]
+    },
+    {
+      "id": "partner_strategy_reality_check",
+      "name": "Partner strategy reality-check",
+      "cadence": "quarterly",
+      "owner_role": "Product",
+      "output": "Partner list with confirmed support posture toward privacy assets (where known).",
+      "status": "planned",
+      "source_refs": [
+        "Deck slide 10"
+      ]
+    },
+    {
+      "id": "policy_monitoring_loop",
+      "name": "Policy monitoring loop",
+      "cadence": "quarterly",
+      "owner_role": "Policy/Legal",
+      "output": "Watchlist updates and tier changes (with rationale and sources).",
+      "status": "planned",
+      "source_refs": [
+        "Deck slide 10"
+      ]
+    },
+    {
+      "id": "release_gate",
+      "name": "Release gate (lightweight)",
+      "cadence": "each release",
+      "owner_role": "Eng lead + Policy/Legal",
+      "output": "Release approval record (what changed, what jurisdictions affected, any geo-gates updated).",
+      "status": "planned",
+      "source_refs": [
+        "Deck slide 12"
+      ]
+    }
+  ],
+  "operating_policy": {
+    "modes": [
+      {
+        "id": "normal",
+        "label": "Normal operations",
+        "applies_to": [
+          "GREEN"
+        ],
+        "description": "Standard approvals and guardrails apply."
+      },
+      {
+        "id": "caution",
+        "label": "Caution mode",
+        "applies_to": [
+          "AMBER"
+        ],
+        "description": "Wallet-only posture preferred; avoid releases and public marketing without review."
+      },
+      {
+        "id": "restricted",
+        "label": "Restricted mode",
+        "applies_to": [
+          "RED"
+        ],
+        "description": "No privacy-asset service work; no release keys; escalate."
+      }
+    ],
+    "permission_matrix": [
+      {
+        "scenario": "Residing/working full-time",
+        "RED": "No privacy-asset work. No release/keys. Escalate.",
+        "AMBER": "R&D ok if non-custodial. No marketing. Legal review.",
+        "GREEN": "Full scope (guardrails). Prefer for leads/releases."
+      },
+      {
+        "scenario": "Traveling/temporary (<30 days)",
+        "RED": "Restricted mode. Pause privacy tasks. Avoid demos.",
+        "AMBER": "Ok with caution. Avoid releases. Non-sensitive work.",
+        "GREEN": "Normal operations. Standard approvals."
+      }
+    ],
+    "implementation_controls": [
+      "Repo segmentation: privacy modules behind separate access group.",
+      "Release controls: app store submission and signing keys only from GREEN (or pre-cleared AMBER) locations.",
+      "Distribution/GTM: geo-fence privacy-asset services in RED; treat AMBER as wallet-only unless counsel approves.",
+      "Travel mode: enable restricted mode and revoke sensitive access while in RED zones."
+    ],
+    "source_refs": [
+      "Deck slides 11, 12"
+    ]
+  },
+  "signals": [],
+  "recommendation_rules": [
+    {
+      "id": "rule_geo_gate_service_features",
+      "title": "If service features exist, recommend geo-gating in RED",
+      "priority": "high",
+      "when": {
+        "any_feature_category": "SERVICE",
+        "any_jurisdiction_tier": "RED"
+      },
+      "then": {
+        "recommendation": "Implement/verify jurisdiction gating for service features (swaps/on-ramps) in all RED jurisdictions; document fallback behavior.",
+        "suggested_tasks": [
+          "geo_gating_services",
+          "release_gate_check_geo_settings"
+        ]
+      }
+    },
+    {
+      "id": "rule_restricted_mode_if_red_presence",
+      "title": "If team members work from RED, recommend restricted mode controls",
+      "priority": "high",
+      "when": {
+        "signal_type": "team_location_red"
+      },
+      "then": {
+        "recommendation": "Enable restricted mode for the affected teammate(s): revoke release keys, block privacy-module access, pause local-facing demos/support.",
+        "suggested_tasks": [
+          "restricted_mode_controls",
+          "access_review"
+        ]
+      }
+    },
+    {
+      "id": "rule_policy_review_due",
+      "title": "If next review is due soon, recommend running policy review",
+      "priority": "medium",
+      "when": {
+        "policy_review_due_in_days_lte": 14
+      },
+      "then": {
+        "recommendation": "Run the quarterly policy monitoring review; confirm tiers and update sources/notes.",
+        "suggested_tasks": [
+          "policy_monitoring_loop"
+        ]
+      }
+    },
+    {
+      "id": "rule_partner_delisting",
+      "title": "If a partner delists/refuses privacy assets, recommend partner strategy update",
+      "priority": "medium",
+      "when": {
+        "signal_type": "partner_refusal_or_delisting"
+      },
+      "then": {
+        "recommendation": "Update the partner strategy reality-check; mark impacted jurisdictions/features and prioritize fallbacks.",
+        "suggested_tasks": [
+          "partner_strategy_reality_check",
+          "partner_fallbacks"
+        ]
+      }
+    },
+    {
+      "id": "rule_tier_change",
+      "title": "If a jurisdiction tier changes, recommend updating the launch matrix and comms",
+      "priority": "high",
+      "when": {
+        "signal_type": "jurisdiction_tier_change"
+      },
+      "then": {
+        "recommendation": "Update the launch matrix and guardrails; communicate change to engineering/product/marketing; record decision log entry.",
+        "suggested_tasks": [
+          "launch_matrix",
+          "change_log_update"
+        ]
+      }
+    },
+    {
+      "id": "rule_missing_primary_sources",
+      "title": "If primary sources are missing, recommend adding citations/links",
+      "priority": "low",
+      "when": {
+        "any_jurisdiction_missing_primary_sources": true
+      },
+      "then": {
+        "recommendation": "Add primary-source links (rulebooks, regulations, regulator pages) for jurisdictions that are missing them, and record verification dates.",
+        "suggested_tasks": [
+          "add_primary_sources"
+        ]
+      }
+    }
+  ],
+  "task_backlog": [
+    {
+      "id": "geo_gating_services",
+      "title": "Geo-gate service features in RED (and default wallet-only in AMBER)",
+      "owner_role": "Engineering",
+      "status": "planned"
+    },
+    {
+      "id": "restricted_mode_controls",
+      "title": "Restricted mode controls (repo access + release key controls)",
+      "owner_role": "Engineering",
+      "status": "planned"
+    },
+    {
+      "id": "release_gate_check_geo_settings",
+      "title": "Release gate checklist item: verify geo settings",
+      "owner_role": "Engineering",
+      "status": "planned"
+    },
+    {
+      "id": "access_review",
+      "title": "Access review checklist for teammates traveling to RED",
+      "owner_role": "Policy/Legal + Engineering",
+      "status": "planned"
+    },
+    {
+      "id": "change_log_update",
+      "title": "Add a change log entry template and update workflow",
+      "owner_role": "Policy/Legal",
+      "status": "planned"
+    },
+    {
+      "id": "add_primary_sources",
+      "title": "Add primary-source links + verification dates per jurisdiction",
+      "owner_role": "Policy/Legal",
+      "status": "planned"
+    }
+  ],
+  "change_log": [
+    {
+      "date": "2026-02-16",
+      "summary": "Draft deck circulated internally; tiers and guardrails documented.",
+      "source_refs": [
+        "Deck meta"
+      ]
+    }
+  ],
+  "review_schedule": {
+    "last_reviewed_on": "2026-02-16",
+    "next_review_on": "2026-05-16",
+    "owner_role": "Policy/Legal"
+  }
+}

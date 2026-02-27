@@ -1,0 +1,57 @@
+[
+  {
+    "id": "feature_to_reg_map",
+    "name": "Feature-to-regulation map",
+    "cadence": "as-needed (new features)",
+    "owner_role": "Policy/Legal + Product",
+    "output": "A mapping from features to regulatory perimeters and required controls (geo-gating, counsel review, redesign).",
+    "status": "planned",
+    "source_refs": [
+      "Deck slide 10"
+    ]
+  },
+  {
+    "id": "launch_matrix",
+    "name": "Launch matrix by jurisdiction",
+    "cadence": "quarterly + prior to launches",
+    "owner_role": "Policy/Legal + Product",
+    "output": "Allowed / Restricted / Counsel-required / Do-not-launch matrix for features and distribution channels.",
+    "status": "planned",
+    "source_refs": [
+      "Deck slide 10"
+    ]
+  },
+  {
+    "id": "partner_strategy_reality_check",
+    "name": "Partner strategy reality-check",
+    "cadence": "quarterly",
+    "owner_role": "Product",
+    "output": "Partner list with confirmed support posture toward privacy assets (where known).",
+    "status": "planned",
+    "source_refs": [
+      "Deck slide 10"
+    ]
+  },
+  {
+    "id": "policy_monitoring_loop",
+    "name": "Policy monitoring loop",
+    "cadence": "quarterly",
+    "owner_role": "Policy/Legal",
+    "output": "Watchlist updates and tier changes (with rationale and sources).",
+    "status": "planned",
+    "source_refs": [
+      "Deck slide 10"
+    ]
+  },
+  {
+    "id": "release_gate",
+    "name": "Release gate (lightweight)",
+    "cadence": "each release",
+    "owner_role": "Eng lead + Policy/Legal",
+    "output": "Release approval record (what changed, what jurisdictions affected, any geo-gates updated).",
+    "status": "planned",
+    "source_refs": [
+      "Deck slide 12"
+    ]
+  }
+]

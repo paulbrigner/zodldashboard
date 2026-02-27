@@ -6,7 +6,9 @@ node_modules/
 out/
 
 # migration/export artifacts
-data/
+data/*
+!data/regulatory-risk/
+!data/regulatory-risk/**
 
 # local env files
 .env*

@@ -1,0 +1,62 @@
+[
+  {
+    "id": "non_custodial_only",
+    "title": "Non-custodial only",
+    "type": "ARCHITECTURE",
+    "status": "required",
+    "detail": "No key escrow, no hosted signing, no custody, no provider control of user funds.",
+    "source_refs": [
+      "Deck slides 2, 9"
+    ]
+  },
+  {
+    "id": "avoid_privacy_as_service",
+    "title": "Avoid 'privacy-as-a-service' components operated by us",
+    "type": "ARCHITECTURE",
+    "status": "required",
+    "detail": "Do not operate infrastructure that could be characterized as providing anonymisation as a managed service.",
+    "source_refs": [
+      "Deck slide 9"
+    ]
+  },
+  {
+    "id": "geo_gate_services",
+    "title": "Geo-gate service features in RED jurisdictions",
+    "type": "GTM",
+    "status": "recommended",
+    "detail": "Disable swaps/on-ramps/brokerage-like features in UAE/JP/KR/TH by default; treat AMBER as wallet-only unless counsel approves.",
+    "source_refs": [
+      "Deck slides 9, 11, 12"
+    ]
+  },
+  {
+    "id": "partner_fallbacks",
+    "title": "Plan for partner refusal",
+    "type": "PARTNERS",
+    "status": "recommended",
+    "detail": "Assume banks/PSPs/exchanges may refuse privacy-asset integrations; design fallbacks that do not depend on centralized rails.",
+    "source_refs": [
+      "Deck slides 2, 4, 5, 9"
+    ]
+  },
+  {
+    "id": "avoid_evasion_marketing",
+    "title": "Avoid marketing that implies evasion",
+    "type": "GTM",
+    "status": "required",
+    "detail": "Do not frame privacy features as hiding from law enforcement or sanctions; emphasize lawful privacy.",
+    "source_refs": [
+      "Deck slide 9"
+    ]
+  },
+  {
+    "id": "restricted_mode",
+    "title": "Restricted mode for teammates in RED locations",
+    "type": "SECURITY",
+    "status": "recommended",
+    "detail": "Block access to privacy-asset modules, signing keys, release pipelines, and marketing accounts while in RED zones.",
+    "source_refs": [
+      "Deck slides 11, 12"
+    ]
+  }
+]

@@ -1,4 +1,4 @@
-# ZODL Dashboard (X Monitor)
+# ZODL Dashboard (X Monitor + Regulatory Risk)
 
 ## Executive Summary
 ZODL Dashboard is an authenticated web app and API for monitoring selected X posts, storing them in PostgreSQL, and presenting a filtered feed with detail views and rolling AI summaries.  
@@ -7,7 +7,9 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 ## Functional Summary
 - Google Workspace sign-in gate (`@zodl.com` by default).
 - Optional local-network bypass gate (feature-flagged, kill-switchable, IP allowlist based).
-- Dashboard hub (`/`) with X Monitor as the active dashboard.
+- Dashboard hub (`/`) with:
+  - X Monitor (`/x-monitor`)
+  - Regulatory Risk by Geography (`/regulatory-risk`)
 - X Monitor page (`/x-monitor`) with:
   - feed filters (tier, handle, significant flag, date range, text search, limit),
   - semantic search mode for natural-language retrieval,
@@ -168,6 +170,8 @@ Open [http://localhost:3000](http://localhost:3000).
 | `LOCAL_BYPASS_CLIENT_IP_HEADER` | Optional | Trusted infra header containing client IP (overrides XFF parsing). |
 | `LOCAL_BYPASS_DISPLAY_EMAIL` | Optional | Identity label shown in UI during bypass sessions. |
 | `LOCAL_BYPASS_LOG_DECISIONS` | Optional | Log bypass allow/deny decisions (default `true`). |
+| `REGULATORY_RISK_DATA_URL` | Optional | Runtime URL override for regulatory-risk `data_bundle_v1_1.json` (falls back to bundled data when unavailable). |
+| `DATA_URL` | Optional | Generic runtime data URL fallback used by regulatory-risk when `REGULATORY_RISK_DATA_URL` is unset. |
 | `XMONITOR_READ_API_BASE_URL` | Optional | UI data source base for feed/detail/summary reads. |
 | `XMONITOR_BACKEND_API_BASE_URL` | Optional | Proxy target for local `/api/v1/*` routes. |
 | `XMONITOR_API_PROXY_TIMEOUT_MS` | Optional | Upstream proxy timeout in ms (default `15000`). |
@@ -233,6 +237,11 @@ Open [http://localhost:3000](http://localhost:3000).
 - `/signin`
 - `/`
 - `/x-monitor`
+- `/regulatory-risk`
+- `/regulatory-risk/jurisdictions`
+- `/regulatory-risk/features`
+- `/regulatory-risk/policy`
+- `/regulatory-risk/activity`
 - `/posts/{statusId}`
 - `/oauth-probe`
 

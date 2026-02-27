@@ -1,0 +1,197 @@
+[
+  {
+    "id": "uae",
+    "name": "United Arab Emirates (UAE)",
+    "region": "Middle East",
+    "tier": "RED",
+    "scope": [
+      "privacy-asset services",
+      "promotion/marketing risk"
+    ],
+    "risk_summary": "Layered restrictions across Dubai (VARA), DIFC (DFSA), and federal payments (CBUAE) with explicit prohibitions for anonymity-enhanced / privacy tokens in regulated contexts.",
+    "team_guidance": [
+      "Avoid locating regulated operations supporting privacy assets (custody/exchange/payment services).",
+      "Avoid marketing or distributing privacy-token services into UAE without specific local legal approval.",
+      "Assume partners (banks/PSPs/exchanges) will refuse privacy-asset integrations."
+    ],
+    "confidence": 5,
+    "source_refs": [
+      "Deck slides 3, 4, 6"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "japan",
+    "name": "Japan",
+    "region": "APAC",
+    "tier": "RED",
+    "scope": [
+      "regulated rails (exchanges/VASPs)"
+    ],
+    "risk_summary": "Registered exchanges have delisted high-anonymity assets under JVCEA/FSA pressure; commercial rails for privacy assets are constrained.",
+    "team_guidance": [
+      "Assume exchange/partner support for privacy assets will be limited or unavailable.",
+      "Wallet-only distribution may be possible but partner-dependent features should be treated as incompatible."
+    ],
+    "confidence": 4,
+    "source_refs": [
+      "Deck slides 3, 4, 7"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "south_korea",
+    "name": "South Korea",
+    "region": "APAC",
+    "tier": "RED",
+    "scope": [
+      "regulated rails (VASPs)"
+    ],
+    "risk_summary": "VASP regulation forbids transactions with 'dark coins' / privacy coins; licensed partners will not support privacy assets.",
+    "team_guidance": [
+      "Treat as incompatible for custody/exchange roadmap involving privacy assets.",
+      "Avoid local-facing marketing or support for privacy-asset services."
+    ],
+    "confidence": 4,
+    "source_refs": [
+      "Deck slides 3, 4, 7"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "thailand",
+    "name": "Thailand",
+    "region": "APAC",
+    "tier": "RED",
+    "scope": [
+      "licensed operator restrictions"
+    ],
+    "risk_summary": "Licensed digital asset business operators are prohibited from providing privacy coin services that conceal key transaction data.",
+    "team_guidance": [
+      "Do not build or operate licensed service models involving privacy-coin services in Thailand.",
+      "Wallet-only distribution may still face partner and marketing constraints."
+    ],
+    "confidence": 4,
+    "source_refs": [
+      "Deck slides 3, 4, 7"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "eu",
+    "name": "European Union (EU)",
+    "region": "Europe",
+    "tier": "AMBER",
+    "scope": [
+      "CASP/VASP restrictions",
+      "partner delisting pressure"
+    ],
+    "risk_summary": "EU AMLR restricts anonymous/obfuscated accounts for CASPs; software/self-hosted wallets can be acceptable if the provider has no access/control. Regulated rails are likely to delist/refuse privacy assets.",
+    "team_guidance": [
+      "Keep the wallet strictly non-custodial (no key escrow, no hosted signing).",
+      "Avoid EU CASP strategy depending on privacy-coin listings.",
+      "Expect friction with banks/PSPs; design fallbacks."
+    ],
+    "confidence": 4,
+    "source_refs": [
+      "Deck slides 3, 5"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "india",
+    "name": "India",
+    "region": "South Asia",
+    "tier": "AMBER",
+    "scope": [
+      "watchlist",
+      "partner delisting risk"
+    ],
+    "risk_summary": "Watch jurisdiction due to likely partner delistings and evolving AML posture toward privacy tokens.",
+    "team_guidance": [
+      "Treat as wallet-only unless counsel confirms otherwise.",
+      "Plan for sudden exchange/partner restrictions on privacy assets."
+    ],
+    "confidence": 3,
+    "source_refs": [
+      "Deck slide 3"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "switzerland",
+    "name": "Switzerland",
+    "region": "Europe",
+    "tier": "GREEN",
+    "scope": [
+      "non-custodial R&D base"
+    ],
+    "risk_summary": "Comparatively stable, pro-innovation environment for non-custodial software development; no categorical software ban identified in the deck.",
+    "team_guidance": [
+      "Good base for R&D and operations for a non-custodial wallet.",
+      "Still perform AML/partner diligence; do not treat as a safe harbor."
+    ],
+    "confidence": 3,
+    "source_refs": [
+      "Deck slide 8"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "united_states",
+    "name": "United States",
+    "region": "North America",
+    "tier": "GREEN",
+    "scope": [
+      "non-custodial R&D base"
+    ],
+    "risk_summary": "Non-custodial architecture reduces licensing perimeter versus running a hosted service; enforcement risk rises for hosted services and sanctions-sensitive activity.",
+    "team_guidance": [
+      "Keep non-custodial posture; avoid hosted services around privacy assets.",
+      "Be conservative around sanctions/compliance sensitive integrations."
+    ],
+    "confidence": 3,
+    "source_refs": [
+      "Deck slide 8"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  },
+  {
+    "id": "singapore",
+    "name": "Singapore",
+    "region": "APAC",
+    "tier": "GREEN",
+    "scope": [
+      "non-custodial R&D base",
+      "strict AML expectations"
+    ],
+    "risk_summary": "Clear licensing frameworks with strict AML/CFT expectations; treat privacy features as higher risk for partners.",
+    "team_guidance": [
+      "Good hub for compliant product teams; maintain conservative posture for retail marketing.",
+      "Assume partners may impose extra diligence for privacy assets."
+    ],
+    "confidence": 3,
+    "source_refs": [
+      "Deck slide 8"
+    ],
+    "primary_sources": [],
+    "last_verified_on": "2026-02-16",
+    "next_verification_due_on": "2026-05-16"
+  }
+]

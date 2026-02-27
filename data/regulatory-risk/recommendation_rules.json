@@ -1,0 +1,91 @@
+[
+  {
+    "id": "rule_geo_gate_service_features",
+    "title": "If service features exist, recommend geo-gating in RED",
+    "priority": "high",
+    "when": {
+      "any_feature_category": "SERVICE",
+      "any_jurisdiction_tier": "RED"
+    },
+    "then": {
+      "recommendation": "Implement/verify jurisdiction gating for service features (swaps/on-ramps) in all RED jurisdictions; document fallback behavior.",
+      "suggested_tasks": [
+        "geo_gating_services",
+        "release_gate_check_geo_settings"
+      ]
+    }
+  },
+  {
+    "id": "rule_restricted_mode_if_red_presence",
+    "title": "If team members work from RED, recommend restricted mode controls",
+    "priority": "high",
+    "when": {
+      "signal_type": "team_location_red"
+    },
+    "then": {
+      "recommendation": "Enable restricted mode for the affected teammate(s): revoke release keys, block privacy-module access, pause local-facing demos/support.",
+      "suggested_tasks": [
+        "restricted_mode_controls",
+        "access_review"
+      ]
+    }
+  },
+  {
+    "id": "rule_policy_review_due",
+    "title": "If next review is due soon, recommend running policy review",
+    "priority": "medium",
+    "when": {
+      "policy_review_due_in_days_lte": 14
+    },
+    "then": {
+      "recommendation": "Run the quarterly policy monitoring review; confirm tiers and update sources/notes.",
+      "suggested_tasks": [
+        "policy_monitoring_loop"
+      ]
+    }
+  },
+  {
+    "id": "rule_partner_delisting",
+    "title": "If a partner delists/refuses privacy assets, recommend partner strategy update",
+    "priority": "medium",
+    "when": {
+      "signal_type": "partner_refusal_or_delisting"
+    },
+    "then": {
+      "recommendation": "Update the partner strategy reality-check; mark impacted jurisdictions/features and prioritize fallbacks.",
+      "suggested_tasks": [
+        "partner_strategy_reality_check",
+        "partner_fallbacks"
+      ]
+    }
+  },
+  {
+    "id": "rule_tier_change",
+    "title": "If a jurisdiction tier changes, recommend updating the launch matrix and comms",
+    "priority": "high",
+    "when": {
+      "signal_type": "jurisdiction_tier_change"
+    },
+    "then": {
+      "recommendation": "Update the launch matrix and guardrails; communicate change to engineering/product/marketing; record decision log entry.",
+      "suggested_tasks": [
+        "launch_matrix",
+        "change_log_update"
+      ]
+    }
+  },
+  {
+    "id": "rule_missing_primary_sources",
+    "title": "If primary sources are missing, recommend adding citations/links",
+    "priority": "low",
+    "when": {
+      "any_jurisdiction_missing_primary_sources": true
+    },
+    "then": {
+      "recommendation": "Add primary-source links (rulebooks, regulations, regulator pages) for jurisdictions that are missing them, and record verification dates.",
+      "suggested_tasks": [
+        "add_primary_sources"
+      ]
+    }
+  }
+]

@@ -1,0 +1,38 @@
+[
+  {
+    "id": "geo_gating_services",
+    "title": "Geo-gate service features in RED (and default wallet-only in AMBER)",
+    "owner_role": "Engineering",
+    "status": "planned"
+  },
+  {
+    "id": "restricted_mode_controls",
+    "title": "Restricted mode controls (repo access + release key controls)",
+    "owner_role": "Engineering",
+    "status": "planned"
+  },
+  {
+    "id": "release_gate_check_geo_settings",
+    "title": "Release gate checklist item: verify geo settings",
+    "owner_role": "Engineering",
+    "status": "planned"
+  },
+  {
+    "id": "access_review",
+    "title": "Access review checklist for teammates traveling to RED",
+    "owner_role": "Policy/Legal + Engineering",
+    "status": "planned"
+  },
+  {
+    "id": "change_log_update",
+    "title": "Add a change log entry template and update workflow",
+    "owner_role": "Policy/Legal",
+    "status": "planned"
+  },
+  {
+    "id": "add_primary_sources",
+    "title": "Add primary-source links + verification dates per jurisdiction",
+    "owner_role": "Policy/Legal",
+    "status": "planned"
+  }
+]
