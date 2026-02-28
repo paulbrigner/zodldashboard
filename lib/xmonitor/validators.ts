@@ -17,9 +17,9 @@ import {
 } from "@/lib/xmonitor/types";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
 
-const COMPOSE_DEFAULT_RETRIEVAL_LIMIT = 40;
+const COMPOSE_DEFAULT_RETRIEVAL_LIMIT = 50;
 const COMPOSE_MAX_RETRIEVAL_LIMIT = 100;
-const COMPOSE_DEFAULT_CONTEXT_LIMIT = 12;
+const COMPOSE_DEFAULT_CONTEXT_LIMIT = 14;
 const COMPOSE_MAX_CONTEXT_LIMIT = 24;
 
 function isRecord(value: unknown): value is Record<string, unknown> {

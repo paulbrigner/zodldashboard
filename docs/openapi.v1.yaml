@@ -557,8 +557,8 @@ components:
         tier: { type: string, enum: [teammate, influencer, ecosystem] }
         handle: { type: string }
         significant: { type: boolean }
-        retrieval_limit: { type: integer, minimum: 1, maximum: 100, default: 40 }
-        context_limit: { type: integer, minimum: 1, maximum: 24, default: 12 }
+        retrieval_limit: { type: integer, minimum: 1, maximum: 100, default: 50 }
+        context_limit: { type: integer, minimum: 1, maximum: 24, default: 14 }
         answer_style: { type: string, enum: [brief, balanced, detailed], default: balanced }
         draft_format: { type: string, enum: [none, x_post, thread], default: none }
 

@@ -12,10 +12,14 @@ type ComposePanelProps = {
   initialTier?: string;
   initialHandle?: string;
   initialSignificant?: boolean;
+  initialRetrievalLimit?: number;
+  initialContextLimit?: number;
 };
 
 const DEFAULT_TASK_TEXT =
   "Review the top X posts over the last 24 hours on protocol adjustments and draft an X post response that prioritizes digital cash user outcomes.";
+const DEFAULT_RETRIEVAL_LIMIT = 50;
+const DEFAULT_CONTEXT_LIMIT = 14;
 
 function asPositiveInt(value: string): number | undefined {
   const parsed = Number.parseInt(value.trim(), 10);
@@ -85,11 +89,21 @@ function FieldHelp({ label, text }: { label: string; text: string }) {
 }
 
 export function ComposePanel(props: ComposePanelProps) {
+  const initialRetrievalLimit =
+    typeof props.initialRetrievalLimit === "number" && props.initialRetrievalLimit > 0
+      ? Math.floor(props.initialRetrievalLimit)
+      : DEFAULT_RETRIEVAL_LIMIT;
+  const initialContextLimitRaw =
+    typeof props.initialContextLimit === "number" && props.initialContextLimit > 0
+      ? Math.floor(props.initialContextLimit)
+      : DEFAULT_CONTEXT_LIMIT;
+  const initialContextLimit = Math.min(initialContextLimitRaw, initialRetrievalLimit);
+
   const [taskText, setTaskText] = useState("");
   const [answerStyle, setAnswerStyle] = useState<ComposeAnswerStyle>("balanced");
   const [draftFormat, setDraftFormat] = useState<ComposeDraftFormat>("none");
-  const [retrievalLimit, setRetrievalLimit] = useState("30");
-  const [contextLimit, setContextLimit] = useState("8");
+  const [retrievalLimit, setRetrievalLimit] = useState(() => String(initialRetrievalLimit));
+  const [contextLimit, setContextLimit] = useState(() => String(initialContextLimit));
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeQueryResponse | null>(null);

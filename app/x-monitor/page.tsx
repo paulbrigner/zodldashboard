@@ -38,6 +38,11 @@ function qsValue(value: string | undefined): string {
   return value ?? "";
 }
 
+function asPositiveInt(value: string | undefined, fallback: number): number {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 function parseSearchMode(value: string | string[] | undefined): SearchMode {
   const text = asString(value);
   return text === "semantic" ? "semantic" : "keyword";
@@ -216,6 +221,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const composeFeatureEnabled = composeEnabled();
   const composeBackendConfigured = Boolean(backendApiBaseUrl());
   const composePanelEnabled = composeFeatureEnabled && semanticAvailable && composeBackendConfigured;
+  const composeDefaultRetrievalLimit = asPositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_RETRIEVAL_LIMIT, 50);
+  const composeDefaultContextLimit = Math.min(
+    asPositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT, 14),
+    composeDefaultRetrievalLimit
+  );
   const composeUnavailableReason = !composeFeatureEnabled
     ? "Compose mode is disabled by XMONITOR_COMPOSE_ENABLED."
     : !semanticAvailable
@@ -359,6 +369,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <ComposePanel
           enabled={composePanelEnabled}
           initialHandle={query.handle}
+          initialContextLimit={composeDefaultContextLimit}
+          initialRetrievalLimit={composeDefaultRetrievalLimit}
           initialSignificant={query.significant}
           initialSince={query.since}
           initialTier={query.tier}
