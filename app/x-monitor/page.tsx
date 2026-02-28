@@ -89,8 +89,8 @@ function buildRefreshUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: S
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
-function buildPollUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: SearchMode): string {
-  if (searchMode === "semantic") {
+function buildPollUrl(query: ReturnType<typeof parseFeedQuery>, useSemanticRetrieval: boolean): string {
+  if (useSemanticRetrieval) {
     return "";
   }
   const params = buildFilterSearchParams(query, 1);
@@ -234,9 +234,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         ? "Compose mode requires XMONITOR_BACKEND_API_BASE_URL."
         : null;
   const searchMode = parseSearchMode(params.search_mode);
+  const useSemanticRetrieval = searchMode === "semantic" && Boolean(query.q);
   const apiBaseUrl = readApiBaseUrl();
   const refreshUrl = buildRefreshUrl(query, searchMode);
-  const pollUrl = buildPollUrl(query, searchMode);
+  const pollUrl = buildPollUrl(query, useSemanticRetrieval);
 
   let feed: FeedResponse = { items: [], next_cursor: null };
   let feedError: string | null = null;
@@ -245,11 +246,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
   if (apiBaseUrl) {
     try {
-      if (searchMode === "semantic") {
+      if (useSemanticRetrieval) {
         if (!semanticAvailable) {
           feedError = "Semantic mode is disabled.";
-        } else if (!query.q) {
-          feed = { items: [], next_cursor: null };
         } else {
           feed = await fetchSemanticViaApi(apiBaseUrl, query);
         }
@@ -267,7 +266,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
   } else if (hasDatabaseConfig()) {
     try {
-      if (searchMode === "semantic") {
+      if (useSemanticRetrieval) {
         feedError = "Semantic mode requires XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL.";
       } else {
         feed = await getFeed(query);
@@ -393,7 +392,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         {feedError ? <p className="error-text">{feedError}</p> : null}
         <div className="feed-meta-row">
           <p>{feed.items.length} item(s) loaded</p>
-          {!feedError && searchMode !== "semantic" ? (
+          {!feedError && !useSemanticRetrieval ? (
             <FeedUpdateIndicator
               initialLatestKey={initialLatestKey}
               pollUrl={pollUrl}
@@ -433,7 +432,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         {feed.items.length === 0 && !feedError ? <p className="subtle-text">No posts matched your filters.</p> : null}
 
-        {searchMode !== "semantic" && feed.next_cursor ? (
+        {!useSemanticRetrieval && feed.next_cursor ? (
           <div className="pagination-row">
             <Link className="button" href={`/x-monitor?${buildQuery(params, feed.next_cursor)}`}>
               Load older items
