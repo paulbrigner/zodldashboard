@@ -231,6 +231,32 @@ function extractJsonObject(raw: string): string | null {
   return null;
 }
 
+function looksLikeMalformedStructuredOutput(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+
+  // Common truncated starts from strict JSON-mode replies.
+  if (/^[\[{(]+$/.test(text)) return true;
+  if (/^```(?:json)?\s*$/i.test(text)) return true;
+  if (/^```(?:json)?\s*[\[{(]?\s*$/i.test(text)) return true;
+
+  const startsStructured = text.startsWith("{") || text.startsWith("[") || /^```(?:json)?/i.test(text);
+  if (!startsStructured) return false;
+
+  // If we have balanced bounds, do not classify as malformed here.
+  if (extractJsonObject(text)) return false;
+
+  // Structured prefix without a complete object is likely truncated.
+  return text.includes("\"") || text.includes(":") || text.length <= 64;
+}
+
+function hasSubstantiveAnswerText(raw: string): boolean {
+  const text = raw.trim();
+  if (!text) return false;
+  if (looksLikeMalformedStructuredOutput(text)) return false;
+  return /[A-Za-z0-9]/.test(text);
+}
+
 function sanitizeKeyPoints(value: unknown): string[] {
   const parsed = asStringArray(value);
   if (!parsed) return [];
@@ -327,12 +353,16 @@ function parseComposeModelResult(rawContent: string): ComposeModelResult | null 
         const record = parsed as Record<string, unknown>;
         const answerTextRaw = asString(record.answer_text);
         if (answerTextRaw) {
+          const normalizedAnswerText = normalizeAnswerText(answerTextRaw);
+          if (!hasSubstantiveAnswerText(normalizedAnswerText)) {
+            return null;
+          }
           const keyPoints = sanitizeKeyPoints(record.key_points);
           const citationIds = asStringArray(record.citation_status_ids) || [];
           const draftText = asString(record.draft_text);
 
           return {
-            answer_text: normalizeAnswerText(answerTextRaw),
+            answer_text: normalizedAnswerText,
             draft_text: draftText || null,
             key_points: keyPoints,
             citation_status_ids: citationIds,
@@ -345,12 +375,12 @@ function parseComposeModelResult(rawContent: string): ComposeModelResult | null 
   }
 
   const jsonLike = parseJsonLikeComposeText(rawContent);
-  if (jsonLike) {
+  if (jsonLike && hasSubstantiveAnswerText(jsonLike.answer_text)) {
     return jsonLike;
   }
 
   const plainText = rawContent.replace(/\s+/g, " ").trim();
-  if (!plainText) return null;
+  if (!hasSubstantiveAnswerText(plainText)) return null;
   return {
     answer_text: plainText,
     draft_text: null,
@@ -843,6 +873,18 @@ export async function executeComposeQuery(
       const modelReply = await callComposeModel(prompt);
       const parsed = parseComposeModelResult(modelReply.content);
       if (!parsed) {
+        console.log(
+          JSON.stringify({
+            event: "compose_query_fallback",
+            request_id: requestId || null,
+            reason: "parse_failed",
+            model: modelReply.model,
+            model_reply_preview: modelReply.content.replace(/\s+/g, " ").slice(0, 160),
+            total_latency_ms: Date.now() - startedAt,
+            retrieval_latency_ms: evidencePayload.retrieval_stats.latency_ms,
+            generation_latency_ms: modelReply.latency_ms,
+          })
+        );
         return buildFallbackResponse(
           evidencePayload,
           "Retrieved evidence is available below. AI synthesis could not be parsed safely, so showing retrieval-backed results."
