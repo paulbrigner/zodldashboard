@@ -45,7 +45,7 @@ function asPositiveInt(value: string | undefined, fallback: number): number {
 
 function parseSearchMode(value: string | string[] | undefined): SearchMode {
   const text = asString(value);
-  return text === "semantic" ? "semantic" : "keyword";
+  return text === "keyword" ? "keyword" : "semantic";
 }
 
 function buildQuery(
@@ -289,16 +289,16 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const latestItem = feed.items[0];
   const initialLatestKey = latestItem ? `${latestItem.discovered_at}|${latestItem.status_id}` : null;
   const summariesByType = new Map(summaries.map((summary) => [summary.window_type, summary]));
-  const hasActiveFilters = Boolean(
+  const keywordHasActiveFilters = Boolean(
     query.tier ||
       query.handle ||
       query.significant !== undefined ||
       query.since ||
       query.until ||
       query.q ||
-      (query.limit && query.limit !== 50) ||
-      searchMode === "semantic"
+      (query.limit && query.limit !== 50)
   );
+  const hasActiveFilters = searchMode === "semantic" ? Boolean(query.q) : keywordHasActiveFilters;
 
   return (
     <main className="page feed-page">

@@ -693,6 +693,12 @@ p {
   gap: 0.35rem;
 }
 
+.filter-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.38rem;
+}
+
 .filter-grid span {
   font-size: 0.76rem;
   text-transform: uppercase;

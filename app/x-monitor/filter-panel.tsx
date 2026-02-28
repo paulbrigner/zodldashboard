@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DateRangeFields } from "./date-range-fields";
 
 type SearchMode = "keyword" | "semantic";
@@ -32,6 +32,7 @@ export function FilterPanel({
   initialLimit,
   initialHasActiveFilters,
 }: FilterPanelProps) {
+  const router = useRouter();
   const [searchMode, setSearchMode] = useState<SearchMode>(initialSearchMode);
   const [queryText, setQueryText] = useState<string>(() => {
     const initial = initialQuery || "";
@@ -43,6 +44,12 @@ export function FilterPanel({
 
   const semanticActive = useMemo(() => queryText.trim().length > 0, [queryText]);
   const hasActiveFilters = searchMode === "semantic" ? semanticActive : initialHasActiveFilters;
+
+  const resetFilters = () => {
+    setSearchMode("semantic");
+    setQueryText("");
+    router.push("/x-monitor?search_mode=semantic");
+  };
 
   return (
     <details className="filter-panel">
@@ -133,7 +140,20 @@ export function FilterPanel({
             <DateRangeFields initialSince={initialSince} initialUntil={initialUntil} />
 
             <label>
-              <span>Text search</span>
+              <div className="filter-label-row">
+                <span>Text search</span>
+                <details className="field-help">
+                  <summary aria-label="Text search help" className="field-help-trigger" title="Text search help">
+                    i
+                  </summary>
+                  <div className="field-help-popover">
+                    <p>
+                      Text search is a case-insensitive phrase match across post body text and author handle. Multiple
+                      words are treated as one phrase, not automatic AND/OR logic.
+                    </p>
+                  </div>
+                </details>
+              </div>
               <input
                 name="q"
                 onChange={(event) => setQueryText(event.target.value)}
@@ -154,9 +174,13 @@ export function FilterPanel({
           <button className="button" type="submit">
             Apply filters
           </button>
-          <Link className="button button-secondary" href="/x-monitor">
+          <button
+            className="button button-secondary"
+            onClick={resetFilters}
+            type="button"
+          >
             Reset
-          </Link>
+          </button>
         </div>
       </form>
     </details>
