@@ -2,6 +2,8 @@
 
 import { useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type {
   ComposeAnswerStyle,
   ComposeDraftFormat,
@@ -139,6 +141,14 @@ function FieldHelp({ label, text }: { label: string; text: string }) {
         <p>{text}</p>
       </div>
     </details>
+  );
+}
+
+function MarkdownText({ text }: { text: string }) {
+  return (
+    <div className="compose-markdown">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{text}</ReactMarkdown>
+    </div>
   );
 }
 
@@ -417,7 +427,7 @@ export function ComposePanel(props: ComposePanelProps) {
                   {copyState === "answer" ? "Copied" : "Copy answer"}
                 </button>
               </div>
-              <p className="compose-answer-text">{result.answer_text}</p>
+              <MarkdownText text={result.answer_text} />
             </section>
 
             {result.draft_text ? (
@@ -432,7 +442,7 @@ export function ComposePanel(props: ComposePanelProps) {
                     {copyState === "draft" ? "Copied" : "Copy draft"}
                   </button>
                 </div>
-                <p className="compose-answer-text">{result.draft_text}</p>
+                <MarkdownText text={result.draft_text} />
               </section>
             ) : null}
 

@@ -191,7 +191,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_BASE_URL` | Optional | Compose provider base URL (default Venice OpenAI-compatible endpoint). |
 | `XMONITOR_COMPOSE_MODEL` | Optional | Text model for grounded answer generation. |
 | `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (`120000` is recommended for high-quality async mode). |
-| `XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS` | Optional | Max generated tokens per compose request. |
+| `XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS` | Optional | Explicit max generated tokens cap; leave unset/empty to omit `max_tokens` and let provider defaults apply. |
 | `XMONITOR_COMPOSE_MAX_DRAFT_CHARS` | Optional | Max draft length for `thread` output (default `1200`). |
 | `XMONITOR_COMPOSE_MAX_DRAFT_CHARS_X_POST` | Optional | Max draft length for `x_post` output (default `280`). |
 | `XMONITOR_COMPOSE_MAX_CITATIONS` | Optional | Max citations returned in compose response (default `10`). |
@@ -360,6 +360,7 @@ Notes:
   - `key_points[]`,
   - `citations[]` (`status_id`, `url`, `author_handle`, excerpt, score),
   - `retrieval_stats` (`retrieved_count`, `used_count`, `model`, `latency_ms`, optional `coverage_score`).
+- `answer_text` and `draft_text` are generated as Markdown and rendered in the UI as formatted content (not raw Markdown syntax).
 - Job states: `queued`, `running`, `succeeded`, `failed`, `expired`.
 - If synthesis output is malformed, parser-safe fallback still returns retrieval-backed evidence/citations.
 

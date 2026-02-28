@@ -42,7 +42,7 @@ set -euo pipefail
 #   COMPOSE_BASE_URL=https://api.venice.ai/api/v1
 #   COMPOSE_MODEL=claude-sonnet-4-6
 #   COMPOSE_TIMEOUT_MS=120000
-#   COMPOSE_MAX_OUTPUT_TOKENS=1600
+#   COMPOSE_MAX_OUTPUT_TOKENS=1600  (leave empty to omit explicit max_tokens cap)
 #   COMPOSE_MAX_DRAFT_CHARS=1200
 #   COMPOSE_MAX_DRAFT_CHARS_X_POST=280
 #   COMPOSE_MAX_CITATIONS=10
@@ -115,7 +115,7 @@ COMPOSE_JOB_MAX_ATTEMPTS="${COMPOSE_JOB_MAX_ATTEMPTS:-3}"
 COMPOSE_BASE_URL="${COMPOSE_BASE_URL:-https://api.venice.ai/api/v1}"
 COMPOSE_MODEL="${COMPOSE_MODEL:-claude-sonnet-4-6}"
 COMPOSE_TIMEOUT_MS="${COMPOSE_TIMEOUT_MS:-120000}"
-COMPOSE_MAX_OUTPUT_TOKENS="${COMPOSE_MAX_OUTPUT_TOKENS:-1600}"
+COMPOSE_MAX_OUTPUT_TOKENS="${COMPOSE_MAX_OUTPUT_TOKENS:-}"
 COMPOSE_MAX_DRAFT_CHARS="${COMPOSE_MAX_DRAFT_CHARS:-1200}"
 COMPOSE_MAX_DRAFT_CHARS_X_POST="${COMPOSE_MAX_DRAFT_CHARS_X_POST:-280}"
 COMPOSE_MAX_CITATIONS="${COMPOSE_MAX_CITATIONS:-10}"
@@ -205,7 +205,7 @@ if is_truthy "$ENABLE_NAT_EGRESS"; then
   NAT_GW_ID="$(
     aws_cli ec2 describe-nat-gateways \
       --filter "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available,pending" \
-      --query "NatGateways[?Tags[?Key=='Name' && Value=='$NAT_GATEWAY_NAME']][0].NatGatewayId" \
+      --query "NatGateways[?Tags[?Key=='Name' && Value=='$NAT_GATEWAY_NAME']]|[0].NatGatewayId" \
       --output text 2>/dev/null || true
   )"
   if [[ -z "$NAT_GW_ID" || "$NAT_GW_ID" == "None" ]]; then

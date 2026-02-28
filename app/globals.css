@@ -512,10 +512,78 @@ p {
   gap: 0.6rem;
 }
 
-.compose-answer-text {
+.compose-markdown {
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.compose-markdown > :first-child {
+  margin-top: 0;
+}
+
+.compose-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.compose-markdown h1,
+.compose-markdown h2,
+.compose-markdown h3,
+.compose-markdown h4 {
+  margin: 0.2rem 0 0.55rem;
+  line-height: 1.25;
+}
+
+.compose-markdown p {
+  margin: 0 0 0.65rem;
+}
+
+.compose-markdown ul,
+.compose-markdown ol {
+  margin: 0 0 0.65rem;
+  padding-left: 1.2rem;
+}
+
+.compose-markdown li + li {
+  margin-top: 0.32rem;
+}
+
+.compose-markdown li > p {
   margin: 0;
-  line-height: 1.5;
-  white-space: pre-wrap;
+}
+
+.compose-markdown blockquote {
+  margin: 0 0 0.65rem;
+  padding-left: 0.7rem;
+  border-left: 3px solid #d2e1ff;
+  color: #22457e;
+}
+
+.compose-markdown a {
+  color: #21488f;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.compose-markdown code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-size: 0.9em;
+  padding: 0.06rem 0.22rem;
+  border-radius: 0.3rem;
+  background: #eef4ff;
+}
+
+.compose-markdown pre {
+  margin: 0 0 0.65rem;
+  padding: 0.58rem;
+  border-radius: 0.5rem;
+  background: #f4f8ff;
+  border: 1px solid #d5e1fa;
+  overflow: auto;
+}
+
+.compose-markdown pre code {
+  padding: 0;
+  background: transparent;
 }
 
 .compose-key-points {

@@ -12,7 +12,7 @@ const DEFAULT_COMPOSE_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_COMPOSE_MODEL = "llama-3.2-3b";
 const DEFAULT_COMPOSE_TIMEOUT_MS = 20000;
 const COMPOSE_TOTAL_TIMEOUT_BUDGET_MS = 26000;
-const DEFAULT_COMPOSE_MAX_OUTPUT_TOKENS = 900;
+const ASSUMED_MAX_OUTPUT_TOKENS_FOR_COST_ESTIMATE = 1200;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS = 1200;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS_X_POST = 280;
 const DEFAULT_COMPOSE_MAX_CITATIONS = 10;
@@ -94,6 +94,11 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function parseOptionalPositiveInt(value: string | undefined): number | null {
+  const parsed = Number.parseInt(value || "", 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 function parsePositiveNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value || "");
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
@@ -133,8 +138,8 @@ function composeTimeoutMs(): number {
   return parsePositiveInt(process.env.XMONITOR_COMPOSE_TIMEOUT_MS, DEFAULT_COMPOSE_TIMEOUT_MS);
 }
 
-function composeMaxOutputTokens(): number {
-  return parsePositiveInt(process.env.XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS, DEFAULT_COMPOSE_MAX_OUTPUT_TOKENS);
+function composeMaxOutputTokens(): number | null {
+  return parseOptionalPositiveInt(process.env.XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS);
 }
 
 function composeMaxDraftChars(): number {
@@ -566,6 +571,7 @@ function buildComposePrompt(
     "Do not include any text before or after the JSON object.",
     "Return only a single JSON object with keys:",
     '{"answer_text": string, "draft_text": string|null, "key_points": string[], "citation_status_ids": string[]}',
+    "Format answer_text as clean GitHub-flavored Markdown suitable for direct UI rendering (headings, short paragraphs, bullet lists).",
     answerStyleInstruction(answerStyle),
     composeDraftInstruction(draftFormat),
     "citation_status_ids must include only status IDs from the evidence list and should cover major claims.",
@@ -580,9 +586,10 @@ function buildComposePrompt(
   ].join("\n\n");
 
   const estimatedPromptTokens = Math.max(1, Math.ceil((systemPrompt.length + userPrompt.length) / 4));
+  const estimatedOutputTokens = composeMaxOutputTokens() ?? ASSUMED_MAX_OUTPUT_TOKENS_FOR_COST_ESTIMATE;
   const projectedMaxCostUsd =
     (estimatedPromptTokens / 1_000_000) * composeInputCostPer1MTokens() +
-    (composeMaxOutputTokens() / 1_000_000) * composeOutputCostPer1MTokens();
+    (estimatedOutputTokens / 1_000_000) * composeOutputCostPer1MTokens();
 
   return {
     systemPrompt,
@@ -668,15 +675,18 @@ async function callComposeModelOnce(
   const model = composeModel();
 
   try {
+    const resolvedMaxTokens = maxTokensOverride ?? composeMaxOutputTokens();
     const basePayload: Record<string, unknown> = {
       model,
       temperature: 0.2,
-      max_tokens: maxTokensOverride || composeMaxOutputTokens(),
       messages: [
         { role: "system", content: prompt.systemPrompt },
         { role: "user", content: prompt.userPrompt },
       ],
     };
+    if (resolvedMaxTokens) {
+      basePayload.max_tokens = resolvedMaxTokens;
+    }
     if (composeUsesVeniceProvider()) {
       basePayload.venice_parameters = {
         disable_thinking: composeDisableThinking(),
@@ -754,7 +764,8 @@ async function callComposeModel(
       if (retryTimeoutMs < 3000) {
         throw error;
       }
-      const retryMaxTokens = Math.max(220, Math.floor(composeMaxOutputTokens() * 0.4));
+      const configuredMaxTokens = composeMaxOutputTokens();
+      const retryMaxTokens = configuredMaxTokens ? Math.max(220, Math.floor(configuredMaxTokens * 0.4)) : 700;
       console.log(
         JSON.stringify({
           event: "compose_model_retry",
@@ -762,6 +773,7 @@ async function callComposeModel(
           model: composeModel(),
           initial_timeout_ms: initialTimeoutMs,
           retry_timeout_ms: retryTimeoutMs,
+          configured_max_tokens: configuredMaxTokens,
           retry_max_tokens: retryMaxTokens,
         })
       );

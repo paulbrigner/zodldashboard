@@ -31,7 +31,6 @@ const DEFAULT_COMPOSE_JOB_MAX_ATTEMPTS = 3;
 const DEFAULT_COMPOSE_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_COMPOSE_MODEL = "claude-sonnet-4-6";
 const DEFAULT_COMPOSE_TIMEOUT_MS = 120000;
-const DEFAULT_COMPOSE_MAX_OUTPUT_TOKENS = 1600;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS = 1200;
 const DEFAULT_COMPOSE_MAX_DRAFT_CHARS_X_POST = 280;
 const DEFAULT_COMPOSE_MAX_CITATIONS = 10;
@@ -62,6 +61,11 @@ let sqsClient;
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseOptionalPositiveInt(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
 function parseFloatOr(value, fallback) {
@@ -170,7 +174,7 @@ function composeTimeoutMs() {
 }
 
 function composeMaxOutputTokens() {
-  return parsePositiveInt(process.env.XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS, DEFAULT_COMPOSE_MAX_OUTPUT_TOKENS);
+  return parseOptionalPositiveInt(process.env.XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS);
 }
 
 function composeMaxDraftChars() {
@@ -2340,6 +2344,7 @@ function buildComposePrompt(input, evidence) {
     "Do not include any text before or after the JSON object.",
     "Return only a single JSON object with keys:",
     '{"answer_text": string, "draft_text": string|null, "key_points": string[], "citation_status_ids": string[]}',
+    "Format answer_text as clean GitHub-flavored Markdown suitable for direct UI rendering (headings, short paragraphs, bullet lists).",
     answerStyleInstruction(answerStyle),
     composeDraftInstruction(draftFormat),
     "citation_status_ids must include only status IDs from the evidence list and should cover major claims.",
@@ -2419,15 +2424,18 @@ async function callComposeModelOnce(prompt, timeoutMs, maxTokensOverride) {
   const model = composeModel();
 
   try {
+    const resolvedMaxTokens = maxTokensOverride ?? composeMaxOutputTokens();
     const basePayload = {
       model,
       temperature: 0.2,
-      max_tokens: maxTokensOverride || composeMaxOutputTokens(),
       messages: [
         { role: "system", content: prompt.systemPrompt },
         { role: "user", content: prompt.userPrompt },
       ],
     };
+    if (resolvedMaxTokens) {
+      basePayload.max_tokens = resolvedMaxTokens;
+    }
 
     if (composeUsesVeniceProvider()) {
       basePayload.venice_parameters = {
@@ -2494,7 +2502,8 @@ async function callComposeModel(prompt) {
   } catch (error) {
     if (error instanceof ComposeExecutionError && error.status === 504) {
       const retryTimeoutMs = Math.max(4000, Math.floor(initialTimeoutMs * 0.2));
-      const retryMaxTokens = Math.max(300, Math.floor(composeMaxOutputTokens() * 0.4));
+      const configuredMaxTokens = composeMaxOutputTokens();
+      const retryMaxTokens = configuredMaxTokens ? Math.max(300, Math.floor(configuredMaxTokens * 0.4)) : 800;
       console.log(
         JSON.stringify({
           event: "compose_model_retry_backend",
@@ -2502,6 +2511,7 @@ async function callComposeModel(prompt) {
           model: composeModel(),
           initial_timeout_ms: initialTimeoutMs,
           retry_timeout_ms: retryTimeoutMs,
+          configured_max_tokens: configuredMaxTokens,
           retry_max_tokens: retryMaxTokens,
         })
       );
