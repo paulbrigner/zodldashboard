@@ -253,7 +253,7 @@ paths:
 
   /query/compose:
     post:
-      summary: Grounded semantic retrieval plus AI answer/draft
+      summary: Compose retrieval/evidence stage (no text generation)
       operationId: queryCompose
       requestBody:
         required: true
@@ -263,11 +263,48 @@ paths:
               $ref: '#/components/schemas/ComposeQueryRequest'
       responses:
         '200':
-          description: Grounded answer with citations
+          description: Retrieval-backed evidence payload
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ComposeQueryResponse'
+
+  /query/compose/jobs:
+    post:
+      summary: Enqueue async grounded compose job
+      operationId: createComposeJob
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ComposeQueryRequest'
+      responses:
+        '202':
+          description: Job queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposeJobCreatedResponse'
+
+  /query/compose/jobs/{jobId}:
+    get:
+      summary: Get async grounded compose job status/result
+      operationId: getComposeJob
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Job status payload (with result on success)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ComposeJobStatusResponse'
+        '404':
+          description: Job not found
 
   /posts/{statusId}:
     get:
@@ -597,3 +634,46 @@ components:
             $ref: '#/components/schemas/ComposeCitation'
         retrieval_stats:
           $ref: '#/components/schemas/ComposeRetrievalStats'
+
+    ComposeJobStatus:
+      type: string
+      enum: [queued, running, succeeded, failed, expired]
+
+    ComposeJobError:
+      type: object
+      required: [code, message]
+      properties:
+        code: { type: string }
+        message: { type: string }
+
+    ComposeJobCreatedResponse:
+      type: object
+      required: [job_id, status, created_at, expires_at]
+      properties:
+        job_id: { type: string, format: uuid }
+        status:
+          $ref: '#/components/schemas/ComposeJobStatus'
+        created_at: { type: string, format: date-time }
+        expires_at: { type: string, format: date-time }
+        poll_after_ms: { type: integer, minimum: 1 }
+
+    ComposeJobStatusResponse:
+      type: object
+      required: [job_id, status, created_at, expires_at]
+      properties:
+        job_id: { type: string, format: uuid }
+        status:
+          $ref: '#/components/schemas/ComposeJobStatus'
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        expires_at: { type: string, format: date-time }
+        poll_after_ms: { type: integer, minimum: 1 }
+        error:
+          allOf:
+            - $ref: '#/components/schemas/ComposeJobError'
+          nullable: true
+        result:
+          allOf:
+            - $ref: '#/components/schemas/ComposeQueryResponse'
+          nullable: true

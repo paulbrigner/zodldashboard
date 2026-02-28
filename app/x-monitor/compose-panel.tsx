@@ -1,8 +1,15 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import type { ComposeAnswerStyle, ComposeDraftFormat, ComposeQueryResponse } from "@/lib/xmonitor/types";
+import type {
+  ComposeAnswerStyle,
+  ComposeDraftFormat,
+  ComposeJobCreatedResponse,
+  ComposeJobStatus,
+  ComposeJobStatusResponse,
+  ComposeQueryResponse,
+} from "@/lib/xmonitor/types";
 
 type ComposePanelProps = {
   enabled: boolean;
@@ -20,6 +27,9 @@ const DEFAULT_TASK_TEXT =
   "Review the top X posts over the last 24 hours on protocol adjustments and draft an X post response that prioritizes digital cash user outcomes.";
 const DEFAULT_RETRIEVAL_LIMIT = 50;
 const DEFAULT_CONTEXT_LIMIT = 14;
+const DEFAULT_POLL_MS = 2500;
+const MIN_POLL_MS = 1000;
+const MAX_POLL_MS = 10000;
 
 function asPositiveInt(value: string): number | undefined {
   const parsed = Number.parseInt(value.trim(), 10);
@@ -66,6 +76,50 @@ function isComposeQueryResponse(value: unknown): value is ComposeQueryResponse {
   );
 }
 
+function isComposeJobStatus(value: unknown): value is ComposeJobStatus {
+  return value === "queued" || value === "running" || value === "succeeded" || value === "failed" || value === "expired";
+}
+
+function isComposeJobCreatedResponse(value: unknown): value is ComposeJobCreatedResponse {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.job_id === "string" &&
+    isComposeJobStatus(record.status) &&
+    typeof record.created_at === "string" &&
+    typeof record.expires_at === "string"
+  );
+}
+
+function isComposeJobStatusResponse(value: unknown): value is ComposeJobStatusResponse {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  if (
+    typeof record.job_id !== "string" ||
+    !isComposeJobStatus(record.status) ||
+    typeof record.created_at !== "string" ||
+    typeof record.expires_at !== "string"
+  ) {
+    return false;
+  }
+
+  if (record.result !== undefined && record.result !== null && !isComposeQueryResponse(record.result)) {
+    return false;
+  }
+
+  return true;
+}
+
+function clampPollMs(value: unknown, fallback: number): number {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.min(MAX_POLL_MS, Math.max(MIN_POLL_MS, Math.floor(parsed)));
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
     await navigator.clipboard.writeText(text);
@@ -108,6 +162,8 @@ export function ComposePanel(props: ComposePanelProps) {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeQueryResponse | null>(null);
   const [copyState, setCopyState] = useState<"answer" | "draft" | null>(null);
+  const [activeJob, setActiveJob] = useState<{ jobId: string; status: ComposeJobStatus } | null>(null);
+  const runTokenRef = useRef(0);
 
   const scopeSummary = useMemo(() => summarizeScope(props), [props]);
 
@@ -124,6 +180,7 @@ export function ComposePanel(props: ComposePanelProps) {
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setErrorText(null);
+    setResult(null);
 
     if (!props.enabled) {
       setErrorText(props.unavailableReason || "Compose mode is unavailable.");
@@ -152,9 +209,12 @@ export function ComposePanel(props: ComposePanelProps) {
       significant: props.initialSignificant,
     };
 
+    const runToken = runTokenRef.current + 1;
+    runTokenRef.current = runToken;
     setIsLoading(true);
+    setActiveJob(null);
     try {
-      const response = await fetch("/api/v1/query/compose", {
+      const response = await fetch("/api/v1/query/compose/jobs", {
         method: "POST",
         headers: {
           accept: "application/json",
@@ -168,16 +228,65 @@ export function ComposePanel(props: ComposePanelProps) {
       }
 
       const body = await response.json();
-      if (!isComposeQueryResponse(body)) {
-        throw new Error("Invalid compose response payload");
+      if (!isComposeJobCreatedResponse(body)) {
+        throw new Error("Invalid compose job create response payload");
+      }
+      if (runTokenRef.current !== runToken) return;
+
+      setActiveJob({ jobId: body.job_id, status: body.status });
+
+      let pollDelayMs = clampPollMs(body.poll_after_ms, DEFAULT_POLL_MS);
+      while (runTokenRef.current === runToken) {
+        await sleep(pollDelayMs);
+        if (runTokenRef.current !== runToken) return;
+
+        const pollResponse = await fetch(`/api/v1/query/compose/jobs/${encodeURIComponent(body.job_id)}`, {
+          method: "GET",
+          headers: {
+            accept: "application/json",
+          },
+          cache: "no-store",
+        });
+        if (!pollResponse.ok) {
+          throw new Error(await parseError(pollResponse));
+        }
+
+        const pollBody = await pollResponse.json();
+        if (!isComposeJobStatusResponse(pollBody)) {
+          throw new Error("Invalid compose job status response payload");
+        }
+
+        setActiveJob({ jobId: pollBody.job_id, status: pollBody.status });
+
+        if (pollBody.status === "succeeded") {
+          if (!pollBody.result || !isComposeQueryResponse(pollBody.result)) {
+            throw new Error("Compose job completed without a valid result payload");
+          }
+          setResult(pollBody.result);
+          break;
+        }
+
+        if (pollBody.status === "failed" || pollBody.status === "expired") {
+          const message =
+            pollBody.error?.message ||
+            (pollBody.status === "expired"
+              ? "Compose job expired before completing."
+              : "Compose job failed.");
+          throw new Error(message);
+        }
+
+        pollDelayMs = clampPollMs(pollBody.poll_after_ms, pollDelayMs);
       }
 
-      setResult(body);
     } catch (error) {
-      setResult(null);
-      setErrorText(error instanceof Error ? error.message : "Compose request failed");
+      if (runTokenRef.current === runToken) {
+        setResult(null);
+        setErrorText(error instanceof Error ? error.message : "Compose request failed");
+      }
     } finally {
-      setIsLoading(false);
+      if (runTokenRef.current === runToken) {
+        setIsLoading(false);
+      }
     }
   }
 
@@ -271,9 +380,12 @@ export function ComposePanel(props: ComposePanelProps) {
               className="button button-secondary"
               disabled={isLoading}
               onClick={() => {
+                runTokenRef.current += 1;
                 setTaskText("");
                 setResult(null);
                 setErrorText(null);
+                setActiveJob(null);
+                setIsLoading(false);
               }}
               type="button"
             >
@@ -286,6 +398,9 @@ export function ComposePanel(props: ComposePanelProps) {
         </form>
 
         {errorText ? <p className="error-text">{errorText}</p> : null}
+        {isLoading && activeJob ? (
+          <p className="subtle-text">Answer job {activeJob.jobId.slice(0, 8)}... is {activeJob.status}.</p>
+        ) : null}
 
         {result ? (
           <div className="compose-result">

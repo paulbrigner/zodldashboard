@@ -262,3 +262,28 @@ export type ComposeQueryResponse = {
   citations: ComposeCitation[];
   retrieval_stats: ComposeRetrievalStats;
 };
+
+export type ComposeJobStatus = "queued" | "running" | "succeeded" | "failed" | "expired";
+
+export type ComposeJobCreatedResponse = {
+  job_id: string;
+  status: ComposeJobStatus;
+  created_at: string;
+  expires_at: string;
+  poll_after_ms?: number;
+};
+
+export type ComposeJobStatusResponse = {
+  job_id: string;
+  status: ComposeJobStatus;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  expires_at: string;
+  poll_after_ms?: number;
+  error?: {
+    code: string;
+    message: string;
+  } | null;
+  result?: ComposeQueryResponse | null;
+};

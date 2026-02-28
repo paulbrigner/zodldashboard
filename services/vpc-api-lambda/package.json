@@ -6,6 +6,7 @@
   "description": "VPC-attached Lambda API for XMonitor v1 endpoints.",
   "main": "index.mjs",
   "dependencies": {
+    "@aws-sdk/client-sqs": "^3.911.0",
     "pg": "^8.16.3"
   }
 }

@@ -190,11 +190,17 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_DRAFTS_ENABLED` | Optional | Allows draft output (`x_post`/`thread`) when compose is enabled. |
 | `XMONITOR_COMPOSE_BASE_URL` | Optional | Compose provider base URL (default Venice OpenAI-compatible endpoint). |
 | `XMONITOR_COMPOSE_MODEL` | Optional | Text model for grounded answer generation. |
-| `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (default `20000`, with bounded retry). |
+| `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (`120000` is recommended for high-quality async mode). |
 | `XMONITOR_COMPOSE_MAX_OUTPUT_TOKENS` | Optional | Max generated tokens per compose request. |
 | `XMONITOR_COMPOSE_MAX_DRAFT_CHARS` | Optional | Max draft length for `thread` output (default `1200`). |
 | `XMONITOR_COMPOSE_MAX_DRAFT_CHARS_X_POST` | Optional | Max draft length for `x_post` output (default `280`). |
 | `XMONITOR_COMPOSE_MAX_CITATIONS` | Optional | Max citations returned in compose response (default `10`). |
+| `XMONITOR_COMPOSE_ASYNC_ENABLED` | Optional | Enables async compose jobs (`/query/compose/jobs`) and worker-driven synthesis. |
+| `XMONITOR_COMPOSE_JOBS_QUEUE_URL` | Required for async mode | SQS queue URL used for compose job dispatch/retry. |
+| `XMONITOR_COMPOSE_JOB_POLL_MS` | Optional | Suggested polling interval for compose job checks (default `2500`). |
+| `XMONITOR_COMPOSE_JOB_TTL_HOURS` | Optional | Job expiry horizon in hours (default `24`). |
+| `XMONITOR_COMPOSE_JOB_MAX_ATTEMPTS` | Optional | Worker retry ceiling before terminal failure (default `3`). |
+| `XMONITOR_ENABLE_COMPOSE_JOBS_SCHEMA_BOOTSTRAP` | Optional | Auto-creates `compose_jobs` schema objects in backend Lambda (default `false`, recommended for least-privilege app DB roles). |
 | `XMONITOR_COMPOSE_MAX_REQUESTS_PER_MINUTE` | Optional | In-process rate guard for compose requests. |
 | `XMONITOR_COMPOSE_MAX_CONCURRENCY` | Optional | In-process concurrency guard for compose requests. |
 | `XMONITOR_COMPOSE_MAX_ESTIMATED_COST_USD` | Optional | Per-request projected cost ceiling guard. |
@@ -205,7 +211,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE` | Optional | For Venice thinking models, strips reasoning channel from response (default `true`). |
 | `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
-| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35, windymint1, usa_trader06, roger_welch1`). |
+| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35, windymint1, usa_trader06, roger_welch1, cmscanner_bb, cmscanner_rsi, dexportal_, luckyvinod16`). |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
 | `DATABASE_URL` | Optional* | Postgres DSN. |
 | `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` `PGSSLMODE` | Optional* | Split Postgres settings when `DATABASE_URL` is unset. |
@@ -224,9 +230,27 @@ Open [http://localhost:3000](http://localhost:3000).
 - `INGEST_SHARED_SECRET`
 - `INGEST_OMIT_HANDLES`
 - `LAMBDA_FUNCTION_NAME`
+- `COMPOSE_WORKER_FUNCTION_NAME`
 - `API_NAME`
+- `COMPOSE_JOBS_QUEUE_NAME`
+- `COMPOSE_JOBS_DLQ_NAME`
+- `COMPOSE_JOBS_SCHEMA_BOOTSTRAP`
+- `COMPOSE_ASYNC_ENABLED`
+- `COMPOSE_JOB_POLL_MS`
+- `COMPOSE_JOB_TTL_HOURS`
+- `COMPOSE_JOB_MAX_ATTEMPTS`
+- `COMPOSE_BASE_URL`
+- `COMPOSE_MODEL`
+- `COMPOSE_TIMEOUT_MS`
+- `COMPOSE_MAX_OUTPUT_TOKENS`
+- `COMPOSE_API_KEY`
 - `SUMMARY_SCHEMA_BOOTSTRAP`
 - `SUMMARY_SCHEMA_GRANT_ROLE`
+- `ENABLE_NAT_EGRESS`
+- `NAT_PUBLIC_SUBNET_ID`
+- `NAT_EIP_ALLOCATION_ID`
+- `NAT_GATEWAY_NAME`
+- `LAMBDA_PRIVATE_ROUTE_TABLE_NAME`
 
 ---
 
@@ -255,7 +279,9 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /api/v1/health`
 - `GET /api/v1/feed`
 - `POST /api/v1/query/semantic`
-- `POST /api/v1/query/compose` (full grounded answer flow: evidence retrieval + model synthesis + citations)
+- `POST /api/v1/query/compose` (legacy sync flow; still available for fallback)
+- `POST /api/v1/query/compose/jobs` (enqueue async grounded answer job)
+- `GET /api/v1/query/compose/jobs/{jobId}` (poll async grounded answer job)
 - `GET /api/v1/posts/{statusId}`
 - `GET /api/v1/window-summaries/latest`
 - `GET /api/v1/ops/reconcile-counts`
@@ -273,6 +299,8 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /v1/feed`
 - `POST /v1/query/semantic`
 - `POST /v1/query/compose` (retrieval/evidence stage only; no text generation)
+- `POST /v1/query/compose/jobs` (create async grounded answer job)
+- `GET /v1/query/compose/jobs/{jobId}` (job status + terminal result/error)
 - `GET /v1/posts/{statusId}`
 - `GET /v1/window-summaries/latest`
 - `GET /v1/ops/reconcile-counts`
@@ -314,9 +342,11 @@ Notes:
 ### Answer Mode (grounded RAG)
 
 - Collapsed by default under "Answer Mode" on `/x-monitor`.
-- Uses two-step execution:
-  1. Retrieve evidence posts from backend `POST /v1/query/compose`.
-  2. Synthesize grounded answer/draft in app runtime via `POST /api/v1/query/compose`.
+- Uses async job execution with polling:
+  1. UI submits request to `POST /api/v1/query/compose/jobs` (proxy to `POST /v1/query/compose/jobs`).
+  2. Backend enqueues SQS job and returns `job_id` quickly (`202`).
+  3. UI polls `GET /api/v1/query/compose/jobs/{jobId}` until terminal status.
+  4. Worker performs retrieval + synthesis and persists final result/error in `compose_jobs`.
 - Inputs:
   - `task_text` (required),
   - scope filters (`since`, `until`, `tier`, `handle`, `significant`),
@@ -330,7 +360,8 @@ Notes:
   - `key_points[]`,
   - `citations[]` (`status_id`, `url`, `author_handle`, excerpt, score),
   - `retrieval_stats` (`retrieved_count`, `used_count`, `model`, `latency_ms`, optional `coverage_score`).
-- If generation fails or times out, the response degrades safely to evidence-backed fallback text while still returning citations and retrieval stats.
+- Job states: `queued`, `running`, `succeeded`, `failed`, `expired`.
+- If synthesis output is malformed, parser-safe fallback still returns retrieval-backed evidence/citations.
 
 ---
 
@@ -349,6 +380,10 @@ Summary analytics tables from `002_summary_analytics.sql`:
 
 - `window_summaries`
 - `narrative_shifts`
+
+Async compose job table from `004_compose_jobs.sql`:
+
+- `compose_jobs`
 
 ---
 
@@ -480,10 +515,19 @@ Set one valid backend mode:
 
 ### Answer Mode falls back with "AI synthesis is temporarily unavailable"
 
-- Confirm `XMONITOR_COMPOSE_ENABLED=true` and `XMONITOR_COMPOSE_API_KEY` (or `VENICE_API_KEY`) is set.
-- Confirm compose model value is valid (`XMONITOR_COMPOSE_MODEL`) and provider endpoint is reachable.
-- If fallbacks are frequent under load, increase `XMONITOR_COMPOSE_TIMEOUT_MS` and/or reduce UI `Retrieval limit` and `Context limit`.
-- Check server logs for `compose_query_fallback`, `compose_model_retry`, and `compose_model_call` events.
+- Confirm `XMONITOR_COMPOSE_ENABLED=true`, `XMONITOR_COMPOSE_ASYNC_ENABLED=true`, and `XMONITOR_COMPOSE_JOBS_QUEUE_URL` are set in backend Lambda env.
+- Confirm compose model credentials are present (`XMONITOR_COMPOSE_API_KEY` or fallback key).
+- Confirm worker Lambda is deployed and has active SQS event-source mapping.
+- If worker/API Lambdas are VPC-attached, ensure internet egress exists for model API calls (NAT route for Lambda subnets or equivalent egress path).
+- Increase `XMONITOR_COMPOSE_TIMEOUT_MS` and/or reduce UI `Retrieval limit` + `Context limit` if jobs frequently fail.
+- Check logs for `compose_job_queued`, `compose_job_requeued`, `compose_job_failed`, and `compose_query_fallback_backend`.
+
+### Answer Mode returns `Request failed (504)`
+
+- This usually means a sync timeout boundary was hit on an older path.
+- Confirm UI is using async endpoints (`/api/v1/query/compose/jobs` + polling).
+- Confirm backend async mode is enabled and queue/worker are healthy.
+- For very large prompts and high limits, keep `XMONITOR_COMPOSE_TIMEOUT_MS` high (for example `120000`) and avoid excessive context.
 
 ### Rolling summaries show stats-style fallback instead of narrative text
 
