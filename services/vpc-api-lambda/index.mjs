@@ -81,6 +81,11 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "jamesharri45923",
   "jxttreasury",
   "dannnym4u",
+  "rinshad31142287",
+  "sumitso40959179",
+  "_zonecrypto_",
+  "promoimpulse",
+  "rmelian_ok",
 ];
 
 let pool;
