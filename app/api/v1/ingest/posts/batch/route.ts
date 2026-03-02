@@ -69,6 +69,8 @@ export async function POST(request: Request) {
       inserted: dbResult.inserted,
       updated: dbResult.updated,
       skipped: baseResult.skipped + dbResult.skipped,
+      inserted_status_ids: dbResult.inserted_status_ids,
+      updated_status_ids: dbResult.updated_status_ids,
       errors: [
         ...baseResult.errors,
         ...dbResult.errors.map((error) => ({

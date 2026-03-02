@@ -134,6 +134,8 @@ async function runUpsert(
 
 export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResult> {
   const result = buildBatchResult(items.length);
+  result.inserted_status_ids = [];
+  result.updated_status_ids = [];
   const omitHandles = ingestOmitHandleSet();
   const sql = `
     INSERT INTO posts(
@@ -257,8 +259,10 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
 
       if (inserted.inserted) {
         result.inserted += 1;
+        result.inserted_status_ids.push(item.status_id);
       } else {
         result.updated += 1;
+        result.updated_status_ids.push(item.status_id);
       }
     } catch (error) {
       result.errors.push({ index, message: errorMessage(error) });

@@ -16,6 +16,10 @@ frontend:
         - env | grep -e GOOGLE_CLIENT_ID >> .env.production || true
         - env | grep -e GOOGLE_CLIENT_SECRET >> .env.production || true
         - env | grep -e ALLOWED_GOOGLE_DOMAIN >> .env.production || true
+        - env | grep -e GUEST_GOOGLE_OAUTH_ENABLED >> .env.production || true
+        - env | grep -e GOOGLE_GUEST_CLIENT_ID >> .env.production || true
+        - env | grep -e GOOGLE_GUEST_CLIENT_SECRET >> .env.production || true
+        - env | grep -e ALLOWED_GUEST_GOOGLE_EMAILS >> .env.production || true
         - env | grep -e LOCAL_BYPASS_ENABLED >> .env.production || true
         - env | grep -e LOCAL_BYPASS_KILL_SWITCH >> .env.production || true
         - env | grep -e LOCAL_BYPASS_DDNS_HOST >> .env.production || true

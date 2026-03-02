@@ -4,6 +4,35 @@ import GoogleProvider from "next-auth/providers/google";
 const allowedDomain = (process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com").toLowerCase();
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+const guestOauthEnabled = parseBoolean(process.env.GUEST_GOOGLE_OAUTH_ENABLED, false);
+const googleGuestClientId = process.env.GOOGLE_GUEST_CLIENT_ID || "";
+const googleGuestClientSecret = process.env.GOOGLE_GUEST_CLIENT_SECRET || "";
+const allowedGuestEmails = parseEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (typeof value !== "string") return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return fallback;
+  return ["1", "true", "yes", "y", "on"].includes(normalized);
+}
+
+function parseEmailAllowlist(value: string): Set<string> {
+  return new Set(
+    value
+      .split(/[,\s]+/)
+      .map((entry) => entry.trim().toLowerCase())
+      .filter(Boolean)
+  );
+}
+
+function normalizeEmail(value: unknown): string {
+  return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function isEmailVerified(profile: unknown): boolean {
+  const raw = (profile as { email_verified?: unknown } | undefined)?.email_verified;
+  return raw === true || raw === "true" || raw === 1;
+}
 
 if (!googleClientId) {
   console.warn("[auth] GOOGLE_CLIENT_ID is missing.");
@@ -17,30 +46,82 @@ if (!googleClientSecret) {
   );
 }
 
-export const authOptions: NextAuthOptions = {
-  session: { strategy: "jwt" },
-  debug: process.env.NODE_ENV !== "production",
-  providers: [
+if (guestOauthEnabled) {
+  if (!googleGuestClientId) {
+    console.warn("[auth] GUEST_GOOGLE_OAUTH_ENABLED=true but GOOGLE_GUEST_CLIENT_ID is missing.");
+  }
+
+  if (!googleGuestClientSecret) {
+    console.warn("[auth] GUEST_GOOGLE_OAUTH_ENABLED=true but GOOGLE_GUEST_CLIENT_SECRET is missing.");
+  }
+
+  if (allowedGuestEmails.size === 0) {
+    console.warn("[auth] GUEST_GOOGLE_OAUTH_ENABLED=true but ALLOWED_GUEST_GOOGLE_EMAILS is empty.");
+  }
+}
+
+const providers = [
+  GoogleProvider({
+    clientId: googleClientId,
+    clientSecret: googleClientSecret,
+    authorization: {
+      params: {
+        hd: allowedDomain,
+        prompt: "select_account",
+        scope: "openid email profile",
+      },
+    },
+  }),
+];
+
+if (guestOauthEnabled && googleGuestClientId && googleGuestClientSecret) {
+  providers.push(
     GoogleProvider({
-      clientId: googleClientId,
-      clientSecret: googleClientSecret,
+      id: "google-guest",
+      name: "Google (Guest)",
+      clientId: googleGuestClientId,
+      clientSecret: googleGuestClientSecret,
       authorization: {
         params: {
-          hd: allowedDomain,
           prompt: "select_account",
           scope: "openid email profile",
         },
       },
-    }),
-  ],
+    })
+  );
+}
+
+export const authOptions: NextAuthOptions = {
+  session: { strategy: "jwt" },
+  debug: process.env.NODE_ENV !== "production",
+  providers,
   callbacks: {
-    async signIn({ account, profile }) {
-      if (account?.provider !== "google") return false;
+    async signIn({ account, profile, user }) {
+      const provider = account?.provider || "";
+      const email = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
+      const emailVerified = isEmailVerified(profile);
 
-      const email = typeof profile?.email === "string" ? profile.email.toLowerCase() : "";
-      const emailVerified = (profile as { email_verified?: unknown } | undefined)?.email_verified === true;
+      if (!email || !emailVerified) {
+        console.warn(`[auth] denied provider=${provider || "unknown"} reason=unverified_or_missing_email`);
+        return false;
+      }
 
-      return emailVerified && email.endsWith(`@${allowedDomain}`);
+      if (provider === "google") {
+        const allowed = email.endsWith(`@${allowedDomain}`);
+        console.info(`[auth] ${allowed ? "allow" : "deny"} provider=google email=${email} reason=domain_${allowed ? "match" : "mismatch"}`);
+        return allowed;
+      }
+
+      if (provider === "google-guest") {
+        const allowed = guestOauthEnabled && allowedGuestEmails.has(email);
+        console.info(
+          `[auth] ${allowed ? "allow" : "deny"} provider=google-guest email=${email} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+        );
+        return allowed;
+      }
+
+      console.warn(`[auth] denied provider=${provider || "unknown"} reason=unsupported_provider`);
+      return false;
     },
     async session({ session, token }) {
       if (session.user) {

@@ -29,7 +29,7 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 
 ## Technical Summary
 - Frontend/API framework: Next.js 15 (App Router), React 19, Node.js runtime.
-- Auth: NextAuth + Google provider with domain restriction, with optional local bypass based on allowlisted source IP.
+- Auth: NextAuth with primary Google Workspace domain restriction, optional guest Google provider (email allowlist), plus optional local bypass based on allowlisted source IP.
 - DB access: `pg` pool, direct Postgres queries/upserts.
 - Dual API execution modes:
   - local Next.js `/api/v1/*` routes (can query DB directly),
@@ -116,6 +116,13 @@ Set these at minimum:
 - `GOOGLE_CLIENT_SECRET=<google-web-oauth-client-secret>`
 - `ALLOWED_GOOGLE_DOMAIN=zodl.com`
 
+Optional guest provider (separate Google OAuth client):
+
+- `GUEST_GOOGLE_OAUTH_ENABLED=true`
+- `GOOGLE_GUEST_CLIENT_ID=<guest-google-web-oauth-client-id>`
+- `GOOGLE_GUEST_CLIENT_SECRET=<guest-google-web-oauth-client-secret>`
+- `ALLOWED_GUEST_GOOGLE_EMAILS=guest1@example.com,guest2@example.com`
+
 ### 3) Choose data mode
 
 Option A: hosted API read mode (fastest for UI work)
@@ -160,6 +167,10 @@ Open [http://localhost:3000](http://localhost:3000).
 | `GOOGLE_CLIENT_ID` | Yes | Google OAuth client ID. |
 | `GOOGLE_CLIENT_SECRET` | Yes | Google OAuth client secret. |
 | `ALLOWED_GOOGLE_DOMAIN` | Yes | Allowed Workspace domain (default `zodl.com`). |
+| `GUEST_GOOGLE_OAUTH_ENABLED` | Optional | Enables secondary Google guest provider (`false` by default). |
+| `GOOGLE_GUEST_CLIENT_ID` | Optional | OAuth client ID for guest provider (required when guest provider enabled). |
+| `GOOGLE_GUEST_CLIENT_SECRET` | Optional | OAuth client secret for guest provider (required when guest provider enabled). |
+| `ALLOWED_GUEST_GOOGLE_EMAILS` | Optional | Exact comma/space-separated email allowlist for guest provider sign-in. |
 | `LOCAL_BYPASS_ENABLED` | Optional | Enable local-network auth bypass (`false` by default). |
 | `LOCAL_BYPASS_KILL_SWITCH` | Optional | Emergency disable for bypass (`false` by default). |
 | `LOCAL_BYPASS_DDNS_HOST` | Optional | DDNS host used to resolve current allowlisted egress IPs. |
@@ -211,7 +222,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE` | Optional | For Venice thinking models, strips reasoning channel from response (default `true`). |
 | `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
-| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35, windymint1, usa_trader06, roger_welch1, cmscanner_bb, cmscanner_rsi, dexportal_, luckyvinod16`). |
+| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35, windymint1, usa_trader06, roger_welch1, cmscanner_bb, cmscanner_rsi, dexportal_, luckyvinod16, zecigr, disruqtion, zec8, cmscanner_sma, zeczinka, cryptodiane, sureblessing36, pafoslive1, sachin22049721, lovegds1lady, micheal_crypto0`). |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
 | `DATABASE_URL` | Optional* | Postgres DSN. |
 | `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` `PGSSLMODE` | Optional* | Split Postgres settings when `DATABASE_URL` is unset. |
@@ -251,6 +262,51 @@ Open [http://localhost:3000](http://localhost:3000).
 - `NAT_EIP_ALLOCATION_ID`
 - `NAT_GATEWAY_NAME`
 - `LAMBDA_PRIVATE_ROUTE_TABLE_NAME`
+
+`scripts/aws/provision_x_api_collector_lambda.sh` supports overrides such as:
+
+- `AWS_PROFILE`
+- `AWS_REGION`
+- `LAMBDA_FUNCTION_NAME`
+- `LAMBDA_ROLE_NAME`
+- `EVENT_RULE_NAME`
+- `SCHEDULE_EXPRESSION`
+- `SCHEDULE_ENABLED`
+- `DB_SECRET_ID`
+- `INGEST_API_BASE_URL`
+- `INGEST_API_KEY`
+- `X_API_BEARER_TOKEN`
+- `X_API_CONSUMER_KEY`
+- `X_API_CONSUMER_SECRET`
+- `X_API_REFRESH_BEARER_FROM_CONSUMER`
+- `X_API_BASE_URL`
+- `X_API_BASE_TERMS`
+- `X_API_MAX_RESULTS_PER_QUERY`
+- `X_API_MAX_PAGES_PER_QUERY`
+- `X_API_HANDLE_CHUNK_SIZE`
+- `X_API_REPLY_CAPTURE_ENABLED`
+- `X_API_REPLY_MODE`
+- `X_API_REPLY_TIERS`
+- `X_API_REPLY_SELECTED_HANDLES`
+- `X_API_ENFORCE_LANG_ALLOWLIST`
+- `X_API_LANG_ALLOWLIST`
+- `X_API_EXCLUDE_RETWEETS`
+- `X_API_EXCLUDE_QUOTES`
+- `EMBEDDING_ENABLED`
+- `EMBEDDING_BASE_URL`
+- `EMBEDDING_MODEL`
+- `EMBEDDING_DIMS`
+- `EMBEDDING_TIMEOUT_MS`
+- `EMBEDDING_API_KEY`
+- `EMBEDDING_BATCH_SIZE`
+- `EMBEDDING_MAX_ITEMS_PER_RUN`
+- `EMBEDDING_INCLUDE_UPDATED`
+- `EMBEDDING_FALLBACK_ALL_IF_NO_IDS`
+- `COLLECTOR_ENABLED`
+- `COLLECTOR_WRITE_ENABLED`
+- `COLLECTOR_DRY_RUN`
+- `WATCHLIST_TIERS_JSON`
+- `WATCHLIST_INCLUDE_HANDLES`
 
 ---
 
@@ -450,6 +506,19 @@ AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 ./scripts/aws/provision_vpc_api_lambda.sh
 ```
 
+### Provision or update X API collector Lambda (priority + watchlist replies)
+
+```bash
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+X_API_BEARER_TOKEN='<x-api-bearer-token>' \
+./scripts/aws/provision_x_api_collector_lambda.sh
+```
+
+Cutover/rollback controls:
+- Set `COLLECTOR_WRITE_ENABLED=false` for shadow mode (collect + log, no ingest writes).
+- Disable rule `xmonitor-xapi-priority-collector-15m` to stop AWS collector.
+- Re-enable local launchd priority collector for immediate fallback.
+
 ### Smoke checks
 
 ```bash
@@ -488,8 +557,10 @@ curl -i -X POST "$BACKEND_API_BASE/ingest/runs" \
 ### Google sign-in fails
 
 - Verify `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_URL`.
-- Verify OAuth callback URL matches your active host.
-- Verify account is in allowed domain and email is verified.
+- Verify OAuth callback URL matches your active host (`/api/auth/callback/google` for internal provider and `/api/auth/callback/google-guest` for guest provider).
+- Verify account email is verified.
+- For internal provider, verify account is in `ALLOWED_GOOGLE_DOMAIN`.
+- For guest provider, verify `GUEST_GOOGLE_OAUTH_ENABLED=true`, guest client credentials are set, and email appears in `ALLOWED_GUEST_GOOGLE_EMAILS`.
 - Use `/oauth-probe` to isolate Workspace policy blocks.
 
 ### Local bypass does not trigger
@@ -567,6 +638,7 @@ LIMIT 20;
 ## Documentation Index
 
 - `docs/AWS_MIGRATION_RUNBOOK.md`
+- `docs/X_API_LAMBDA_PRIORITY_CAPTURE_EXECUTION_PLAN.md`
 - `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
 - `docs/openapi.v1.yaml`
 - `docs/ADR-0001-postgres-over-dynamodb.md`

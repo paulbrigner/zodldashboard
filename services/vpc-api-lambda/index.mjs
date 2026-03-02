@@ -51,6 +51,17 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "cmscanner_rsi",
   "dexportal_",
   "luckyvinod16",
+  "zecigr",
+  "disruqtion",
+  "zec8",
+  "cmscanner_sma",
+  "zeczinka",
+  "cryptodiane",
+  "sureblessing36",
+  "pafoslive1",
+  "sachin22049721",
+  "lovegds1lady",
+  "micheal_crypto0",
 ];
 
 let pool;
@@ -537,11 +548,30 @@ function isKeywordSourceQuery(sourceQuery) {
   return normalized === "discovery" || normalized === "keyword" || normalized === "both" || normalized === "legacy";
 }
 
+const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
+
+function hasDiscoveryBaseTerm(text) {
+  const normalized = String(asString(text) || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/[$#]([A-Za-z0-9_]+)/g, " $1 ")
+    .replace(/@[A-Za-z0-9_][A-Za-z0-9_.]*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!normalized) return false;
+  return DISCOVERY_BASE_TERM_REGEX.test(normalized);
+}
+
 function shouldOmitKeywordOriginPost(item, authorHandle, omitHandles) {
   if (!omitHandles.has(authorHandle)) return false;
   if (!isKeywordSourceQuery(item.source_query)) return false;
   if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
   return true;
+}
+
+function shouldOmitKeywordOriginMissingBaseTerm(item) {
+  if (!isKeywordSourceQuery(item.source_query)) return false;
+  if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
+  return !hasDiscoveryBaseTerm(item.body_text);
 }
 
 function parseHandleFilter(value) {
@@ -1172,6 +1202,8 @@ async function ensureComposeJobsSchema() {
 
 async function upsertPosts(items) {
   const result = buildBatchResult(items.length);
+  result.inserted_status_ids = [];
+  result.updated_status_ids = [];
   const omitHandles = ingestOmitHandleSet();
   const sql = `
     INSERT INTO posts(
@@ -1257,6 +1289,11 @@ async function upsertPosts(items) {
       result.skipped += 1;
       continue;
     }
+    if (shouldOmitKeywordOriginMissingBaseTerm(item)) {
+      result.errors.push({ index, message: "omitted keyword-origin post missing discovery base term" });
+      result.skipped += 1;
+      continue;
+    }
 
     try {
       const inserted = await runUpsert(sql, [
@@ -1295,8 +1332,10 @@ async function upsertPosts(items) {
 
       if (inserted.inserted) {
         result.inserted += 1;
+        result.inserted_status_ids.push(item.status_id);
       } else {
         result.updated += 1;
+        result.updated_status_ids.push(item.status_id);
       }
     } catch (error) {
       result.errors.push({ index, message: errorMessage(error) });
@@ -3467,6 +3506,8 @@ async function handleIngestBatch(event, parser, upsertFn, dbErrorMessage) {
       inserted: dbResult.inserted,
       updated: dbResult.updated,
       skipped: baseResult.skipped + dbResult.skipped,
+      inserted_status_ids: Array.isArray(dbResult.inserted_status_ids) ? dbResult.inserted_status_ids : undefined,
+      updated_status_ids: Array.isArray(dbResult.updated_status_ids) ? dbResult.updated_status_ids : undefined,
       errors: [
         ...baseResult.errors,
         ...dbResult.errors.map((error) => ({

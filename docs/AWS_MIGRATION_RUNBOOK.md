@@ -1,17 +1,23 @@
 # XMonitor AWS Operations Runbook (Current)
 
-_Last updated: 2026-02-26 (ET)_
+_Last updated: 2026-03-02 (ET)_
 
 This runbook describes current production operations for this repository.
 
 ## 1) Current production topology
 
-Data path:
+Data path (local collector mode):
 1. Local OpenClaw jobs run `x_monitor_dispatch.py`.
 2. Dispatcher invokes `x_monitor_ingest_api.py` with run-scoped `--since` selection.
 3. Ingest script posts payloads directly to hosted API (`/ingest/*`) with idempotent upserts and bounded retries.
 4. Hosted API routes to VPC Lambda API.
 5. Lambda writes to RDS PostgreSQL in private subnets.
+
+Data path (AWS collector mode, priority only):
+1. EventBridge schedule triggers `xmonitor-xapi-priority-collector` Lambda.
+2. Collector Lambda fetches priority + watchlist replies via X API.
+3. Collector posts to hosted ingest routes (`/ingest/posts/batch`, `/ingest/runs`).
+4. Hosted API routes to VPC Lambda API and RDS.
 
 Read path:
 1. Browser requests Amplify-hosted Next.js app.
@@ -27,6 +33,8 @@ Primary resources:
 - Amplify app: `d2rgmein7vsf2e` (`main` branch)
 - HTTP API: `xmonitor-vpc-api` (`84kb8ehtp2`)
 - Lambda: `xmonitor-vpc-api`
+- Collector Lambda (optional mode): `xmonitor-xapi-priority-collector`
+- EventBridge rule (optional mode): `xmonitor-xapi-priority-collector-15m`
 - Lambda security group: `sg-0f09791e38a9f68d3`
 - RDS security group: `sg-081e2d8e12101d117`
 - DB secret: `xmonitor/rds/app`
@@ -46,6 +54,10 @@ API base configuration:
 Optional API behavior:
 - `XMONITOR_DEFAULT_FEED_LIMIT`
 - `XMONITOR_MAX_FEED_LIMIT`
+
+Collector-side X API auth/config (for AWS collector mode):
+- `XMON_X_API_BEARER_TOKEN`
+- `XMONITOR_API_KEY` (ingest auth for collector -> API writes)
 
 ## 4) Ingest auth contract
 
@@ -91,6 +103,25 @@ Use when Lambda code or backend env wiring changes:
 
 ```bash
 AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 ./scripts/aws/provision_vpc_api_lambda.sh
+```
+
+### 5.3 Provision/update X API collector Lambda (priority mode)
+
+Use when enabling or updating server-side priority capture:
+
+```bash
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+X_API_BEARER_TOKEN='<x-api-bearer-token>' \
+./scripts/aws/provision_x_api_collector_lambda.sh
+```
+
+Safe shadow mode (collect/log only, no ingest writes):
+
+```bash
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+X_API_BEARER_TOKEN='<x-api-bearer-token>' \
+COLLECTOR_WRITE_ENABLED=false \
+./scripts/aws/provision_x_api_collector_lambda.sh
 ```
 
 ## 6) Shared secret rotation
@@ -172,6 +203,11 @@ Daily reconciliation:
 2. Log path: `~/.openclaw/workspace/logs/xmonitor-reconcile.log`
 3. Expected healthy output: `reconcile PASS` with small/zero deltas.
 
+Collector mode exclusivity:
+1. Do not run local priority launchd and AWS priority collector as active writers at the same time.
+2. When enabling AWS collector writes, first disable local `com.openclaw.xmonitor.priority`.
+3. Keep discovery local unless/until discovery is migrated.
+
 ## 10) Incident quick triage
 
 1. `GET /api/v1/health` for top-level service/database signal.
@@ -212,3 +248,30 @@ Post-recovery checks:
 
 Failure-alert state file:
 - `~/.openclaw/workspace/memory/x_monitor_ingest_health.json`
+
+## 13) AWS collector cutover and rollback
+
+Cutover to AWS collector priority writes:
+
+```bash
+UID_NUM="$(id -u)"
+launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.priority" || true
+
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+X_API_BEARER_TOKEN='<x-api-bearer-token>' \
+COLLECTOR_WRITE_ENABLED=true \
+SCHEDULE_ENABLED=true \
+./scripts/aws/provision_x_api_collector_lambda.sh
+```
+
+Rollback to local priority collector:
+
+```bash
+aws --profile zodldashboard --region us-east-1 events disable-rule \
+  --name xmonitor-xapi-priority-collector-15m
+
+UID_NUM="$(id -u)"
+launchctl bootstrap "gui/$UID_NUM" "$HOME/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist"
+launchctl enable "gui/$UID_NUM/com.openclaw.xmonitor.priority"
+launchctl kickstart -k "gui/$UID_NUM/com.openclaw.xmonitor.priority"
+```

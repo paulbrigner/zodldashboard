@@ -19,6 +19,8 @@ export type BatchUpsertResult = {
   updated: number;
   skipped: number;
   errors: Array<{ index: number; message: string }>;
+  inserted_status_ids?: string[];
+  updated_status_ids?: string[];
 };
 
 export type PostUpsert = {
