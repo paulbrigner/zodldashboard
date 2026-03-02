@@ -18,9 +18,6 @@ type FilterPanelProps = {
   initialHasActiveFilters: boolean;
 };
 
-const SEMANTIC_EXAMPLE_QUERY =
-  "Posts arguing that ZSAs or token-style features may distract from Zcash's digital cash mission, add protocol complexity, or increase governance risk.";
-
 export function FilterPanel({
   initialSearchMode,
   initialTier,
@@ -34,13 +31,7 @@ export function FilterPanel({
 }: FilterPanelProps) {
   const router = useRouter();
   const [searchMode, setSearchMode] = useState<SearchMode>(initialSearchMode);
-  const [queryText, setQueryText] = useState<string>(() => {
-    const initial = initialQuery || "";
-    if (initialSearchMode === "semantic" && initial.trim() === SEMANTIC_EXAMPLE_QUERY) {
-      return "";
-    }
-    return initial;
-  });
+  const [queryText, setQueryText] = useState<string>(initialQuery || "");
 
   const semanticActive = useMemo(() => queryText.trim().length > 0, [queryText]);
   const hasActiveFilters = searchMode === "semantic" ? semanticActive : initialHasActiveFilters;
@@ -98,18 +89,6 @@ export function FilterPanel({
                 value={queryText}
               />
             </label>
-
-            <div className="semantic-example-block">
-              <p className="subtle-text semantic-example-label">Example semantic search:</p>
-              <p className="semantic-example-text">{SEMANTIC_EXAMPLE_QUERY}</p>
-              <button
-                className="button button-secondary button-small"
-                onClick={() => setQueryText(SEMANTIC_EXAMPLE_QUERY)}
-                type="button"
-              >
-                Use example
-              </button>
-            </div>
           </>
         ) : (
           <>

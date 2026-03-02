@@ -24,9 +24,6 @@ type ComposePanelProps = {
   initialRetrievalLimit?: number;
   initialContextLimit?: number;
 };
-
-const DEFAULT_TASK_TEXT =
-  "Review the top X posts over the last 24 hours on protocol adjustments and draft an X post response that prioritizes digital cash user outcomes.";
 const DEFAULT_RETRIEVAL_LIMIT = 50;
 const DEFAULT_CONTEXT_LIMIT = 14;
 const DEFAULT_POLL_MS = 2500;
@@ -400,9 +397,6 @@ export function ComposePanel(props: ComposePanelProps) {
               type="button"
             >
               Clear
-            </button>
-            <button className="button button-secondary" disabled={isLoading} onClick={() => setTaskText(DEFAULT_TASK_TEXT)} type="button">
-              Use example
             </button>
           </div>
         </form>
