@@ -461,8 +461,8 @@ function getConfig() {
       || asString(process.env.XMONITOR_EMBEDDING_API_KEY)
       || asString(process.env.VENICE_API_KEY),
     summaryLlmTemperature: asFiniteFloat(process.env.XMON_SUMMARY_LLM_TEMPERATURE, 0.45),
-    summaryLlmMaxTokens: asPositiveInt(process.env.XMON_SUMMARY_LLM_MAX_TOKENS, 420),
-    summaryLlmTimeoutMs: asPositiveInt(process.env.XMON_SUMMARY_LLM_TIMEOUT_MS, 120000),
+    summaryLlmMaxTokens: asPositiveInt(process.env.XMON_SUMMARY_LLM_MAX_TOKENS, 900),
+    summaryLlmTimeoutMs: asPositiveInt(process.env.XMON_SUMMARY_LLM_TIMEOUT_MS, 180000),
     summaryLlmMaxAttempts: asPositiveInt(process.env.XMON_SUMMARY_LLM_MAX_ATTEMPTS, 3),
     summaryLlmInitialBackoffMs: asPositiveInt(process.env.XMON_SUMMARY_LLM_INITIAL_BACKOFF_MS, 1000),
   };
@@ -998,7 +998,17 @@ function extractSummaryCompletionText(payload) {
   return "";
 }
 
-async function requestSummaryNarrative(config, model, messages) {
+function looksTruncatedNarrative(text) {
+  const cleaned = cleanupText(text);
+  if (!cleaned) return false;
+  if (cleaned.length < 140) return false;
+  if (/[.!?]["')\]]?$/.test(cleaned)) return false;
+  if (/[,:;\-–—]$/.test(cleaned)) return true;
+  if (/[A-Za-z0-9]$/.test(cleaned)) return true;
+  return false;
+}
+
+async function requestSummaryNarrative(config, model, messages, maxTokens = config.summaryLlmMaxTokens) {
   const payload = await fetchJsonWithTimeout(
     `${config.summaryLlmUrl}/chat/completions`,
     {
@@ -1012,7 +1022,7 @@ async function requestSummaryNarrative(config, model, messages) {
         model,
         messages,
         temperature: config.summaryLlmTemperature,
-        max_tokens: config.summaryLlmMaxTokens,
+        max_tokens: maxTokens,
       }),
     },
     config.summaryLlmTimeoutMs
@@ -1026,13 +1036,13 @@ async function requestSummaryNarrative(config, model, messages) {
   return cleaned;
 }
 
-async function requestSummaryNarrativeWithRetry(config, model, messages) {
+async function requestSummaryNarrativeWithRetry(config, model, messages, maxTokens = config.summaryLlmMaxTokens) {
   const attempts = Math.max(1, config.summaryLlmMaxAttempts);
   let lastError = null;
 
   for (let attempt = 1; attempt <= attempts; attempt += 1) {
     try {
-      return await requestSummaryNarrative(config, model, messages);
+      return await requestSummaryNarrative(config, model, messages, maxTokens);
     } catch (error) {
       lastError = error;
       if (attempt < attempts) {
@@ -1091,7 +1101,20 @@ async function generateAiWindowSummaryText(config, input) {
   let lastError = null;
   for (const model of candidates) {
     try {
-      const text = await requestSummaryNarrativeWithRetry(config, model, messages);
+      let text = await requestSummaryNarrativeWithRetry(config, model, messages);
+      if (looksTruncatedNarrative(text)) {
+        const retryTokens = Math.min(
+          1600,
+          Math.max(
+            config.summaryLlmMaxTokens + 250,
+            Math.floor(config.summaryLlmMaxTokens * 1.8)
+          )
+        );
+        const retryText = await requestSummaryNarrativeWithRetry(config, model, messages, retryTokens);
+        if (!looksTruncatedNarrative(retryText) || retryText.length > text.length) {
+          text = retryText;
+        }
+      }
       return { text, sourceVersion: "v2_narrative", model, error: null };
     } catch (error) {
       lastError = error;

@@ -129,7 +129,21 @@ export function FilterPanel({
             </label>
 
             <label>
-              <span>Significant</span>
+              <div className="filter-label-row">
+                <span>Significant</span>
+                <details className="field-help">
+                  <summary aria-label="Significant help" className="field-help-trigger" title="Significant help">
+                    i
+                  </summary>
+                  <div className="field-help-popover">
+                    <p>
+                      Significant posts are scored as higher-signal: watchlist posts with enough substance, posts with
+                      material keywords, or strong engagement. Low-signal/spam-like posts are usually marked not
+                      significant unless engagement is very strong.
+                    </p>
+                  </div>
+                </details>
+              </div>
               <select name="significant" defaultValue={initialSignificant === undefined ? "" : String(initialSignificant)}>
                 <option value="">Either</option>
                 <option value="true">True</option>
