@@ -3,7 +3,8 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-const BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL OR Zashi";
+const PRIORITY_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
+const DISCOVERY_BASE_TERMS = "Zcash OR Zodl OR Zashi";
 const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
@@ -83,9 +84,11 @@ export function QueryReferencePopup() {
           <section>
             <h3>Base terms searched</h3>
             <p>
-              X Monitor always starts from this keyword set:
+              Priority mode uses:
             </p>
-            <pre className="query-code">{BASE_TERMS}</pre>
+            <pre className="query-code">{PRIORITY_BASE_TERMS}</pre>
+            <p>Discovery mode uses:</p>
+            <pre className="query-code">{DISCOVERY_BASE_TERMS}</pre>
           </section>
 
           <section>
@@ -93,7 +96,7 @@ export function QueryReferencePopup() {
             <p>
               Priority mode searches posts from all watchlist handles, combined with the base terms:
             </p>
-            <pre className="query-code">(from:handle1 OR from:handle2 OR ...) ({BASE_TERMS})</pre>
+            <pre className="query-code">(from:handle1 OR from:handle2 OR ...) ({PRIORITY_BASE_TERMS})</pre>
             <p className="subtle-text">
               Current watchlist size: {totalWatchlistHandles} handles (
               {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.influencer.length} influencer,{" "}
@@ -103,7 +106,8 @@ export function QueryReferencePopup() {
 
           <section>
             <h3>Discovery mode (keyword-driven)</h3>
-            <p>Discovery mode does not use handles. It runs only the base terms query.</p>
+            <p>Discovery mode does not use handles. It runs only the discovery base terms query.</p>
+            <pre className="query-code">({DISCOVERY_BASE_TERMS})</pre>
           </section>
 
           <section>

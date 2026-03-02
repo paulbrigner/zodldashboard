@@ -28,10 +28,16 @@ Event schedules (default):
 
 ## 2) Base terms and query families
 
-Default base terms:
+Priority/reply base terms:
 
 ```text
-Zcash OR ZEC OR Zodl OR #ZODL OR Zashi
+Zcash OR ZEC OR Zodl OR Zashi
+```
+
+Discovery base terms:
+
+```text
+Zcash OR Zodl OR Zashi
 ```
 
 ### Priority query family (`source_query=priority`)
@@ -67,7 +73,7 @@ Controlled by:
 ### Discovery query family (`source_query=discovery`)
 
 ```text
-(<base_terms>) -is:retweet
+(Zcash OR Zodl OR Zashi) -is:retweet
 ```
 
 (`-is:quote` is optional via env and defaults to off)

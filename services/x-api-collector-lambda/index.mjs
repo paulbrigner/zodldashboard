@@ -49,7 +49,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   zechub: "ecosystem",
 };
 
-const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR #ZODL OR Zashi";
+const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
 const DEFAULT_X_API_BASE_URL = "https://api.x.com/2";
 const DEFAULT_INGEST_API_BASE_URL = "https://www.zodldashboard.com/api/v1";
 const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
@@ -95,7 +95,7 @@ const SPAM_HINTS = [
   "كوبون",
 ];
 
-const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
+const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b)/i;
 const DISCOVERY_NOISE_HINTS = [
   "trading signals",
   "free signals",
@@ -322,6 +322,21 @@ function buildDiscoveryQuery(baseTerms, options) {
   return clauses.join(" ");
 }
 
+function discoveryBaseTerms(baseTerms) {
+  const terms = String(baseTerms || "")
+    .split(/\s+OR\s+/i)
+    .map((term) => term.trim())
+    .filter(Boolean);
+  if (terms.length === 0) return String(baseTerms || "");
+
+  const filtered = terms.filter((term) => {
+    const normalized = term.replace(/^\(+|\)+$/g, "").trim().toLowerCase();
+    return normalized !== "zec" && normalized !== "#zodl";
+  });
+
+  return filtered.length > 0 ? filtered.join(" OR ") : String(baseTerms || "");
+}
+
 function buildReplyTermConstrainedQuery(handles, baseTerms, options) {
   const handlesExpr = handles.map((handle) => `from:${handle}`).join(" OR ");
   const clauses = [`(${handlesExpr})`, "is:reply", `(${baseTerms})`];
@@ -340,10 +355,11 @@ function buildReplySelectedHandlesQuery(handles, options) {
 
 function buildQueryPlan(config, watchlistMap, collectorMode) {
   if (collectorMode === "discovery") {
+    const baseTerms = discoveryBaseTerms(config.baseTerms);
     return [
       {
         sourceQuery: "discovery",
-        query: buildDiscoveryQuery(config.baseTerms, config),
+        query: buildDiscoveryQuery(baseTerms, config),
         handles: [],
         family: "discovery",
       },
