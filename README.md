@@ -305,6 +305,23 @@ Open [http://localhost:3000](http://localhost:3000).
 - `COLLECTOR_ENABLED`
 - `COLLECTOR_WRITE_ENABLED`
 - `COLLECTOR_DRY_RUN`
+- `COLLECTOR_MODE` (`priority|discovery`)
+- `XMONITOR_INGEST_OMIT_HANDLES`
+- `SUMMARY_ENABLED`
+- `SUMMARY_ALIGN_HOURS`
+- `SUMMARY_TOP_POSTS_2H`
+- `SUMMARY_TOP_POSTS_12H`
+- `SUMMARY_FEED_PAGE_LIMIT`
+- `SUMMARY_FEED_MAX_ITEMS_PER_WINDOW`
+- `SUMMARY_LLM_BACKEND`
+- `SUMMARY_LLM_URL`
+- `SUMMARY_LLM_MODEL`
+- `SUMMARY_LLM_API_KEY`
+- `SUMMARY_LLM_TEMPERATURE`
+- `SUMMARY_LLM_MAX_TOKENS`
+- `SUMMARY_LLM_TIMEOUT_MS`
+- `SUMMARY_LLM_MAX_ATTEMPTS`
+- `SUMMARY_LLM_INITIAL_BACKOFF_MS`
 - `WATCHLIST_TIERS_JSON`
 - `WATCHLIST_INCLUDE_HANDLES`
 
@@ -514,10 +531,22 @@ X_API_BEARER_TOKEN='<x-api-bearer-token>' \
 ./scripts/aws/provision_x_api_collector_lambda.sh
 ```
 
+### Provision or update X API collector Lambda (discovery)
+
+```bash
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+X_API_BEARER_TOKEN='<x-api-bearer-token>' \
+./scripts/aws/provision_x_api_discovery_collector_lambda.sh
+```
+
+Notes:
+- Discovery Lambda now generates and ingests `rolling_2h` and `rolling_12h` window summaries on aligned intervals (default every 2 hours in UTC).
+- Summary generation uses AI narrative output when available, with automatic fallback to stats-style summary text.
+
 Cutover/rollback controls:
 - Set `COLLECTOR_WRITE_ENABLED=false` for shadow mode (collect + log, no ingest writes).
-- Disable rule `xmonitor-xapi-priority-collector-15m` to stop AWS collector.
-- Re-enable local launchd priority collector for immediate fallback.
+- Disable rules `xmonitor-xapi-priority-collector-15m` and `xmonitor-xapi-discovery-collector-60m` to stop AWS collectors.
+- Re-enable local launchd collectors (`priority`/`discovery`) for immediate fallback.
 
 ### Smoke checks
 

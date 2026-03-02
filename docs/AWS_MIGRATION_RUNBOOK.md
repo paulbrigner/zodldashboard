@@ -185,28 +185,29 @@ If a full re-import is required, use a fresh snapshot and rerun import/validate 
 
 ## 9) Launchd and local runtime notes
 
-LaunchAgents are currently expected to run local collection + direct ingest on schedule.
+Local LaunchAgents are now fallback-only. Primary ingestion is AWS-side (`xmonitor-xapi-priority-collector`, `xmonitor-xapi-discovery-collector`).
+Rolling window summary generation (`rolling_2h`, `rolling_12h`) is also AWS-side via discovery collector.
 
 If you need to inspect or reconfigure:
 - `~/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist`
 - `~/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist`
 - `~/Library/LaunchAgents/com.openclaw.xmonitor.reconcile.plist`
 
-If local jobs run but API writes fail, validate:
+If you intentionally run local fallback jobs and API writes fail, validate:
 1. `XMONITOR_API_BASE_URL` points to `https://www.zodldashboard.com/api/v1`
 2. `XMONITOR_API_KEY` matches server shared secret
 3. `~/.openclaw/workspace/scripts/x_monitor_ingest_api.py --dry-run` returns expected outbound counts
 4. ingest endpoint returns `200` for authenticated test payload
 
-Daily reconciliation:
-1. LaunchAgent `com.openclaw.xmonitor.reconcile` runs at 05:10 ET.
-2. Log path: `~/.openclaw/workspace/logs/xmonitor-reconcile.log`
-3. Expected healthy output: `reconcile PASS` with small/zero deltas.
+Reconciliation:
+1. Local `com.openclaw.xmonitor.reconcile` is optional and can remain disabled.
+2. If enabled for ad-hoc checks, log path is `~/.openclaw/workspace/logs/xmonitor-reconcile.log`.
 
 Collector mode exclusivity:
-1. Do not run local priority launchd and AWS priority collector as active writers at the same time.
-2. When enabling AWS collector writes, first disable local `com.openclaw.xmonitor.priority`.
-3. Keep discovery local unless/until discovery is migrated.
+1. Do not run local launchd and AWS collectors as active writers for the same mode at the same time.
+2. AWS priority/discovery collectors should be the active writers by default.
+3. Keep local `priority`, `discovery`, and `reconcile` launchd jobs disabled unless explicitly in rollback/fallback mode.
+4. When local discovery is disabled, local summary generation is also disabled by design.
 
 ## 10) Incident quick triage
 
@@ -251,27 +252,40 @@ Failure-alert state file:
 
 ## 13) AWS collector cutover and rollback
 
-Cutover to AWS collector priority writes:
+Cutover to AWS collector writes (priority + discovery):
 
 ```bash
 UID_NUM="$(id -u)"
 launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.priority" || true
+launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.discovery" || true
+launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.reconcile" || true
 
 AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 X_API_BEARER_TOKEN='<x-api-bearer-token>' \
 COLLECTOR_WRITE_ENABLED=true \
 SCHEDULE_ENABLED=true \
 ./scripts/aws/provision_x_api_collector_lambda.sh
+
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+X_API_BEARER_TOKEN='<x-api-bearer-token>' \
+COLLECTOR_WRITE_ENABLED=true \
+SCHEDULE_ENABLED=true \
+./scripts/aws/provision_x_api_discovery_collector_lambda.sh
 ```
 
-Rollback to local priority collector:
+Rollback to local collectors:
 
 ```bash
 aws --profile zodldashboard --region us-east-1 events disable-rule \
   --name xmonitor-xapi-priority-collector-15m
+aws --profile zodldashboard --region us-east-1 events disable-rule \
+  --name xmonitor-xapi-discovery-collector-60m
 
 UID_NUM="$(id -u)"
 launchctl bootstrap "gui/$UID_NUM" "$HOME/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist"
 launchctl enable "gui/$UID_NUM/com.openclaw.xmonitor.priority"
 launchctl kickstart -k "gui/$UID_NUM/com.openclaw.xmonitor.priority"
+launchctl bootstrap "gui/$UID_NUM" "$HOME/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist"
+launchctl enable "gui/$UID_NUM/com.openclaw.xmonitor.discovery"
+launchctl kickstart -k "gui/$UID_NUM/com.openclaw.xmonitor.discovery"
 ```

@@ -130,6 +130,24 @@ def update_provision_default(path: Path, additions: List[str]) -> dict:
     return {"file": str(path), "changed": changed, "handles": merged}
 
 
+def update_provision_xapi_default(path: Path, additions: List[str]) -> dict:
+    text = path.read_text(encoding="utf-8")
+    pattern = re.compile(r'(XMONITOR_INGEST_OMIT_HANDLES="\$\{XMONITOR_INGEST_OMIT_HANDLES:-)([^}]*)(\}")')
+    match = pattern.search(text)
+    if not match:
+        raise RuntimeError(f"could not find XMONITOR_INGEST_OMIT_HANDLES default in {path}")
+
+    existing = parse_csv_handles(match.group(2))
+    merged = merged_handles(existing, additions)
+    updated = pattern.sub(rf'\1{",".join(merged)}\3', text, count=1)
+
+    changed = updated != text
+    if changed:
+        path.write_text(updated, encoding="utf-8")
+
+    return {"file": str(path), "changed": changed, "handles": merged}
+
+
 def update_readme_default(path: Path, additions: List[str]) -> dict:
     text = path.read_text(encoding="utf-8")
     pattern = re.compile(
@@ -422,6 +440,7 @@ def main() -> int:
             summary["files"].append(update_local_omit_python(openclaw_root / "scripts" / "x_monitor_ingest_api.py", handles))
             summary["files"].append(update_server_omit_array(repo_root / "services" / "vpc-api-lambda" / "index.mjs", handles))
             summary["files"].append(update_provision_default(repo_root / "scripts" / "aws" / "provision_vpc_api_lambda.sh", handles))
+            summary["files"].append(update_provision_xapi_default(repo_root / "scripts" / "aws" / "provision_x_api_collector_lambda.sh", handles))
             summary["files"].append(update_readme_default(repo_root / "README.md", handles))
 
         if not args.skip_local_purge:
