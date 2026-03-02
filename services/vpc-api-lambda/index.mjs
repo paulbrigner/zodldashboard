@@ -86,6 +86,7 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "_zonecrypto_",
   "promoimpulse",
   "rmelian_ok",
+  "xol1641557",
 ];
 
 let pool;
