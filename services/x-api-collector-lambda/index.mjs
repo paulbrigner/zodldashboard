@@ -78,6 +78,10 @@ const MATERIAL_KEYWORDS = [
 const SPAM_HINTS = [
   "airdrop",
   "free trading group",
+  "trading signals",
+  "free signals",
+  "join for more free signals",
+  "accuracy rate",
   "join now",
   "t.me/",
   "signal group",
@@ -92,6 +96,17 @@ const SPAM_HINTS = [
 ];
 
 const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
+const DISCOVERY_NOISE_HINTS = [
+  "trading signals",
+  "free signals",
+  "join for more free signals",
+  "accuracy rate",
+  "xauusd",
+  "btcusd",
+  "join now",
+  "vip group",
+  "premium signals",
+];
 
 const SUMMARY_THEME_KEYWORDS = {
   "Governance / strategy": [
@@ -549,6 +564,39 @@ function getSubstanceProfile(text) {
     charCount: cleaned.length,
     isReply,
   };
+}
+
+function countCashtags(text) {
+  const matches = String(text || "").match(/\$[a-z][a-z0-9_]{1,20}/gi);
+  return matches ? matches.length : 0;
+}
+
+function countHashtags(text) {
+  const matches = String(text || "").match(/#[a-z0-9_]{1,30}/gi);
+  return matches ? matches.length : 0;
+}
+
+function rejectDiscoveryNoisePost(record) {
+  const text = String(record?.body_text || "");
+  if (!text) return { reject: false, reason: null };
+  const low = text.toLowerCase();
+
+  const hint = DISCOVERY_NOISE_HINTS.find((value) => low.includes(value)) || null;
+  const cashtags = countCashtags(text);
+  const hashtags = countHashtags(text);
+  const hasSignalTpPattern = /\btp\d{1,2}\s*[:\-]/i.test(low);
+  const hasTgLink = /(t\.me\/|telegram\.me\/)/i.test(low);
+  const hasSignalPhrase = /\b(?:free|daily)?\s*(?:trading\s+)?signals?\b/i.test(low);
+  const hasTickerBlast = cashtags >= 8 || hashtags >= 10;
+
+  if ((hasSignalPhrase || hasSignalTpPattern || hasTgLink || hint) && (cashtags >= 4 || hashtags >= 6 || hasTickerBlast)) {
+    return {
+      reject: true,
+      reason: hint ? `discovery_noise:${hint}` : "discovery_noise:signal_spam",
+    };
+  }
+
+  return { reject: false, reason: null };
 }
 
 function evaluateSignificance(record) {
@@ -1430,6 +1478,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
     skippedLang: 0,
     skippedKeywordOmit: 0,
     skippedMissingDiscoveryBaseTerm: 0,
+    skippedDiscoveryNoise: 0,
     familyCounts: {},
     sourceCounts: {},
   };
@@ -1470,6 +1519,11 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
         if (collectorMode === "discovery" && !watchTier) {
           if (config.keywordOmitHandles.has(authorHandle)) {
             counters.skippedKeywordOmit += 1;
+            continue;
+          }
+          const discoveryNoise = rejectDiscoveryNoisePost(record);
+          if (discoveryNoise.reject) {
+            counters.skippedDiscoveryNoise += 1;
             continue;
           }
           if (!hasDiscoveryBaseTerm(record.body_text || "")) {
@@ -1767,6 +1821,7 @@ function buildRunNote(config, counters, posts, collectorMode) {
     `skipped_non_watchlist=${counters.skippedNonWatchlist}`,
     `skipped_keyword_omit=${counters.skippedKeywordOmit}`,
     `skipped_missing_discovery_base_term=${counters.skippedMissingDiscoveryBaseTerm}`,
+    `skipped_discovery_noise=${counters.skippedDiscoveryNoise}`,
     `skipped_retweet=${counters.skippedRetweet}`,
     `skipped_malformed=${counters.skippedMalformed}`,
   ];

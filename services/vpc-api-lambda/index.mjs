@@ -62,6 +62,22 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "sachin22049721",
   "lovegds1lady",
   "micheal_crypto0",
+  "ruth13900929210",
+  "michell82710798",
+  "kimberl97730856",
+  "fx220000",
+  "exnesst80805",
+  "sfurures_expart",
+  "felix__steven",
+  "vectorthehunter",
+  "forex47kin51201",
+  "bullbearcrypt",
+  "blacker6636",
+  "devendr34011988",
+  "dannym4u",
+  "scapenerhurst",
+  "duncannbaldwin",
+  "robertethan_",
 ];
 
 let pool;
