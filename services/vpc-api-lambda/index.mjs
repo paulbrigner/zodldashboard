@@ -78,6 +78,9 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "scapenerhurst",
   "duncannbaldwin",
   "robertethan_",
+  "jamesharri45923",
+  "jxttreasury",
+  "dannnym4u",
 ];
 
 let pool;
