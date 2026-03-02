@@ -699,6 +699,11 @@ p {
   gap: 0.38rem;
 }
 
+.filter-grid label > span,
+.filter-label-row {
+  min-height: 1.05rem;
+}
+
 .filter-grid span {
   font-size: 0.76rem;
   text-transform: uppercase;
