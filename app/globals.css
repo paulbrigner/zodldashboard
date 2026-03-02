@@ -688,8 +688,9 @@ p {
 }
 
 .filter-grid label {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: 1.08rem auto;
+  align-items: start;
   gap: 0.35rem;
 }
 
@@ -701,7 +702,26 @@ p {
 
 .filter-grid label > span,
 .filter-label-row {
-  min-height: 1.05rem;
+  display: inline-flex;
+  align-items: center;
+  height: 1.08rem;
+  line-height: 1;
+}
+
+.filter-label-row > span {
+  line-height: 1;
+}
+
+.filter-label-row .field-help {
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
+}
+
+.filter-label-row .field-help-trigger {
+  width: 0.94rem;
+  height: 0.94rem;
+  font-size: 0.64rem;
 }
 
 .filter-grid span {
