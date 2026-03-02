@@ -1,5 +1,7 @@
 # Direct Ingest Transition - Execution Report (2026-02-25 ET)
 
+> Status: Historical migration report retained for audit trail. Current steady-state architecture is AWS collector-first (`docs/AWS_MIGRATION_RUNBOOK.md`).
+
 ## Scope executed
 
 - Freeze launchd jobs

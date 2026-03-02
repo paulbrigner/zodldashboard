@@ -2,6 +2,8 @@
 
 _Drafted: 2026-02-26 (ET)_
 
+> Status: Historical implementation plan. Stage 2 (grounded answer mode) has been implemented with async jobs.
+
 ## 1) Objective
 
 Implement a grounded "search + answer" workflow for X Monitor:

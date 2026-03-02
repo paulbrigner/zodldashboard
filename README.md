@@ -1,8 +1,8 @@
 # ZODL Dashboard (X Monitor + Regulatory Risk)
 
 ## Executive Summary
-ZODL Dashboard is an authenticated web app and API for monitoring selected X posts, storing them in PostgreSQL, and presenting a filtered feed with detail views and rolling AI summaries.  
-The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API), and RDS PostgreSQL (data).
+ZODL Dashboard is an authenticated web app and API for monitoring selected X posts, storing them in PostgreSQL, and presenting a filtered feed with detail views and rolling AI summaries.
+Production ingestion now runs server-side on AWS using scheduled X API collector Lambdas (priority + discovery), with PostgreSQL as the only system of record.
 
 ## Functional Summary
 - Google Workspace sign-in gate (`@zodl.com` by default).
@@ -11,8 +11,8 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
   - X Monitor (`/x-monitor`)
   - Regulatory Risk by Geography (`/regulatory-risk`)
 - X Monitor page (`/x-monitor`) with:
-  - feed filters (tier, handle, significant flag, date range, text search, limit),
-  - semantic search mode for natural-language retrieval,
+  - semantic search mode as the default filter mode for natural-language retrieval,
+  - keyword filter mode (tier, handle, significant flag, date range, text search, limit),
   - grounded "Answer mode" (retrieve + synthesize + citations + optional draft),
   - cursor-based pagination,
   - freshness indicator with manual refresh,
@@ -35,6 +35,10 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
   - local Next.js `/api/v1/*` routes (can query DB directly),
   - proxy mode to hosted backend (`XMONITOR_BACKEND_API_BASE_URL`),
   - dedicated AWS Lambda backend (`services/vpc-api-lambda`) exposing `/v1/*`.
+- Ingestion runtime:
+  - `services/x-api-collector-lambda` runs as scheduled AWS Lambda collectors,
+  - EventBridge schedules priority (15m) and discovery (60m) runs,
+  - collectors call X API, score/filter posts, ingest posts/embeddings/runs, and generate rolling summaries in discovery mode.
 - Data model includes core post metrics plus summary analytics tables:
   - `window_summaries`,
   - `narrative_shifts`.
@@ -44,10 +48,15 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 ## Current Architecture
 
 ### Write Path (collector -> API -> Postgres)
-1. Local collector/dispatcher gathers X data (external OpenClaw workspace).
-2. Sync client sends idempotent ingest payloads to `/v1/ingest/*`.
-3. API validates payloads and upserts by stable keys.
-4. PostgreSQL is the source of truth.
+1. EventBridge triggers AWS collector Lambdas:
+   - `xmonitor-xapi-priority-collector` (priority + watchlist replies),
+   - `xmonitor-xapi-discovery-collector` (discovery + rolling summaries).
+2. Collector calls X API search endpoints, normalizes records, applies language/noise/omit/significance gates, and computes embeddings.
+3. Collector sends idempotent ingest payloads to hosted `/api/v1/ingest/*` endpoints.
+4. API proxy routes to backend `/v1/*`, Lambda validates payloads, and Postgres upserts by stable keys.
+5. PostgreSQL is the source of truth.
+
+Local OpenClaw/launchd collection is now fallback-only and not part of the normal production write path.
 
 ### Read Path (browser -> web app -> API/DB)
 1. User signs in through Google Workspace, unless local bypass is explicitly enabled and the request source IP matches the bypass allowlist.
@@ -77,9 +86,10 @@ The deployed architecture is AWS Amplify (web), API Gateway + Lambda in VPC (API
 - `db/migrations/`: Postgres schema SQL.
 - `scripts/db/`: migration runner.
 - `scripts/migrate/`: SQLite export/import/validation utilities.
-- `scripts/aws/`: backend provisioning script.
+- `scripts/aws/`: AWS provisioning scripts for backend and collectors.
 - `scripts/ops/`: operational utilities (for example omit-list + purge helper).
 - `services/vpc-api-lambda/`: Lambda API implementation (`/v1/*`).
+- `services/x-api-collector-lambda/`: scheduled X API collector implementation (`priority`/`discovery`).
 - `docs/`: runbooks, OpenAPI, schema notes, ADRs, migration plans.
 
 ---
@@ -364,6 +374,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `POST /api/v1/ingest/reports/batch`
 - `POST /api/v1/ingest/window-summaries/batch`
 - `POST /api/v1/ingest/narrative-shifts/batch`
+- `POST /api/v1/ingest/embeddings/batch`
 - `POST /api/v1/ingest/runs`
 
 ### Hosted backend routes (`/v1`)
@@ -383,6 +394,7 @@ Open [http://localhost:3000](http://localhost:3000).
 - `POST /v1/ingest/reports/batch`
 - `POST /v1/ingest/window-summaries/batch`
 - `POST /v1/ingest/narrative-shifts/batch`
+- `POST /v1/ingest/embeddings/batch`
 - `POST /v1/ingest/runs`
 
 Notes:
@@ -399,7 +411,7 @@ Notes:
 
 ### Keyword search mode
 
-- Default mode in the Filters panel.
+- Secondary mode in the Filters panel (semantic is the default mode).
 - Uses `GET /api/v1/feed` (or `GET /v1/feed` when called directly).
 - Exposes tier, handle, significant, date range, lexical text search, and limit.
 - Supports cursor pagination and feed freshness polling.
@@ -476,7 +488,9 @@ Async compose job table from `004_compose_jobs.sql`:
 
 ---
 
-## DB Migration Workflow (SQLite -> Postgres)
+## DB Migration Workflow (SQLite -> Postgres, historical/one-time)
+
+These utilities are retained for auditability and emergency re-syncs. They are not part of normal production ingestion.
 
 ### 1) Export SQLite to JSONL
 
@@ -543,10 +557,11 @@ Notes:
 - Discovery Lambda now generates and ingests `rolling_2h` and `rolling_12h` window summaries on aligned intervals (default every 2 hours in UTC).
 - Summary generation uses AI narrative output when available, with automatic fallback to stats-style summary text.
 
-Cutover/rollback controls:
-- Set `COLLECTOR_WRITE_ENABLED=false` for shadow mode (collect + log, no ingest writes).
-- Disable rules `xmonitor-xapi-priority-collector-15m` and `xmonitor-xapi-discovery-collector-60m` to stop AWS collectors.
-- Re-enable local launchd collectors (`priority`/`discovery`) for immediate fallback.
+Collector operations:
+- Keep `xmonitor-xapi-priority-collector-15m` and `xmonitor-xapi-discovery-collector-60m` enabled for normal production ingestion.
+- For temporary dry-runs, set `COLLECTOR_WRITE_ENABLED=false` before reprovisioning a collector.
+- To stop ingest quickly, disable the two EventBridge rules above.
+- Local launchd collectors are fallback-only and should remain disabled unless you are explicitly rolling back.
 
 ### Smoke checks
 
@@ -556,7 +571,7 @@ curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
 curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
 ```
 
-### Add omit handles + purge existing rows (local + remote)
+### Add omit handles + purge existing rows (remote first, local optional)
 
 ```bash
 python3 scripts/ops/omit_and_purge_handles.py @handle_one @handle_two
@@ -564,9 +579,9 @@ python3 scripts/ops/omit_and_purge_handles.py @handle_one @handle_two
 
 Notes:
 - Handles can be space-separated or comma-separated, with or without `@`.
-- Script updates omit defaults in both local collector scripts and server-side repo files.
-- Script purges matching rows from local SQLite and remote API (`/v1/ops/purge-handle`).
-- Script pauses/resumes the local launchd ingest jobs automatically.
+- Script updates omit defaults in server-side repo files (and legacy local files when present).
+- Script purges matching rows from remote API (`/v1/ops/purge-handle`) and local SQLite when available.
+- Script only pauses/resumes local launchd jobs if those plists/runtime paths exist.
 - For remote purge auth it uses `--api-key`, then `XMONITOR_API_KEY`, then `launchctl getenv XMONITOR_API_KEY`.
 - Add `--update-lambda-env --aws-profile zodldashboard --aws-region us-east-1` to also update live Lambda env var `XMONITOR_INGEST_OMIT_HANDLES`.
 
@@ -666,14 +681,23 @@ LIMIT 20;
 
 ## Documentation Index
 
+Current architecture and operations:
 - `docs/AWS_MIGRATION_RUNBOOK.md`
-- `docs/X_API_LAMBDA_PRIORITY_CAPTURE_EXECUTION_PLAN.md`
+- `docs/X_MONITOR_X_QUERY_AND_WATCHLIST_REFERENCE.md`
+- `docs/X_MONITOR_CAPTURE_PIPELINE_AND_TUNING.md`
 - `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
 - `docs/openapi.v1.yaml`
-- `docs/ADR-0001-postgres-over-dynamodb.md`
+
+Historical planning/execution artifacts:
+- `docs/X_API_LAMBDA_PRIORITY_CAPTURE_EXECUTION_PLAN.md`
 - `docs/DIRECT_INGEST_API_TRANSITION_PLAN.md`
-- `docs/X_MONITOR_X_QUERY_AND_WATCHLIST_REFERENCE.md`
+- `docs/DIRECT_INGEST_EXECUTION_CHECKLIST.md`
+- `docs/DIRECT_INGEST_EXECUTION_REPORT_2026-02-25.md`
+- `docs/DIRECT_INGEST_GUARDRAILS_EXECUTION_PLAN.md`
 - `docs/OPENCLAW_NL_QUERY_PARITY_IMPLEMENTATION_PLAN.md`
+- `docs/NL_STAGE1_SEMANTIC_EXECUTION_PLAN.md`
+- `docs/NL_STAGE2_SEMANTIC_AI_ANSWER_EXECUTION_PLAN.md`
+- `docs/ADR-0001-postgres-over-dynamodb.md`
 
 ---
 

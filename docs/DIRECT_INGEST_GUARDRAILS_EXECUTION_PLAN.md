@@ -2,6 +2,8 @@
 
 _Last updated: 2026-02-26 (ET)_
 
+> Status: Historical guardrails plan for the former local direct-ingest runtime. Current operations are AWS collector-first; see `docs/AWS_MIGRATION_RUNBOOK.md`.
+
 ## Purpose
 
 Add operational guardrails now, while deferring the larger "remove local SQLite correctness dependency" refactor.

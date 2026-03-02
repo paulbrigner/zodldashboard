@@ -1,160 +1,159 @@
-# X Monitor Capture Pipeline And Tuning
+# X Monitor Capture Pipeline and Tuning (AWS X API)
 
-Last updated: 2026-03-01 (America/New_York)
+Last updated: 2026-03-02 (America/New_York)
 
 ## Purpose
 
-This document explains how local X capture works for X Monitor, what it depends on, how paging/scroll capture behaves, and how it is currently tuned.
+This document describes the active capture/ingest pipeline, quality gates, and tuning controls now that capture runs server-side via X API.
 
-## Runtime Components
+## Runtime components (active path)
 
-### Launchd jobs
+- Priority collector Lambda:
+  `xmonitor-xapi-priority-collector`
+- Discovery collector Lambda:
+  `xmonitor-xapi-discovery-collector`
+- Collector code:
+  `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/services/x-api-collector-lambda/index.mjs`
+- Provisioning scripts:
+  - `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/scripts/aws/provision_x_api_collector_lambda.sh`
+  - `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/scripts/aws/provision_x_api_discovery_collector_lambda.sh`
+- Ingest API:
+  `https://www.zodldashboard.com/api/v1/ingest/*` (proxied to backend `/v1/ingest/*`)
+- Data store:
+  RDS PostgreSQL (system of record)
 
-- `~/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist`
-- `~/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist`
-- `~/Library/LaunchAgents/com.openclaw.xmonitor.reconcile.plist`
+## High-level flow
 
-### Scripts
+1. EventBridge triggers collector Lambda.
+2. Collector builds X API query plan based on mode (`priority` or `discovery`).
+3. Collector fetches and normalizes X posts.
+4. Collector applies gates:
+   - language allowlist
+   - discovery-noise rejection
+   - omit handles
+   - significance scoring
+5. Collector ingests:
+   - posts (`/ingest/posts/batch`)
+   - embeddings (`/ingest/embeddings/batch`, when enabled)
+   - run telemetry (`/ingest/runs`)
+6. Discovery collector also computes and ingests rolling summaries (`/ingest/window-summaries/batch`).
 
-- Dispatcher: `/Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_dispatch.py`
-- Capture + parse + local KB: `/Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_kb.py`
-- Ingest to hosted API: `/Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_ingest_api.py`
-- Reconcile counts: `/Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_reconcile.py`
+## Capture model
 
-### Storage
+There is no browser snapshot scraping in the active path.
 
-- Local SQLite KB: `/Users/paulbrigner/.openclaw/workspace/memory/x_monitor.db`
-- Hosted API target: `https://www.zodldashboard.com/api/v1` (via ingest script)
+Capture is API-native:
+- X API search pages are fetched directly.
+- Pagination is controlled by `next_token`.
+- Query breadth is bounded by `max_results` and `max_pages`.
 
-## High-Level Flow
+This removes prior fragility from HTML/rendering/snapshot parsing and browser-tab lifecycle issues.
 
-1. Launchd triggers `x_monitor_dispatch.py` by schedule.
-2. Dispatcher invokes `x_monitor_kb.py run --mode <priority|discovery>`.
-3. `x_monitor_kb.py` builds X queries from watchlists/keywords.
-4. For each query, it captures snapshots from X, parses posts, deduplicates by `status_id`, scores significance, upserts SQLite, updates embeddings.
-5. Dispatcher runs `x_monitor_ingest_api.py` to upsert local deltas to hosted API.
-6. UI reads from hosted API feed endpoints.
+## Query and pagination tuning
 
-## Browser Capture Dependency
+Primary controls:
+- `XMON_X_API_MAX_RESULTS_PER_QUERY` (default `100`)
+- `XMON_X_API_MAX_PAGES_PER_QUERY` (default `2`)
+- `XMON_X_API_HANDLE_CHUNK_SIZE` (default `16`)
+- `XMON_X_API_QUERY_TIMEOUT_MS` (default `15000`)
+- `XMON_X_API_REQUEST_PAUSE_MS` (default `200`)
 
-Capture currently uses OpenClaw CLI browser tooling:
+Operational guidance:
+- Increase `MAX_PAGES` first when post coverage appears shallow.
+- Increase `MAX_RESULTS` only if needed and X API limits allow.
+- Keep a pause between requests to reduce throttling risk.
 
-- `openclaw browser ... open`
-- `openclaw browser ... wait`
-- `openclaw browser ... snapshot --format ai`
-- `openclaw browser ... evaluate` (for scroll step)
-- `openclaw browser ... close`
+## Quality controls and anti-noise protections
 
-Important: this does not use an LLM for snapshot generation. It is OpenClaw browser tooling producing an AI-friendly textual snapshot format.
+### Language gate
 
-## What A Snapshot Contains
+- Enabled by default (`XMON_X_API_ENFORCE_LANG_ALLOWLIST=true`)
+- Default allowlist: `en` (`XMON_X_API_LANG_ALLOWLIST=en`)
 
-- Snapshot reflects the currently loaded/rendered portion of the page.
-- It is not a full feed export.
-- X results are infinite scroll; more content loads only after scroll and wait.
+### Omit-handle gate
 
-## Current Paging/Scroll Behavior
+- Controlled by `XMONITOR_INGEST_OMIT_HANDLES`
+- Intended to suppress persistent noisy keyword/discovery accounts
+- Watchlist-tier posts are not removed by omit-handle filtering
 
-`x_monitor_kb.py` now uses multi-step query capture (`browser_query_articles`):
+### Discovery noise gate
 
-1. Open X search URL for query.
-2. Wait for initial render.
-3. Snapshot and parse articles.
-4. Scroll by configured pixels.
-5. Wait for additional load.
-6. Snapshot again and merge unique posts by `status_id`.
-7. Repeat until stop condition.
+Discovery mode rejects common spam/signal patterns, including:
+- "trading signals" style promo text
+- high-density cashtag/hashtag blasts
+- TP/accuracy/VIP/Telegram signal patterns
 
-## Stop Conditions
+Rejected posts are tagged with `discovery_noise:*` style reasons in run diagnostics.
 
-Capture stops when either condition is met:
+### Significance scoring
 
-1. `XMON_CAPTURE_SCROLL_MAX_STEPS` is reached.
-2. No new `status_id` values are found for `XMON_CAPTURE_SCROLL_STOP_NO_NEW_STEPS` consecutive scroll snapshots.
+`is_significant` is derived from:
+- watchlist tier presence
+- text substance thresholds
+- material keyword matches
+- engagement thresholds
+- spam/low-signal guards
 
-This means overlap with already seen posts is normal; capture stops early only when a whole step yields no new IDs (for the configured consecutive count).
+## Embeddings and summary generation
 
-## Active Tuning (Applied)
+### Embeddings
 
-Configured in both `priority` and `discovery` launchd job `EnvironmentVariables`:
+- Controlled by `XMON_EMBEDDING_ENABLED` (default `true`)
+- Default model: `text-embedding-bge-m3`
+- Collector can batch and cap embedding writes per run
 
-- `XMON_CAPTURE_SCROLL_ENABLED=1`
-- `XMON_CAPTURE_SCROLL_MAX_STEPS=10`
-- `XMON_CAPTURE_SCROLL_WAIT_MS=3000`
-- `XMON_CAPTURE_SCROLL_PX=2200`
-- `XMON_CAPTURE_SCROLL_STOP_NO_NEW_STEPS=2`
+### Rolling summaries
 
-Interpretation:
+- Enabled by `XMON_SUMMARY_ENABLED` (default `true`)
+- Generated in discovery mode on aligned windows:
+  - `rolling_2h`
+  - `rolling_12h`
+- Narrative synthesis uses configured summary LLM settings.
+- If synthesis fails/timeouts/truncates after retries, collector falls back to stats-style summary text.
 
-- Up to 10 scroll cycles per query.
-- 3 seconds wait after each scroll to allow lazy-loaded posts to render.
-- 2200px scroll increments.
-- Early-stop requires two consecutive no-new-id snapshots.
+Key summary tuning:
+- `XMON_SUMMARY_LLM_MODEL` (default `zai-org-glm-5`)
+- `XMON_SUMMARY_LLM_MAX_TOKENS` (default `900`)
+- `XMON_SUMMARY_LLM_TIMEOUT_MS` (default `180000`)
+- `XMON_SUMMARY_LLM_MAX_ATTEMPTS` (default `3`)
+- `XMON_SUMMARY_LLM_INITIAL_BACKOFF_MS` (default `1000`)
 
-## Parsing Notes
+## Monitoring commands
 
-### Article extraction
-
-- Posts are parsed from OpenClaw AI snapshot article blocks.
-- `status_id` is extracted from `/.../status/<id>` URL lines.
-- Engagement fields (`likes/reposts/replies/views`) are parsed from action/group text.
-- Dedup is by `status_id`; higher-engagement version wins.
-
-### Text extraction hardening
-
-Recent fixes include:
-
-- Quote-card safety to prevent older quoted text replacing new post text.
-- Guardrails against author-label-only captures.
-- Media-tail cleanup for title-derived text.
-
-## Auth/Key Dependency Notes
-
-For embeddings/summaries, key resolution in `x_monitor_kb.py` is:
-
-1. Use explicit env vars if set (`XMON_EMBED_API_KEY`, `XMON_SUMMARY_LLM_API_KEY`).
-2. Fallback to OpenClaw auth profiles file lookup when env keys are absent.
-
-This means auth dependency can be eliminated by setting explicit env keys and removing fallback code.
-
-## Operational Commands
-
-### Check jobs
-
-```bash
-launchctl list | rg 'com\.openclaw\.xmonitor\.(priority|discovery|reconcile)'
-```
-
-### Pause/resume jobs
+Collector rule status:
 
 ```bash
-# Pause
-launchctl bootout gui/501/com.openclaw.xmonitor.priority
-launchctl bootout gui/501/com.openclaw.xmonitor.discovery
-
-# Resume
-launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist
-launchctl bootstrap gui/501 ~/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist
+aws --profile zodldashboard --region us-east-1 events describe-rule \
+  --name xmonitor-xapi-priority-collector-15m \
+  --query '{State:State,ScheduleExpression:ScheduleExpression}'
+aws --profile zodldashboard --region us-east-1 events describe-rule \
+  --name xmonitor-xapi-discovery-collector-60m \
+  --query '{State:State,ScheduleExpression:ScheduleExpression}'
 ```
 
-### Dry sanity run
+Tail logs:
 
 ```bash
-/usr/bin/python3 /Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_kb.py \
-  --db /Users/paulbrigner/.openclaw/workspace/memory/x_monitor.db \
-  run --mode priority --profile openclaw --max-items 5
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-xapi-priority-collector' --since 2h --follow
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-xapi-discovery-collector' --since 2h --follow
 ```
 
-## Known Limits
+Manual invoke:
 
-- Capture completeness is still heuristic, not guaranteed full pagination.
-- X rendering/login/challenge changes can affect extraction quality.
-- Larger scroll settings increase runtime and browser load.
+```bash
+aws --profile zodldashboard --region us-east-1 lambda invoke \
+  --function-name xmonitor-xapi-priority-collector \
+  --payload '{"source":"manual","mode":"priority"}' \
+  /tmp/xmon-priority.json && cat /tmp/xmon-priority.json
+```
 
-## Recommended Monitoring
+## Legacy local capture notes
 
-- Watch dispatcher logs for per-query capture metrics:
-  - `unique_articles`
-  - `scroll_steps`
-- Periodically compare expected high-volume handles against captured counts.
-- If missed posts are observed, increase `XMON_CAPTURE_SCROLL_MAX_STEPS` and/or `XMON_CAPTURE_SCROLL_WAIT_MS`.
+The previous local OpenClaw browser-snapshot capture path is no longer the active production ingest path.
+
+If local rollback is required temporarily:
+- disable AWS collector rules first,
+- ensure only one writer path is active per mode,
+- treat local launchd runtime as emergency fallback, not steady state.

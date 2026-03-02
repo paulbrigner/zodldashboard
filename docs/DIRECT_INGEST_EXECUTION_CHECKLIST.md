@@ -2,6 +2,8 @@
 
 _Last updated: 2026-02-26 (ET)_
 
+> Status: Historical execution checklist from direct-ingest cutover. For current production operations, use `docs/AWS_MIGRATION_RUNBOOK.md`.
+
 This checklist turns the transition strategy in `docs/DIRECT_INGEST_API_TRANSITION_PLAN.md` into an operator sequence with explicit stop/go gates.
 
 ## 0) Current status snapshot (as of 2026-02-26)

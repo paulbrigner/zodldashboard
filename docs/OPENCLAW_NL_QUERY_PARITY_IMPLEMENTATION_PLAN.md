@@ -3,6 +3,8 @@
 _Drafted: 2026-02-23 (ET)_
 _Updated: 2026-02-26 (ET)_
 
+> Status: Historical implementation plan. Semantic search and grounded answer mode are now implemented in the current architecture.
+
 Detailed Stage 1 (semantic retrieval) execution checklist:
 - `docs/NL_STAGE1_SEMANTIC_EXECUTION_PLAN.md`
 

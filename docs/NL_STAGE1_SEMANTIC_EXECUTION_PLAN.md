@@ -2,6 +2,8 @@
 
 _Drafted: 2026-02-26 (ET)_
 
+> Status: Historical implementation plan. Stage 1 has been implemented and is in production.
+
 ## 1) Objective
 
 Implement Stage 1 natural-language search for X Monitor:

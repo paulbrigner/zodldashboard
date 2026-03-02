@@ -2,6 +2,8 @@
 
 _Last updated: 2026-02-25 (ET)_
 
+> Status: Historical planning document. The production architecture has moved to AWS X API collectors as the primary write path. Use `docs/AWS_MIGRATION_RUNBOOK.md` for current operations.
+
 ## Purpose
 Define how to move from the current **local SQLite + API sync** architecture to a **direct ingest-to-API** architecture where AWS is the only persistent system of record.
 

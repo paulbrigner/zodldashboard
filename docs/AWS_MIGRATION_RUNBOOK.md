@@ -2,84 +2,72 @@
 
 _Last updated: 2026-03-02 (ET)_
 
-This runbook describes current production operations for this repository.
+This runbook describes the active production architecture and operational controls.
 
 ## 1) Current production topology
 
-Data path (local collector mode):
-1. Local OpenClaw jobs run `x_monitor_dispatch.py`.
-2. Dispatcher invokes `x_monitor_ingest_api.py` with run-scoped `--since` selection.
-3. Ingest script posts payloads directly to hosted API (`/ingest/*`) with idempotent upserts and bounded retries.
-4. Hosted API routes to VPC Lambda API.
-5. Lambda writes to RDS PostgreSQL in private subnets.
-
-Data path (AWS collector mode, priority only):
-1. EventBridge schedule triggers `xmonitor-xapi-priority-collector` Lambda.
-2. Collector Lambda fetches priority + watchlist replies via X API.
-3. Collector posts to hosted ingest routes (`/ingest/posts/batch`, `/ingest/runs`).
-4. Hosted API routes to VPC Lambda API and RDS.
+Primary write path (AWS-only):
+1. EventBridge triggers scheduled collector Lambdas:
+   - `xmonitor-xapi-priority-collector` (`rate(15 minutes)`)
+   - `xmonitor-xapi-discovery-collector` (`rate(60 minutes)`)
+2. Collector Lambda fetches X posts from X API.
+3. Collector applies normalization, language/noise gates, omit-handle rules, and significance scoring.
+4. Collector ingests to hosted API (`/api/v1/ingest/*`) using shared-secret auth.
+5. Hosted API proxies to VPC API Lambda (`/v1/*`) and writes to RDS PostgreSQL.
+6. Discovery collector also generates/ingests `rolling_2h` + `rolling_12h` summaries (aligned windows, every 2 hours UTC).
 
 Read path:
 1. Browser requests Amplify-hosted Next.js app.
-2. App reads feed/detail via `/api/v1/*`.
-3. API proxy forwards to backend API (`/v1/*`) when configured.
-4. Backend API queries RDS and returns response.
+2. App reads via `/api/v1/*` (or direct backend base URL when configured).
+3. Backend API reads RDS and returns feed/detail/summary/query responses.
 
-## 2) Canonical resources
+Local OpenClaw launchd collectors are fallback-only and are not part of normal production ingestion.
+
+## 2) Canonical AWS resources
 
 Region: `us-east-1`
 
-Primary resources:
-- Amplify app: `d2rgmein7vsf2e` (`main` branch)
-- HTTP API: `xmonitor-vpc-api` (`84kb8ehtp2`)
-- Lambda: `xmonitor-vpc-api`
-- Collector Lambda (optional mode): `xmonitor-xapi-priority-collector`
-- EventBridge rule (optional mode): `xmonitor-xapi-priority-collector-15m`
-- Lambda security group: `sg-0f09791e38a9f68d3`
-- RDS security group: `sg-081e2d8e12101d117`
-- DB secret: `xmonitor/rds/app`
+- Amplify app: `d2rgmein7vsf2e` (`main`)
+- API Gateway HTTP API: `xmonitor-vpc-api` (`84kb8ehtp2`)
+- Backend Lambda: `xmonitor-vpc-api`
+- Compose worker Lambda: `xmonitor-vpc-compose-worker`
+- Compose SQS queue: `xmonitor-compose-jobs`
+- Compose DLQ: `xmonitor-compose-jobs-dlq`
+- Priority collector Lambda: `xmonitor-xapi-priority-collector`
+- Discovery collector Lambda: `xmonitor-xapi-discovery-collector`
+- Priority EventBridge rule: `xmonitor-xapi-priority-collector-15m`
+- Discovery EventBridge rule: `xmonitor-xapi-discovery-collector-60m`
+- Lambda SG: `sg-0f09791e38a9f68d3`
+- RDS SG: `sg-081e2d8e12101d117`
+- DB/app secret: `xmonitor/rds/app`
 
 ## 3) Required secrets and env vars
 
-Server-side ingest auth:
+Backend/API:
 - `XMONITOR_INGEST_SHARED_SECRET`
+- `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE=require`
+- Compose env (`XMONITOR_COMPOSE_*`) and embedding env (`XMONITOR_EMBEDDING_*`) as needed
 
-Publisher-side ingest auth:
-- `XMONITOR_API_KEY`
-
-API base configuration:
-- `XMONITOR_BACKEND_API_BASE_URL`
-- `XMONITOR_READ_API_BASE_URL`
-
-Optional API behavior:
-- `XMONITOR_DEFAULT_FEED_LIMIT`
-- `XMONITOR_MAX_FEED_LIMIT`
-
-Collector-side X API auth/config (for AWS collector mode):
+Collectors:
 - `XMON_X_API_BEARER_TOKEN`
-- `XMONITOR_API_KEY` (ingest auth for collector -> API writes)
+- `XMONITOR_API_KEY` (collector -> ingest auth)
+- `XMONITOR_API_BASE_URL` (default `https://www.zodldashboard.com/api/v1`)
+- `XMON_COLLECTOR_MODE` (`priority` or `discovery`)
+- `XMONITOR_INGEST_OMIT_HANDLES`
 
 ## 4) Ingest auth contract
 
-Write routes require one of:
+Protected routes accept one of:
 - `x-api-key: <shared-secret>`
 - `Authorization: Bearer <shared-secret>`
 
-Routes protected:
-- `POST /v1/ingest/posts/batch`
-- `POST /v1/ingest/metrics/batch`
-- `POST /v1/ingest/reports/batch`
-- `POST /v1/ingest/runs`
-- `GET /v1/ops/reconcile-counts`
-
-Read routes remain accessible to authenticated app users:
-- `GET /v1/health`
-- `GET /v1/feed`
-- `GET /v1/posts/{statusId}`
+Protected route groups:
+- `/v1/ingest/*`
+- `/v1/ops/*`
 
 ## 5) Standard deployment workflow
 
-### 5.1 Code deploy (Amplify)
+### 5.1 Deploy web app (Amplify)
 
 ```bash
 aws --profile zodldashboard --region us-east-1 amplify start-job \
@@ -88,26 +76,14 @@ aws --profile zodldashboard --region us-east-1 amplify start-job \
   --job-type RELEASE
 ```
 
-Check job status:
+### 5.2 Reprovision backend API + compose worker
 
 ```bash
-aws --profile zodldashboard --region us-east-1 amplify get-job \
-  --app-id d2rgmein7vsf2e \
-  --branch-name main \
-  --job-id <job-id>
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+./scripts/aws/provision_vpc_api_lambda.sh
 ```
 
-### 5.2 Backend/Lambda reprovision
-
-Use when Lambda code or backend env wiring changes:
-
-```bash
-AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 ./scripts/aws/provision_vpc_api_lambda.sh
-```
-
-### 5.3 Provision/update X API collector Lambda (priority mode)
-
-Use when enabling or updating server-side priority capture:
+### 5.3 Reprovision priority collector
 
 ```bash
 AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
@@ -115,177 +91,152 @@ X_API_BEARER_TOKEN='<x-api-bearer-token>' \
 ./scripts/aws/provision_x_api_collector_lambda.sh
 ```
 
-Safe shadow mode (collect/log only, no ingest writes):
+### 5.4 Reprovision discovery collector
 
 ```bash
 AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 X_API_BEARER_TOKEN='<x-api-bearer-token>' \
-COLLECTOR_WRITE_ENABLED=false \
-./scripts/aws/provision_x_api_collector_lambda.sh
-```
-
-## 6) Shared secret rotation
-
-1. Generate new secret:
-
-```bash
-openssl rand -hex 32
-```
-
-2. Update Secrets Manager secret `xmonitor/rds/app` field `ingest_shared_secret`.
-3. Update Amplify branch env `XMONITOR_INGEST_SHARED_SECRET`.
-4. Re-run:
-
-```bash
-AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 ./scripts/aws/provision_vpc_api_lambda.sh
-```
-
-5. Update publisher auth value (`XMONITOR_API_KEY`) used by local launchd/runtime.
-6. Trigger Amplify release.
-
-## 7) Post-deploy verification
-
-Health:
-
-```bash
-curl -sS 'https://www.zodldashboard.com/api/v1/health'
-```
-
-Feed read:
-
-```bash
-curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
-```
-
-Ingest auth should fail without key:
-
-```bash
-curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
-  -H 'content-type: application/json' \
-  --data '{"run_at":"2026-02-22T00:00:00Z","mode":"manual"}'
-```
-
-Ingest auth should pass with key:
-
-```bash
-curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
-  -H 'content-type: application/json' \
-  -H "x-api-key: $XMONITOR_API_KEY" \
-  --data '{"run_at":"2026-02-22T00:00:00Z","mode":"manual"}'
-```
-
-## 8) Migration tooling status
-
-The initial SQLite-to-Postgres migration stack is implemented in-repo:
-- `scripts/migrate/export_sqlite.py`
-- `scripts/migrate/import_sqlite_jsonl_to_postgres.py`
-- `scripts/migrate/validate_counts.py`
-
-If a full re-import is required, use a fresh snapshot and rerun import/validate scripts.
-
-## 9) Launchd and local runtime notes
-
-Local LaunchAgents are now fallback-only. Primary ingestion is AWS-side (`xmonitor-xapi-priority-collector`, `xmonitor-xapi-discovery-collector`).
-Rolling window summary generation (`rolling_2h`, `rolling_12h`) is also AWS-side via discovery collector.
-
-If you need to inspect or reconfigure:
-- `~/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist`
-- `~/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist`
-- `~/Library/LaunchAgents/com.openclaw.xmonitor.reconcile.plist`
-
-If you intentionally run local fallback jobs and API writes fail, validate:
-1. `XMONITOR_API_BASE_URL` points to `https://www.zodldashboard.com/api/v1`
-2. `XMONITOR_API_KEY` matches server shared secret
-3. `~/.openclaw/workspace/scripts/x_monitor_ingest_api.py --dry-run` returns expected outbound counts
-4. ingest endpoint returns `200` for authenticated test payload
-
-Reconciliation:
-1. Local `com.openclaw.xmonitor.reconcile` is optional and can remain disabled.
-2. If enabled for ad-hoc checks, log path is `~/.openclaw/workspace/logs/xmonitor-reconcile.log`.
-
-Collector mode exclusivity:
-1. Do not run local launchd and AWS collectors as active writers for the same mode at the same time.
-2. AWS priority/discovery collectors should be the active writers by default.
-3. Keep local `priority`, `discovery`, and `reconcile` launchd jobs disabled unless explicitly in rollback/fallback mode.
-4. When local discovery is disabled, local summary generation is also disabled by design.
-
-## 10) Incident quick triage
-
-1. `GET /api/v1/health` for top-level service/database signal.
-2. Check ingest auth behavior (`401` without key, `200` with key).
-3. Check Amplify latest job status/logs.
-4. Re-run Lambda provisioning script if backend config drift is suspected.
-5. Check CloudWatch logs for Lambda-level SQL or validation failures.
-
-## 11) Guardrails and future migration note
-
-- Guardrail implementation plan: `docs/DIRECT_INGEST_GUARDRAILS_EXECUTION_PLAN.md`
-- Full local-SQLite dependency removal is intentionally deferred until guardrail metrics justify the larger refactor.
-
-## 12) Outage recovery and guardrails operations
-
-Recovery replay command (from outage start, with overlap):
-
-```bash
-python3 ~/.openclaw/workspace/scripts/x_monitor_ingest_api.py \
-  --db ~/.openclaw/workspace/memory/x_monitor.db \
-  --api-base-url https://www.zodldashboard.com/api/v1 \
-  --api-key "$XMONITOR_API_KEY" \
-  --since "<outage_start_utc_iso>" \
-  --lookback-seconds 3600 \
-  --max-attempts 5
-```
-
-Post-recovery checks:
-1. `curl -sS 'https://www.zodldashboard.com/api/v1/health'` returns database `ok`.
-2. Feed freshness looks current in app/API.
-3. Run reconciliation and confirm pass:
-
-```bash
-/usr/bin/python3 ~/.openclaw/workspace/scripts/x_monitor_reconcile.py \
-  --api-base-url https://84kb8ehtp2.execute-api.us-east-1.amazonaws.com/v1 \
-  --since-last-hours 24
-```
-
-Failure-alert state file:
-- `~/.openclaw/workspace/memory/x_monitor_ingest_health.json`
-
-## 13) AWS collector cutover and rollback
-
-Cutover to AWS collector writes (priority + discovery):
-
-```bash
-UID_NUM="$(id -u)"
-launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.priority" || true
-launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.discovery" || true
-launchctl bootout "gui/$UID_NUM/com.openclaw.xmonitor.reconcile" || true
-
-AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
-X_API_BEARER_TOKEN='<x-api-bearer-token>' \
-COLLECTOR_WRITE_ENABLED=true \
-SCHEDULE_ENABLED=true \
-./scripts/aws/provision_x_api_collector_lambda.sh
-
-AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
-X_API_BEARER_TOKEN='<x-api-bearer-token>' \
-COLLECTOR_WRITE_ENABLED=true \
-SCHEDULE_ENABLED=true \
 ./scripts/aws/provision_x_api_discovery_collector_lambda.sh
 ```
 
-Rollback to local collectors:
+## 6) Collector control operations
+
+### Check collector rule state
+
+```bash
+aws --profile zodldashboard --region us-east-1 events describe-rule \
+  --name xmonitor-xapi-priority-collector-15m \
+  --query '{Name:Name,State:State,ScheduleExpression:ScheduleExpression}'
+
+aws --profile zodldashboard --region us-east-1 events describe-rule \
+  --name xmonitor-xapi-discovery-collector-60m \
+  --query '{Name:Name,State:State,ScheduleExpression:ScheduleExpression}'
+```
+
+### Disable collectors (stop writes)
 
 ```bash
 aws --profile zodldashboard --region us-east-1 events disable-rule \
   --name xmonitor-xapi-priority-collector-15m
 aws --profile zodldashboard --region us-east-1 events disable-rule \
   --name xmonitor-xapi-discovery-collector-60m
-
-UID_NUM="$(id -u)"
-launchctl bootstrap "gui/$UID_NUM" "$HOME/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist"
-launchctl enable "gui/$UID_NUM/com.openclaw.xmonitor.priority"
-launchctl kickstart -k "gui/$UID_NUM/com.openclaw.xmonitor.priority"
-launchctl bootstrap "gui/$UID_NUM" "$HOME/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist"
-launchctl enable "gui/$UID_NUM/com.openclaw.xmonitor.discovery"
-launchctl kickstart -k "gui/$UID_NUM/com.openclaw.xmonitor.discovery"
 ```
+
+### Re-enable collectors
+
+```bash
+aws --profile zodldashboard --region us-east-1 events enable-rule \
+  --name xmonitor-xapi-priority-collector-15m
+aws --profile zodldashboard --region us-east-1 events enable-rule \
+  --name xmonitor-xapi-discovery-collector-60m
+```
+
+### One-shot collector invoke
+
+```bash
+aws --profile zodldashboard --region us-east-1 lambda invoke \
+  --function-name xmonitor-xapi-priority-collector \
+  --payload '{"source":"manual","mode":"priority"}' \
+  /tmp/xmonitor-priority.json && cat /tmp/xmonitor-priority.json
+
+aws --profile zodldashboard --region us-east-1 lambda invoke \
+  --function-name xmonitor-xapi-discovery-collector \
+  --payload '{"source":"manual","mode":"discovery"}' \
+  /tmp/xmonitor-discovery.json && cat /tmp/xmonitor-discovery.json
+```
+
+## 7) Post-deploy verification
+
+```bash
+curl -sS 'https://www.zodldashboard.com/api/v1/health'
+curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
+curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
+```
+
+Ingest auth negative/positive check:
+
+```bash
+curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+  -H 'content-type: application/json' \
+  --data '{"run_at":"2026-03-02T00:00:00Z","mode":"manual"}'
+
+curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+  -H 'content-type: application/json' \
+  -H "x-api-key: $XMONITOR_API_KEY" \
+  --data '{"run_at":"2026-03-02T00:00:00Z","mode":"manual"}'
+```
+
+## 8) Logging and triage
+
+Priority collector logs:
+
+```bash
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-xapi-priority-collector' \
+  --since 2h --follow
+```
+
+Discovery collector logs:
+
+```bash
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-xapi-discovery-collector' \
+  --since 2h --follow
+```
+
+Backend API logs:
+
+```bash
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-vpc-api' \
+  --since 1h --follow
+```
+
+Compose worker logs:
+
+```bash
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-vpc-compose-worker' \
+  --since 1h --follow
+```
+
+## 9) Omit handle updates and cleanup
+
+Use the repo utility:
+
+```bash
+python3 scripts/ops/omit_and_purge_handles.py @handle_one @handle_two \
+  --update-lambda-env \
+  --aws-profile zodldashboard \
+  --aws-region us-east-1
+```
+
+This updates omit defaults in repo files, purges rows through `/v1/ops/purge-handle`, and updates collector Lambda env (`XMONITOR_INGEST_OMIT_HANDLES`).
+
+## 10) Secret rotation
+
+1. Generate a new secret:
+
+```bash
+openssl rand -hex 32
+```
+
+2. Update `xmonitor/rds/app` (`ingest_shared_secret`).
+3. Reprovision backend and collectors so env is refreshed.
+4. Update any operational shell/env values that send ingest writes (`XMONITOR_API_KEY`).
+5. Trigger Amplify release if web runtime env changed.
+
+## 11) Local fallback mode (only if needed)
+
+Use local OpenClaw launchd collectors only for explicit rollback/testing.
+
+Rules:
+1. Never run AWS collectors and local collectors as active writers for the same mode at the same time.
+2. Disable AWS EventBridge collector rules before enabling local launchd writers.
+3. Re-enable AWS rules and disable local launchd writers once rollback window ends.
+
+## 12) Migration status
+
+- SQLite -> Postgres migration is complete.
+- Production write path is AWS-side (X API collectors -> hosted ingest API -> VPC API -> RDS).
+- Local OpenClaw runtime is not required for normal ZODL Dashboard + X Monitor operation.

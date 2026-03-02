@@ -2,6 +2,8 @@
 
 Last updated: 2026-03-02 (America/New_York)
 
+> Status: Historical implementation plan. Priority and discovery capture are now both AWS-side. Use `docs/AWS_MIGRATION_RUNBOOK.md` and `docs/X_MONITOR_X_QUERY_AND_WATCHLIST_REFERENCE.md` for current-state behavior.
+
 ## 1) Goal and scope
 
 Move **priority + watchlist reply capture** from local browser scraping to a scheduled AWS Lambda that uses the X API and ingests directly to the existing hosted ingest routes.
