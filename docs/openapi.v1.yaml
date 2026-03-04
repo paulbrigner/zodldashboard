@@ -306,6 +306,105 @@ paths:
         '404':
           description: Job not found
 
+  /email/send:
+    post:
+      summary: Send an email draft (SES)
+      operationId: sendEmail
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmailSendRequest'
+      responses:
+        '200':
+          description: Email send result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EmailSendResponse'
+
+  /email/schedules:
+    get:
+      summary: List scheduled email jobs for the authenticated user
+      operationId: listEmailSchedules
+      responses:
+        '200':
+          description: Scheduled email jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledEmailJobListResponse'
+    post:
+      summary: Create a scheduled email job for the authenticated user
+      operationId: createEmailSchedule
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduledEmailJobCreateRequest'
+      responses:
+        '201':
+          description: Scheduled email job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledEmailJob'
+
+  /email/schedules/{jobId}:
+    patch:
+      summary: Update a scheduled email job
+      operationId: updateEmailSchedule
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ScheduledEmailJobPatchRequest'
+      responses:
+        '200':
+          description: Updated scheduled email job
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledEmailJob'
+        '404':
+          description: Job not found
+    delete:
+      summary: Delete a scheduled email job
+      operationId: deleteEmailSchedule
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Deletion result
+
+  /email/schedules/{jobId}/run-now:
+    post:
+      summary: Enqueue immediate execution for a scheduled email job
+      operationId: runEmailScheduleNow
+      parameters:
+        - in: path
+          name: jobId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Run queued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ScheduledEmailRunNowResponse'
+
   /posts/{statusId}:
     get:
       summary: Get post detail
@@ -597,7 +696,7 @@ components:
         retrieval_limit: { type: integer, minimum: 1, maximum: 100, default: 50 }
         context_limit: { type: integer, minimum: 1, maximum: 24, default: 14 }
         answer_style: { type: string, enum: [brief, balanced, detailed], default: balanced }
-        draft_format: { type: string, enum: [none, x_post, thread], default: none }
+        draft_format: { type: string, enum: [none, x_post, thread, email], default: none }
 
     ComposeCitation:
       type: object
@@ -619,12 +718,24 @@ components:
         latency_ms: { type: integer }
         coverage_score: { type: number, nullable: true }
 
+    ComposeEmailDraft:
+      type: object
+      required: [subject, body_markdown]
+      properties:
+        subject: { type: string }
+        body_markdown: { type: string }
+        body_text: { type: string, nullable: true }
+
     ComposeQueryResponse:
       type: object
       required: [answer_text, key_points, citations, retrieval_stats]
       properties:
         answer_text: { type: string }
         draft_text: { type: string, nullable: true }
+        email_draft:
+          allOf:
+            - $ref: '#/components/schemas/ComposeEmailDraft'
+          nullable: true
         key_points:
           type: array
           items: { type: string }
@@ -677,3 +788,121 @@ components:
           allOf:
             - $ref: '#/components/schemas/ComposeQueryResponse'
           nullable: true
+
+    EmailSendRequest:
+      type: object
+      required: [to, subject, body_markdown]
+      properties:
+        to:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string, format: email }
+        subject: { type: string }
+        body_markdown: { type: string }
+        body_text: { type: string, nullable: true }
+        compose_job_id: { type: string, format: uuid, nullable: true }
+        scheduled_job_id: { type: string, format: uuid, nullable: true }
+        scheduled_run_id: { type: string, format: uuid, nullable: true }
+
+    EmailSendResponse:
+      type: object
+      required: [delivery_id, status, provider]
+      properties:
+        delivery_id: { type: string, format: uuid }
+        status: { type: string, enum: [sent, failed] }
+        provider: { type: string, enum: [ses] }
+        provider_message_id: { type: string, nullable: true }
+        sent_at: { type: string, format: date-time, nullable: true }
+
+    ScheduledEmailJobCreateRequest:
+      type: object
+      required: [compose_request, recipients, schedule_interval_minutes, lookback_hours]
+      properties:
+        name: { type: string }
+        enabled: { type: boolean, default: true }
+        compose_request:
+          $ref: '#/components/schemas/ComposeQueryRequest'
+        recipients:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string, format: email }
+        subject_override: { type: string, nullable: true }
+        schedule_interval_minutes: { type: integer, minimum: 15, maximum: 10080 }
+        lookback_hours: { type: integer, minimum: 1, maximum: 336 }
+        timezone: { type: string, default: UTC }
+        next_run_at: { type: string, format: date-time, nullable: true }
+
+    ScheduledEmailJobPatchRequest:
+      type: object
+      properties:
+        name: { type: string }
+        enabled: { type: boolean }
+        compose_request:
+          $ref: '#/components/schemas/ComposeQueryRequest'
+        recipients:
+          oneOf:
+            - type: string
+            - type: array
+              items: { type: string, format: email }
+        subject_override: { type: string, nullable: true }
+        schedule_interval_minutes: { type: integer, minimum: 15, maximum: 10080 }
+        lookback_hours: { type: integer, minimum: 1, maximum: 336 }
+        timezone: { type: string }
+        next_run_at: { type: string, format: date-time }
+
+    ScheduledEmailJob:
+      type: object
+      required:
+        - job_id
+        - owner_email
+        - name
+        - enabled
+        - recipients
+        - schedule_interval_minutes
+        - lookback_hours
+        - timezone
+        - next_run_at
+        - run_count
+        - compose_request
+        - created_at
+        - updated_at
+      properties:
+        job_id: { type: string, format: uuid }
+        owner_email: { type: string, format: email }
+        name: { type: string }
+        enabled: { type: boolean }
+        recipients:
+          type: array
+          items: { type: string, format: email }
+        subject_override: { type: string, nullable: true }
+        schedule_interval_minutes: { type: integer }
+        lookback_hours: { type: integer }
+        timezone: { type: string }
+        next_run_at: { type: string, format: date-time }
+        last_run_at: { type: string, format: date-time, nullable: true }
+        last_status: { type: string, nullable: true }
+        last_error: { type: string, nullable: true }
+        run_count: { type: integer }
+        compose_request:
+          $ref: '#/components/schemas/ComposeQueryRequest'
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ScheduledEmailJobListResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduledEmailJob'
+
+    ScheduledEmailRunNowResponse:
+      type: object
+      required: [queued, run_id, scheduled_for]
+      properties:
+        queued: { type: boolean }
+        run_id: { type: string, format: uuid }
+        scheduled_for: { type: string, format: date-time }

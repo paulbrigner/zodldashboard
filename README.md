@@ -13,7 +13,8 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
 - X Monitor page (`/x-monitor`) with:
   - semantic search mode as the default filter mode for natural-language retrieval,
   - keyword filter mode (tier, handle, significant flag, date range, text search, limit),
-  - grounded "Answer mode" (retrieve + synthesize + citations + optional draft),
+  - grounded "Answer mode" (retrieve + synthesize + citations + optional `x_post`/`thread`/`email` drafts),
+  - email send + per-user scheduled email jobs from Answer Mode (OAuth users),
   - cursor-based pagination,
   - freshness indicator with manual refresh,
   - rolling summary panel (2h + 12h).
@@ -39,6 +40,11 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
   - `services/x-api-collector-lambda` runs as scheduled AWS Lambda collectors,
   - EventBridge schedules priority (15m) and discovery (60m) runs,
   - collectors call X API, score/filter posts, ingest posts/embeddings/runs, and generate rolling summaries in discovery mode.
+- Email runtime:
+  - `services/vpc-api-lambda` exposes email send + schedule APIs,
+  - SES sends outbound email,
+  - EventBridge + scheduler Lambda enqueue due scheduled email runs to SQS,
+  - worker Lambda executes scheduled runs and persists delivery audit rows.
 - Data model includes core post metrics plus summary analytics tables:
   - `window_summaries`,
   - `narrative_shifts`.
@@ -208,7 +214,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_EMBEDDING_API_KEY` | Optional | Preferred embedding API key secret. |
 | `VENICE_API_KEY` | Optional | Fallback secret for embedding/compose provider calls. |
 | `XMONITOR_COMPOSE_ENABLED` | Optional | Enables compose endpoint/UI panel (default `true`). |
-| `XMONITOR_COMPOSE_DRAFTS_ENABLED` | Optional | Allows draft output (`x_post`/`thread`) when compose is enabled. |
+| `XMONITOR_COMPOSE_DRAFTS_ENABLED` | Optional | Allows draft output (`x_post`/`thread`/`email`) when compose is enabled. |
 | `XMONITOR_COMPOSE_BASE_URL` | Optional | Compose provider base URL (default Venice OpenAI-compatible endpoint). |
 | `XMONITOR_COMPOSE_MODEL` | Optional | Text model for grounded answer generation. |
 | `XMONITOR_COMPOSE_TIMEOUT_MS` | Optional | Compose model request timeout ms (`120000` is recommended for high-quality async mode). |
@@ -231,6 +237,17 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_COMPOSE_DISABLE_THINKING` | Optional | For Venice thinking models, requests direct answer output (default `true`). |
 | `XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE` | Optional | For Venice thinking models, strips reasoning channel from response (default `true`). |
 | `XMONITOR_COMPOSE_API_KEY` | Optional | Preferred compose API key secret. |
+| `XMONITOR_USER_PROXY_SECRET` | Required for email features | Shared secret used by Next proxy routes when forwarding authenticated user context to backend `/v1/email/*`. |
+| `XMONITOR_EMAIL_ENABLED` | Optional | Enables email draft send endpoints and UI controls (default `false`). |
+| `XMONITOR_EMAIL_SCHEDULES_ENABLED` | Optional | Enables scheduled email job APIs and UI controls (default `false`). |
+| `XMONITOR_EMAIL_REQUIRE_OAUTH` | Optional | Requires OAuth sessions (not local bypass) for email actions (default `true`). |
+| `XMONITOR_EMAIL_FROM_ADDRESS` | Required for email send | SES verified sender address used for outbound mail. |
+| `XMONITOR_EMAIL_FROM_NAME` | Optional | Display name paired with sender address (default `ZodlDashboard X Monitor`). |
+| `XMONITOR_EMAIL_MAX_RECIPIENTS` | Optional | Max recipients per send/job (default `10`). |
+| `XMONITOR_EMAIL_MAX_JOBS_PER_USER` | Optional | Max scheduled jobs per owner email (default `25`). |
+| `XMONITOR_EMAIL_MAX_BODY_CHARS` | Optional | Max stored/sent body length for markdown/text fields (default `20000`). |
+| `XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT` | Optional | Max due jobs scanned per scheduler tick (default `25`). |
+| `XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP` | Optional | Auto-creates scheduled-email schema objects in backend Lambda (default `false`; set `true` when DB migrations cannot be run directly from ops host). |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
 | `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35, windymint1, usa_trader06, roger_welch1, cmscanner_bb, cmscanner_rsi, dexportal_, luckyvinod16, zecigr, disruqtion, zec8, cmscanner_sma, zeczinka, cryptodiane, sureblessing36, pafoslive1, sachin22049721, lovegds1lady, micheal_crypto0, ruth13900929210, michell82710798, kimberl97730856, fx220000, exnesst80805, sfurures_expart, felix__steven, vectorthehunter, forex47kin51201, bullbearcrypt, blacker6636, devendr34011988, dannym4u, scapenerhurst, duncannbaldwin, robertethan_, jamesharri45923, jxttreasury, dannnym4u, rinshad31142287, sumitso40959179, _zonecrypto_, promoimpulse, rmelian_ok, xol1641557, mw_intern, desota, ma1973sk`). |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
@@ -252,6 +269,11 @@ Open [http://localhost:3000](http://localhost:3000).
 - `INGEST_OMIT_HANDLES`
 - `LAMBDA_FUNCTION_NAME`
 - `COMPOSE_WORKER_FUNCTION_NAME`
+- `EMAIL_SCHEDULER_FUNCTION_NAME`
+- `EMAIL_SCHEDULER_TIMEOUT`
+- `EMAIL_SCHEDULER_MEMORY_MB`
+- `EMAIL_SCHEDULER_RULE_NAME`
+- `EMAIL_SCHEDULER_EXPRESSION`
 - `API_NAME`
 - `COMPOSE_JOBS_QUEUE_NAME`
 - `COMPOSE_JOBS_DLQ_NAME`
@@ -265,6 +287,16 @@ Open [http://localhost:3000](http://localhost:3000).
 - `COMPOSE_TIMEOUT_MS`
 - `COMPOSE_MAX_OUTPUT_TOKENS`
 - `COMPOSE_API_KEY`
+- `EMAIL_ENABLED`
+- `EMAIL_SCHEDULES_ENABLED`
+- `EMAIL_REQUIRE_OAUTH`
+- `EMAIL_FROM_ADDRESS`
+- `EMAIL_FROM_NAME`
+- `EMAIL_MAX_RECIPIENTS`
+- `EMAIL_MAX_JOBS_PER_USER`
+- `EMAIL_MAX_BODY_CHARS`
+- `EMAIL_SCHEDULE_DISPATCH_LIMIT`
+- `USER_PROXY_SECRET`
 - `SUMMARY_SCHEMA_BOOTSTRAP`
 - `SUMMARY_SCHEMA_GRANT_ROLE`
 - `ENABLE_NAT_EGRESS`
@@ -365,6 +397,12 @@ Open [http://localhost:3000](http://localhost:3000).
 - `POST /api/v1/query/compose` (legacy sync flow; still available for fallback)
 - `POST /api/v1/query/compose/jobs` (enqueue async grounded answer job)
 - `GET /api/v1/query/compose/jobs/{jobId}` (poll async grounded answer job)
+- `POST /api/v1/email/send`
+- `GET /api/v1/email/schedules`
+- `POST /api/v1/email/schedules`
+- `PATCH /api/v1/email/schedules/{jobId}`
+- `DELETE /api/v1/email/schedules/{jobId}`
+- `POST /api/v1/email/schedules/{jobId}/run-now`
 - `GET /api/v1/posts/{statusId}`
 - `GET /api/v1/window-summaries/latest`
 - `GET /api/v1/ops/reconcile-counts`
@@ -385,6 +423,12 @@ Open [http://localhost:3000](http://localhost:3000).
 - `POST /v1/query/compose` (retrieval/evidence stage only; no text generation)
 - `POST /v1/query/compose/jobs` (create async grounded answer job)
 - `GET /v1/query/compose/jobs/{jobId}` (job status + terminal result/error)
+- `POST /v1/email/send`
+- `GET /v1/email/schedules`
+- `POST /v1/email/schedules`
+- `PATCH /v1/email/schedules/{jobId}`
+- `DELETE /v1/email/schedules/{jobId}`
+- `POST /v1/email/schedules/{jobId}/run-now`
 - `GET /v1/posts/{statusId}`
 - `GET /v1/window-summaries/latest`
 - `GET /v1/ops/reconcile-counts`
@@ -438,16 +482,20 @@ Notes:
   - `retrieval_limit` (bounded to `1..100`),
   - `context_limit` (bounded to `1..24`, and never above retrieval limit),
   - `answer_style` (`brief|balanced|detailed`),
-  - `draft_format` (`none|x_post|thread`).
+  - `draft_format` (`none|x_post|thread|email`).
 - Output is structured and citation-backed:
   - `answer_text`,
   - optional `draft_text`,
+  - optional `email_draft` (`subject`, `body_markdown`, optional `body_text`),
   - `key_points[]`,
   - `citations[]` (`status_id`, `url`, `author_handle`, excerpt, score),
   - `retrieval_stats` (`retrieved_count`, `used_count`, `model`, `latency_ms`, optional `coverage_score`).
 - `answer_text` and `draft_text` are generated as Markdown and rendered in the UI as formatted content (not raw Markdown syntax).
 - Job states: `queued`, `running`, `succeeded`, `failed`, `expired`.
 - If synthesis output is malformed, parser-safe fallback still returns retrieval-backed evidence/citations.
+- With `draft_format=email`:
+  - user can edit and send email immediately via SES,
+  - user can create per-user scheduled email jobs (create/edit/enable/disable/run-now/delete).
 
 ---
 
@@ -470,6 +518,12 @@ Summary analytics tables from `002_summary_analytics.sql`:
 Async compose job table from `004_compose_jobs.sql`:
 
 - `compose_jobs`
+
+Email delivery + scheduling tables from `005_email_schedules_and_deliveries.sql`:
+
+- `scheduled_email_jobs`
+- `scheduled_email_runs`
+- `email_deliveries`
 
 ---
 
@@ -556,6 +610,10 @@ X_API_BEARER_TOKEN='<x-api-bearer-token>' \
 Notes:
 - Discovery Lambda now generates and ingests `rolling_2h` and `rolling_12h` window summaries on aligned intervals (default every 2 hours in UTC).
 - Summary generation uses AI narrative output when available, with automatic fallback to stats-style summary text.
+- Email scheduling uses:
+  - scheduler Lambda `xmonitor-vpc-email-scheduler` (`index.schedulerHandler`),
+  - EventBridge rule `xmonitor-email-schedule-dispatch` (default `rate(5 minutes)`),
+  - worker Lambda `xmonitor-vpc-compose-worker` processing scheduled email run messages from the compose queue.
 
 Collector operations:
 - Keep `xmonitor-xapi-priority-collector-15m` and `xmonitor-xapi-discovery-collector-60m` enabled for normal production ingestion.
@@ -645,6 +703,15 @@ Set one valid backend mode:
 - Confirm backend async mode is enabled and queue/worker are healthy.
 - For very large prompts and high limits, keep `XMONITOR_COMPOSE_TIMEOUT_MS` high (for example `120000`) and avoid excessive context.
 
+### Email send or schedule actions fail
+
+- Confirm `XMONITOR_EMAIL_ENABLED=true` and (for schedules) `XMONITOR_EMAIL_SCHEDULES_ENABLED=true`.
+- Confirm `XMONITOR_USER_PROXY_SECRET` matches on web runtime and backend Lambda runtime.
+- Confirm SES sender identity is verified for `XMONITOR_EMAIL_FROM_ADDRESS`.
+- Confirm backend Lambda IAM role allows `ses:SendEmail`.
+- For OAuth-only mode (`XMONITOR_EMAIL_REQUIRE_OAUTH=true`), verify user is signed in via OAuth (not local bypass).
+- Confirm scheduler Lambda and EventBridge rule are deployed/enabled for recurring sends.
+
 ### Rolling summaries show stats-style fallback instead of narrative text
 
 - This means the summary producer likely fell back to legacy/statistical text for that run.
@@ -685,6 +752,7 @@ Current architecture and operations:
 - `docs/AWS_MIGRATION_RUNBOOK.md`
 - `docs/X_MONITOR_X_QUERY_AND_WATCHLIST_REFERENCE.md`
 - `docs/X_MONITOR_CAPTURE_PIPELINE_AND_TUNING.md`
+- `docs/EMAIL_DRAFT_AND_SCHEDULE_ARCHITECTURE.md`
 - `docs/POSTGRES_SCHEMA_AND_OPENAPI_V1.md`
 - `docs/openapi.v1.yaml`
 
@@ -705,6 +773,7 @@ Historical planning/execution artifacts:
 
 - Never commit live secrets to git.
 - Keep OAuth credentials and ingest secret in secure runtime config.
+- Keep `XMONITOR_USER_PROXY_SECRET` secret and rotate if exposed.
 - Rotate secrets immediately if they are exposed.
 - Restrict DB network access to trusted AWS resources (for example VPC Lambda SG to RDS SG).
 - Keep local bypass disabled by default and use the kill switch during incidents.

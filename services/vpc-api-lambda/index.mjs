@@ -1,12 +1,13 @@
 import { Pool } from "pg";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
+import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
 const WATCH_TIERS = new Set(["teammate", "influencer", "ecosystem"]);
 const SNAPSHOT_TYPES = new Set(["initial_capture", "latest_observed", "refresh_24h"]);
 const RUN_MODES = new Set(["priority", "discovery", "both", "refresh24h", "manual"]);
 const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
-const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread"]);
+const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread", "email"]);
 
 const DEFAULT_SERVICE_NAME = "xmonitor-api";
 const DEFAULT_API_VERSION = "v1";
@@ -37,6 +38,16 @@ const DEFAULT_COMPOSE_MAX_CITATIONS = 10;
 const DEFAULT_COMPOSE_USE_JSON_MODE = true;
 const DEFAULT_COMPOSE_DISABLE_THINKING = true;
 const DEFAULT_COMPOSE_STRIP_THINKING_RESPONSE = true;
+const DEFAULT_EMAIL_ENABLED = false;
+const DEFAULT_EMAIL_SCHEDULES_ENABLED = false;
+const DEFAULT_EMAIL_REQUIRE_OAUTH = true;
+const DEFAULT_EMAIL_MAX_RECIPIENTS = 10;
+const DEFAULT_EMAIL_MAX_JOBS_PER_USER = 25;
+const DEFAULT_EMAIL_MAX_BODY_CHARS = 20000;
+const DEFAULT_EMAIL_SCHEDULE_DISPATCH_LIMIT = 25;
+const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
+const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
+const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const DEFAULT_INGEST_OMIT_HANDLES = [
   "zec_88",
   "zec__2",
@@ -95,7 +106,9 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
 let pool;
 let summarySchemaEnsured = false;
 let composeJobsSchemaEnsured = false;
+let emailSchemaEnsured = false;
 let sqsClient;
+let sesClient;
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -259,6 +272,64 @@ function composeApiKey() {
   return asString(process.env.XMONITOR_COMPOSE_API_KEY) || embeddingApiKey();
 }
 
+function emailEnabled() {
+  const value = asString(process.env.XMONITOR_EMAIL_ENABLED);
+  if (!value) return DEFAULT_EMAIL_ENABLED;
+  const normalized = value.toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") return true;
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return DEFAULT_EMAIL_ENABLED;
+}
+
+function emailSchedulesEnabled() {
+  const value = asString(process.env.XMONITOR_EMAIL_SCHEDULES_ENABLED);
+  if (!value) return DEFAULT_EMAIL_SCHEDULES_ENABLED;
+  const normalized = value.toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") return true;
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return DEFAULT_EMAIL_SCHEDULES_ENABLED;
+}
+
+function emailRequireOAuth() {
+  const value = asString(process.env.XMONITOR_EMAIL_REQUIRE_OAUTH);
+  if (!value) return DEFAULT_EMAIL_REQUIRE_OAUTH;
+  const normalized = value.toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") return true;
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return DEFAULT_EMAIL_REQUIRE_OAUTH;
+}
+
+function emailProxySecret() {
+  return asString(process.env.XMONITOR_USER_PROXY_SECRET);
+}
+
+function emailFromAddress() {
+  return asString(process.env.XMONITOR_EMAIL_FROM_ADDRESS);
+}
+
+function emailFromName() {
+  return asString(process.env.XMONITOR_EMAIL_FROM_NAME) || "ZodlDashboard X Monitor";
+}
+
+function emailMaxRecipients() {
+  return parsePositiveInt(process.env.XMONITOR_EMAIL_MAX_RECIPIENTS, DEFAULT_EMAIL_MAX_RECIPIENTS);
+}
+
+function emailMaxJobsPerUser() {
+  return parsePositiveInt(process.env.XMONITOR_EMAIL_MAX_JOBS_PER_USER, DEFAULT_EMAIL_MAX_JOBS_PER_USER);
+}
+
+function emailMaxBodyChars() {
+  return parsePositiveInt(process.env.XMONITOR_EMAIL_MAX_BODY_CHARS, DEFAULT_EMAIL_MAX_BODY_CHARS);
+}
+
+function emailScheduleDispatchLimit() {
+  return parsePositiveInt(
+    process.env.XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT,
+    DEFAULT_EMAIL_SCHEDULE_DISPATCH_LIMIT
+  );
+}
+
 function embeddingBaseUrl() {
   const configured = asString(process.env.XMONITOR_EMBEDDING_BASE_URL);
   return (configured || DEFAULT_EMBEDDING_BASE_URL).replace(/\/+$/, "");
@@ -293,6 +364,14 @@ function shouldBootstrapSummarySchema() {
 
 function shouldBootstrapComposeJobsSchema() {
   const value = asString(process.env.XMONITOR_ENABLE_COMPOSE_JOBS_SCHEMA_BOOTSTRAP);
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function shouldBootstrapEmailSchema() {
+  const value = asString(process.env.XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP);
   if (!value) return false;
   const normalized = value.toLowerCase();
   if (normalized === "0" || normalized === "false" || normalized === "no") return false;
@@ -357,6 +436,13 @@ function getSqsClient() {
   return sqsClient;
 }
 
+function getSesClient() {
+  if (!sesClient) {
+    sesClient = new SESv2Client({});
+  }
+  return sesClient;
+}
+
 function sha256Hex(input) {
   return createHash("sha256").update(String(input || ""), "utf8").digest("hex");
 }
@@ -376,7 +462,11 @@ function isIngestPath(path) {
 }
 
 function isOpsPath(path) {
-  return path === "/v1/ops/reconcile-counts" || path === "/v1/ops/purge-handle";
+  return (
+    path === "/v1/ops/reconcile-counts" ||
+    path === "/v1/ops/purge-handle" ||
+    path === "/v1/email/schedules/dispatch-due"
+  );
 }
 
 function timingSafeMatch(expected, actual) {
@@ -697,6 +787,116 @@ function readJsonBody(event) {
   } catch {
     return { ok: false, error: "invalid JSON body" };
   }
+}
+
+function validateEmailAddress(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!normalized) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) return null;
+  if (normalized.length > 254) return null;
+  return normalized;
+}
+
+function parseRecipients(value, maxRecipients = emailMaxRecipients()) {
+  let rawItems = [];
+  if (Array.isArray(value)) {
+    rawItems = value;
+  } else if (typeof value === "string") {
+    rawItems = value.split(/[,\n;]+/);
+  } else {
+    return { ok: false, error: "to must be an array of email addresses or a comma-separated string" };
+  }
+
+  const recipients = [];
+  for (const item of rawItems) {
+    const normalized = validateEmailAddress(item);
+    if (!normalized) continue;
+    recipients.push(normalized);
+  }
+
+  const deduped = [...new Set(recipients)];
+  if (deduped.length === 0) {
+    return { ok: false, error: "at least one valid recipient email is required" };
+  }
+  if (deduped.length > maxRecipients) {
+    return { ok: false, error: `too many recipients (max ${maxRecipients})` };
+  }
+  return { ok: true, data: deduped };
+}
+
+function markdownToPlainText(markdown) {
+  const raw = String(markdown || "");
+  return raw
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/!\[[^\]]*]\(([^)]+)\)/g, "$1")
+    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, "$1 ($2)")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "• ")
+    .replace(/\r\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function withLengthLimit(value, maxChars) {
+  const text = String(value || "");
+  if (text.length <= maxChars) return text;
+  return text.slice(0, maxChars).trim();
+}
+
+function requireViewerContext(event, { oauthOnly = false } = {}) {
+  const expectedSecret = emailProxySecret();
+  if (!expectedSecret) {
+    return {
+      ok: false,
+      status: 503,
+      error: "viewer proxy auth is not configured. Set XMONITOR_USER_PROXY_SECRET.",
+    };
+  }
+
+  const headers = event?.headers;
+  const presentedSecret = asString(headerValue(headers, VIEWER_PROXY_SECRET_HEADER));
+  if (!presentedSecret || !timingSafeMatch(expectedSecret, presentedSecret)) {
+    return { ok: false, status: 401, error: "unauthorized" };
+  }
+
+  const email = validateEmailAddress(headerValue(headers, VIEWER_EMAIL_HEADER));
+  if (!email) {
+    return { ok: false, status: 400, error: "missing viewer email context" };
+  }
+
+  const authMode = asString(headerValue(headers, VIEWER_MODE_HEADER)) || "oauth";
+  if (oauthOnly && authMode !== "oauth") {
+    return { ok: false, status: 403, error: "email actions require OAuth sign-in" };
+  }
+
+  return {
+    ok: true,
+    viewer: {
+      email,
+      auth_mode: authMode,
+    },
+  };
+}
+
+function optionalViewerContext(event) {
+  const expectedSecret = emailProxySecret();
+  if (!expectedSecret) return null;
+  const headers = event?.headers;
+  const presentedSecret = asString(headerValue(headers, VIEWER_PROXY_SECRET_HEADER));
+  if (!presentedSecret || !timingSafeMatch(expectedSecret, presentedSecret)) {
+    return null;
+  }
+  const email = validateEmailAddress(headerValue(headers, VIEWER_EMAIL_HEADER));
+  if (!email) return null;
+  return {
+    email,
+    auth_mode: asString(headerValue(headers, VIEWER_MODE_HEADER)) || "oauth",
+  };
+}
+
+function nowIso() {
+  return new Date().toISOString();
 }
 
 function parseBatchItems(value) {
@@ -1077,7 +1277,7 @@ function parseComposeQueryBody(value) {
 
   const draftFormatRaw = asString(value.draft_format)?.toLowerCase();
   if (draftFormatRaw && !COMPOSE_DRAFT_FORMATS.has(draftFormatRaw)) {
-    return { ok: false, error: "draft_format must be one of none, x_post, thread" };
+    return { ok: false, error: "draft_format must be one of none, x_post, thread, email" };
   }
   const draftFormat = draftFormatRaw || "none";
 
@@ -1186,7 +1386,7 @@ async function ensureSummaryAnalyticsSchema() {
 }
 
 async function ensureComposeJobsSchema() {
-  if (composeJobsSchemaEnsured || !shouldBootstrapComposeJobsSchema()) {
+  if (composeJobsSchemaEnsured || (!shouldBootstrapComposeJobsSchema() && !shouldBootstrapEmailSchema())) {
     return;
   }
 
@@ -1197,6 +1397,8 @@ async function ensureComposeJobsSchema() {
       status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'expired')),
       request_hash TEXT,
       request_payload_json JSONB NOT NULL,
+      owner_email CITEXT,
+      owner_auth_mode TEXT,
       result_payload_json JSONB,
       error_code TEXT,
       error_message TEXT,
@@ -1217,6 +1419,17 @@ async function ensureComposeJobsSchema() {
       ON compose_jobs (request_hash, created_at DESC);
   `);
 
+  await db.query(`
+    ALTER TABLE compose_jobs
+      ADD COLUMN IF NOT EXISTS owner_email CITEXT,
+      ADD COLUMN IF NOT EXISTS owner_auth_mode TEXT;
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_compose_jobs_owner_email_created_at
+      ON compose_jobs (owner_email, created_at DESC);
+  `);
+
   const grantRole = asString(process.env.XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE);
   if (grantRole) {
     const role = quoteIdent(grantRole);
@@ -1226,6 +1439,115 @@ async function ensureComposeJobsSchema() {
   }
 
   composeJobsSchemaEnsured = true;
+}
+
+async function ensureEmailSchema() {
+  if (emailSchemaEnsured || !shouldBootstrapEmailSchema()) {
+    return;
+  }
+
+  await ensureComposeJobsSchema();
+  const db = getPool();
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS scheduled_email_jobs (
+      job_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_email CITEXT NOT NULL,
+      name TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      compose_request_json JSONB NOT NULL,
+      recipients_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      subject_override TEXT,
+      schedule_interval_minutes INTEGER NOT NULL CHECK (schedule_interval_minutes >= 15 AND schedule_interval_minutes <= 10080),
+      lookback_hours INTEGER NOT NULL DEFAULT 24 CHECK (lookback_hours >= 1 AND lookback_hours <= 336),
+      timezone TEXT NOT NULL DEFAULT 'UTC',
+      next_run_at TIMESTAMPTZ NOT NULL,
+      last_run_at TIMESTAMPTZ,
+      last_status TEXT CHECK (last_status IN ('queued', 'running', 'succeeded', 'failed', 'skipped')),
+      last_error TEXT,
+      run_count INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CHECK (jsonb_typeof(compose_request_json) = 'object'),
+      CHECK (jsonb_typeof(recipients_json) = 'array')
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_email_jobs_owner_created_at
+      ON scheduled_email_jobs (owner_email, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_email_jobs_enabled_next_run
+      ON scheduled_email_jobs (enabled, next_run_at);
+
+    DROP TRIGGER IF EXISTS trg_scheduled_email_jobs_set_updated_at ON scheduled_email_jobs;
+    CREATE TRIGGER trg_scheduled_email_jobs_set_updated_at
+    BEFORE UPDATE ON scheduled_email_jobs
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at();
+
+    CREATE TABLE IF NOT EXISTS scheduled_email_runs (
+      run_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      scheduled_job_id UUID NOT NULL REFERENCES scheduled_email_jobs(job_id) ON DELETE CASCADE,
+      owner_email CITEXT NOT NULL,
+      scheduled_for TIMESTAMPTZ NOT NULL,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'skipped')),
+      started_at TIMESTAMPTZ,
+      completed_at TIMESTAMPTZ,
+      compose_job_id UUID REFERENCES compose_jobs(job_id) ON DELETE SET NULL,
+      delivery_id UUID,
+      error_code TEXT,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (scheduled_job_id, scheduled_for)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scheduled_email_runs_job_created_at
+      ON scheduled_email_runs (scheduled_job_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_email_runs_status_scheduled_for
+      ON scheduled_email_runs (status, scheduled_for);
+
+    CREATE TABLE IF NOT EXISTS email_deliveries (
+      delivery_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_email CITEXT NOT NULL,
+      source TEXT NOT NULL CHECK (source IN ('manual', 'scheduled')),
+      scheduled_job_id UUID REFERENCES scheduled_email_jobs(job_id) ON DELETE SET NULL,
+      scheduled_run_id UUID REFERENCES scheduled_email_runs(run_id) ON DELETE SET NULL,
+      compose_job_id UUID REFERENCES compose_jobs(job_id) ON DELETE SET NULL,
+      to_recipients_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      subject TEXT NOT NULL,
+      body_markdown TEXT NOT NULL,
+      body_text TEXT NOT NULL,
+      provider TEXT NOT NULL DEFAULT 'ses',
+      provider_message_id TEXT,
+      status TEXT NOT NULL CHECK (status IN ('queued', 'sent', 'failed')),
+      error_code TEXT,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      sent_at TIMESTAMPTZ,
+      CHECK (jsonb_typeof(to_recipients_json) = 'array')
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_email_deliveries_owner_created_at
+      ON email_deliveries (owner_email, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_email_deliveries_status_created_at
+      ON email_deliveries (status, created_at DESC);
+
+    ALTER TABLE scheduled_email_runs
+      DROP CONSTRAINT IF EXISTS fk_scheduled_email_runs_delivery;
+    ALTER TABLE scheduled_email_runs
+      ADD CONSTRAINT fk_scheduled_email_runs_delivery
+      FOREIGN KEY (delivery_id) REFERENCES email_deliveries(delivery_id) ON DELETE SET NULL;
+  `);
+
+  const grantRole = asString(process.env.XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE);
+  if (grantRole) {
+    const role = quoteIdent(grantRole);
+    await db.query(`
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE scheduled_email_jobs TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE scheduled_email_runs TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE email_deliveries TO ${role};
+    `);
+  }
+
+  emailSchemaEnsured = true;
 }
 
 async function upsertPosts(items) {
@@ -2212,6 +2534,21 @@ function sanitizeComposeKeyPoints(value) {
   return parsed.map((item) => item.replace(/\s+/g, " ").trim()).filter((item) => item.length > 0).slice(0, 8);
 }
 
+function sanitizeEmailDraft(value) {
+  const payload = asObject(value);
+  if (!payload) return null;
+  const subject = withLengthLimit(asString(payload.subject) || "", 240);
+  const bodyMarkdown = withLengthLimit(asString(payload.body_markdown) || "", emailMaxBodyChars());
+  const bodyTextRaw = asString(payload.body_text);
+  const bodyText = bodyTextRaw ? withLengthLimit(bodyTextRaw, emailMaxBodyChars()) : null;
+  if (!subject || !bodyMarkdown) return null;
+  return {
+    subject,
+    body_markdown: bodyMarkdown,
+    body_text: bodyText,
+  };
+}
+
 function decodeJsonStringFragment(value) {
   try {
     return JSON.parse(`"${value}"`);
@@ -2297,6 +2634,7 @@ function parseJsonLikeComposeText(rawContent) {
   return {
     answer_text: answerText,
     draft_text: draftText || null,
+    email_draft: null,
     key_points: keyPoints,
     citation_status_ids: citationStatusIds,
   };
@@ -2342,6 +2680,7 @@ function parseComposeModelResult(rawContent) {
           return {
             answer_text: normalizedAnswerText,
             draft_text: draftText || null,
+            email_draft: sanitizeEmailDraft(parsed.email_draft),
             key_points: keyPoints,
             citation_status_ids: citationIds,
           };
@@ -2362,12 +2701,16 @@ function parseComposeModelResult(rawContent) {
   return {
     answer_text: plainText,
     draft_text: null,
+    email_draft: null,
     key_points: [],
     citation_status_ids: [],
   };
 }
 
 function composeDraftInstruction(requestedFormat) {
+  if (requestedFormat === "email") {
+    return "draft_text must be null. email_draft must be an object with subject and body_markdown (optionally body_text).";
+  }
   if (requestedFormat === "x_post") {
     return `draft_text must be a single post no longer than ${composeMaxDraftCharsXPost()} characters.`;
   }
@@ -2410,7 +2753,7 @@ function buildComposePrompt(input, evidence) {
     "Do not wrap output in markdown code fences.",
     "Do not include any text before or after the JSON object.",
     "Return only a single JSON object with keys:",
-    '{"answer_text": string, "draft_text": string|null, "key_points": string[], "citation_status_ids": string[]}',
+    '{"answer_text": string, "draft_text": string|null, "email_draft": {"subject": string, "body_markdown": string, "body_text": string|null}|null, "key_points": string[], "citation_status_ids": string[]}',
     "Format answer_text as clean GitHub-flavored Markdown suitable for direct UI rendering (headings, short paragraphs, bullet lists).",
     answerStyleInstruction(answerStyle),
     composeDraftInstruction(draftFormat),
@@ -2592,6 +2935,7 @@ function buildComposeFallbackResponse(evidence, fallbackText) {
   return {
     answer_text: fallbackText,
     draft_text: null,
+    email_draft: null,
     key_points: evidence.key_points.slice(0, 6),
     citations: evidence.citations.slice(0, composeMaxCitations()),
     retrieval_stats: evidence.retrieval_stats,
@@ -2600,6 +2944,7 @@ function buildComposeFallbackResponse(evidence, fallbackText) {
 
 function enforceDraftGuardrails(draftText, requestedFormat) {
   if (!requestedFormat || requestedFormat === "none") return null;
+  if (requestedFormat === "email") return null;
   const draft = asString(draftText);
   if (!draft) return null;
 
@@ -2621,6 +2966,27 @@ function enforceDraftGuardrails(draftText, requestedFormat) {
     return candidate.slice(0, wordBoundary).trim();
   }
   return candidate;
+}
+
+function enforceEmailDraftGuardrails(emailDraft, requestedFormat, taskText) {
+  if (requestedFormat !== "email") return null;
+  const draft = sanitizeEmailDraft(emailDraft);
+  if (draft) {
+    return {
+      subject: withLengthLimit(draft.subject, 240),
+      body_markdown: withLengthLimit(draft.body_markdown, emailMaxBodyChars()),
+      body_text: withLengthLimit(draft.body_text || markdownToPlainText(draft.body_markdown), emailMaxBodyChars()),
+    };
+  }
+
+  const trimmedTask = String(taskText || "").trim();
+  const fallbackSubject = withLengthLimit(trimmedTask ? `X Monitor: ${trimmedTask}` : "X Monitor update", 240);
+  const fallbackBody = "No structured email draft was returned by AI. See the grounded Answer section for details.";
+  return {
+    subject: fallbackSubject,
+    body_markdown: fallbackBody,
+    body_text: fallbackBody,
+  };
 }
 
 function selectComposeCitations(evidence, citationStatusIds) {
@@ -2669,10 +3035,12 @@ async function synthesizeComposeAnswer(input, evidencePayload, requestId) {
 
   const keyPoints = parsed.key_points.length > 0 ? parsed.key_points : evidencePayload.key_points.slice(0, 6);
   const draftText = enforceDraftGuardrails(parsed.draft_text, input.draft_format);
+  const emailDraft = enforceEmailDraftGuardrails(parsed.email_draft, input.draft_format, input.task_text);
 
   return {
     answer_text: parsed.answer_text,
     draft_text: draftText,
+    email_draft: emailDraft,
     key_points: keyPoints,
     citations,
     retrieval_stats: evidencePayload.retrieval_stats,
@@ -2717,7 +3085,7 @@ async function enqueueComposeJob(jobId, delaySeconds = 0) {
   await getSqsClient().send(command);
 }
 
-async function createComposeJob(parsedInput, requestId) {
+async function createComposeJob(parsedInput, requestId, owner = null) {
   await ensureComposeJobsSchema();
   const db = getPool();
   const payloadJson = asJson(parsedInput);
@@ -2726,11 +3094,20 @@ async function createComposeJob(parsedInput, requestId) {
   const ttlHours = composeJobTtlHours();
   const result = await db.query(
     `
-      INSERT INTO compose_jobs (status, request_hash, request_payload_json, attempt_count, max_attempts, expires_at)
-      VALUES ('queued', $1, $2::jsonb, 0, $3, now() + make_interval(hours => $4::int))
+      INSERT INTO compose_jobs (
+        status,
+        request_hash,
+        request_payload_json,
+        owner_email,
+        owner_auth_mode,
+        attempt_count,
+        max_attempts,
+        expires_at
+      )
+      VALUES ('queued', $1, $2::jsonb, $3, $4, 0, $5, now() + make_interval(hours => $6::int))
       RETURNING job_id, status, created_at, expires_at
     `,
-    [requestHash, payloadJson, maxAttempts, ttlHours]
+    [requestHash, payloadJson, owner?.email || null, owner?.auth_mode || null, maxAttempts, ttlHours]
   );
 
   const row = result.rows[0];
@@ -2755,7 +3132,7 @@ async function createComposeJob(parsedInput, requestId) {
   };
 }
 
-async function getComposeJobById(jobId) {
+async function getComposeJobById(jobId, ownerEmail = null) {
   await ensureComposeJobsSchema();
   const db = getPool();
 
@@ -2779,6 +3156,8 @@ async function getComposeJobById(jobId) {
         result_payload_json,
         error_code,
         error_message,
+        owner_email,
+        owner_auth_mode,
         attempt_count,
         max_attempts,
         created_at,
@@ -2787,9 +3166,10 @@ async function getComposeJobById(jobId) {
         expires_at
       FROM compose_jobs
       WHERE job_id = $1
+        AND ($2::citext IS NULL OR owner_email IS NULL OR owner_email = $2::citext)
       LIMIT 1
     `,
-    [jobId]
+    [jobId, ownerEmail]
   );
 
   return result.rows[0] || null;
@@ -3002,6 +3382,864 @@ async function processComposeJob(jobId, requestId) {
         max_attempts: maxAttempts,
         error_code: errorCode,
       })
+    );
+    return { ok: false, skipped: "failed" };
+  }
+}
+
+function normalizeComposeRequestForSchedule(parsedComposeInput) {
+  const next = {
+    ...parsedComposeInput,
+    draft_format: "email",
+  };
+  delete next.query_vector;
+  delete next.since;
+  delete next.until;
+  return next;
+}
+
+function computeNextRunAtIso(currentIso, intervalMinutes, nowMs = Date.now()) {
+  const intervalMs = Math.max(1, Number(intervalMinutes || 0)) * 60 * 1000;
+  let nextMs = new Date(currentIso || nowIso()).getTime();
+  if (!Number.isFinite(nextMs)) {
+    nextMs = nowMs + intervalMs;
+  }
+  while (nextMs <= nowMs) {
+    nextMs += intervalMs;
+  }
+  return new Date(nextMs).toISOString();
+}
+
+function parseEmailSendBody(value) {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+
+  const recipients = parseRecipients(value.to);
+  if (!recipients.ok) return recipients;
+
+  const subject = withLengthLimit(asString(value.subject) || "", 240);
+  if (!subject) {
+    return { ok: false, error: "subject is required" };
+  }
+
+  const bodyMarkdown = withLengthLimit(asString(value.body_markdown) || "", emailMaxBodyChars());
+  if (!bodyMarkdown) {
+    return { ok: false, error: "body_markdown is required" };
+  }
+  const explicitBodyText = asString(value.body_text);
+  const bodyText = withLengthLimit(explicitBodyText || markdownToPlainText(bodyMarkdown), emailMaxBodyChars());
+  const composeJobId = asString(value.compose_job_id);
+  const scheduledJobId = asString(value.scheduled_job_id);
+  const scheduledRunId = asString(value.scheduled_run_id);
+
+  if (composeJobId && !isUuid(composeJobId)) {
+    return { ok: false, error: "compose_job_id must be a UUID when provided" };
+  }
+  if (scheduledJobId && !isUuid(scheduledJobId)) {
+    return { ok: false, error: "scheduled_job_id must be a UUID when provided" };
+  }
+  if (scheduledRunId && !isUuid(scheduledRunId)) {
+    return { ok: false, error: "scheduled_run_id must be a UUID when provided" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      to: recipients.data,
+      subject,
+      body_markdown: bodyMarkdown,
+      body_text: bodyText,
+      compose_job_id: composeJobId || null,
+      scheduled_job_id: scheduledJobId || null,
+      scheduled_run_id: scheduledRunId || null,
+    },
+  };
+}
+
+function parseScheduledEmailJobCreateBody(value) {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+
+  const composeSource = asObject(value.compose_request) || value;
+  const parsedCompose = parseComposeQueryBody(composeSource);
+  if (!parsedCompose.ok) {
+    return { ok: false, error: `compose_request is invalid: ${parsedCompose.error}` };
+  }
+  const composeRequest = normalizeComposeRequestForSchedule(parsedCompose.data);
+
+  const recipients = parseRecipients(value.recipients ?? value.to);
+  if (!recipients.ok) return recipients;
+
+  const name = withLengthLimit(
+    asString(value.name) || withLengthLimit(`Scheduled: ${composeRequest.task_text}`, 120),
+    120
+  );
+  if (!name) {
+    return { ok: false, error: "name is required" };
+  }
+
+  const subjectOverrideRaw = asNullableString(value.subject_override);
+  const subjectOverride = subjectOverrideRaw === null ? null : withLengthLimit(subjectOverrideRaw || "", 240) || null;
+  const scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes) ?? 1440;
+  if (scheduleIntervalMinutes < 15 || scheduleIntervalMinutes > 10080) {
+    return { ok: false, error: "schedule_interval_minutes must be between 15 and 10080" };
+  }
+  const lookbackHours = asInteger(value.lookback_hours) ?? 24;
+  if (lookbackHours < 1 || lookbackHours > 336) {
+    return { ok: false, error: "lookback_hours must be between 1 and 336" };
+  }
+  const timezone = withLengthLimit(asString(value.timezone) || "UTC", 64);
+  const enabled = asBoolean(value.enabled) ?? true;
+  const requestedNextRunAt = asIsoTimestamp(value.next_run_at);
+  const nextRunAt = computeNextRunAtIso(
+    requestedNextRunAt || new Date(Date.now() + scheduleIntervalMinutes * 60 * 1000).toISOString(),
+    scheduleIntervalMinutes
+  );
+
+  return {
+    ok: true,
+    data: {
+      name,
+      enabled,
+      compose_request_json: composeRequest,
+      recipients_json: recipients.data,
+      subject_override: subjectOverride,
+      schedule_interval_minutes: scheduleIntervalMinutes,
+      lookback_hours: lookbackHours,
+      timezone,
+      next_run_at: nextRunAt,
+    },
+  };
+}
+
+function parseScheduledEmailJobPatchBody(value) {
+  if (!isRecord(value)) return { ok: false, error: "body must be an object" };
+  const patch = {};
+
+  if (value.name !== undefined) {
+    const name = withLengthLimit(asString(value.name) || "", 120);
+    if (!name) return { ok: false, error: "name cannot be empty" };
+    patch.name = name;
+  }
+
+  if (value.enabled !== undefined) {
+    const enabled = asBoolean(value.enabled);
+    if (enabled === undefined) return { ok: false, error: "enabled must be true or false" };
+    patch.enabled = enabled;
+  }
+
+  if (value.recipients !== undefined || value.to !== undefined) {
+    const recipients = parseRecipients(value.recipients ?? value.to);
+    if (!recipients.ok) return recipients;
+    patch.recipients_json = recipients.data;
+  }
+
+  if (value.subject_override !== undefined) {
+    const subjectOverrideRaw = asNullableString(value.subject_override);
+    patch.subject_override = subjectOverrideRaw === null ? null : withLengthLimit(subjectOverrideRaw || "", 240) || null;
+  }
+
+  if (value.schedule_interval_minutes !== undefined) {
+    const scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes);
+    if (!scheduleIntervalMinutes || scheduleIntervalMinutes < 15 || scheduleIntervalMinutes > 10080) {
+      return { ok: false, error: "schedule_interval_minutes must be between 15 and 10080" };
+    }
+    patch.schedule_interval_minutes = scheduleIntervalMinutes;
+  }
+
+  if (value.lookback_hours !== undefined) {
+    const lookbackHours = asInteger(value.lookback_hours);
+    if (!lookbackHours || lookbackHours < 1 || lookbackHours > 336) {
+      return { ok: false, error: "lookback_hours must be between 1 and 336" };
+    }
+    patch.lookback_hours = lookbackHours;
+  }
+
+  if (value.timezone !== undefined) {
+    const timezone = withLengthLimit(asString(value.timezone) || "", 64);
+    if (!timezone) return { ok: false, error: "timezone cannot be empty" };
+    patch.timezone = timezone;
+  }
+
+  if (value.next_run_at !== undefined) {
+    const nextRunAt = asIsoTimestamp(value.next_run_at);
+    if (!nextRunAt) return { ok: false, error: "next_run_at must be an ISO-8601 timestamp" };
+    patch.next_run_at = nextRunAt;
+  }
+
+  if (value.compose_request !== undefined) {
+    const composeSource = asObject(value.compose_request);
+    if (!composeSource) return { ok: false, error: "compose_request must be an object" };
+    const parsedCompose = parseComposeQueryBody(composeSource);
+    if (!parsedCompose.ok) {
+      return { ok: false, error: `compose_request is invalid: ${parsedCompose.error}` };
+    }
+    patch.compose_request_json = normalizeComposeRequestForSchedule(parsedCompose.data);
+  }
+
+  if (Object.keys(patch).length === 0) {
+    return { ok: false, error: "at least one editable field is required" };
+  }
+
+  return { ok: true, data: patch };
+}
+
+function rowToScheduledEmailJob(row) {
+  const composeRequest = asObject(row.compose_request_json) || {};
+  const recipientsRaw = asArray(row.recipients_json) || [];
+  const recipients = recipientsRaw.map((item) => validateEmailAddress(item)).filter(Boolean);
+  return {
+    job_id: String(row.job_id),
+    owner_email: String(row.owner_email || ""),
+    name: String(row.name || ""),
+    enabled: Boolean(row.enabled),
+    recipients,
+    subject_override: row.subject_override ? String(row.subject_override) : null,
+    schedule_interval_minutes: Number(row.schedule_interval_minutes || 0),
+    lookback_hours: Number(row.lookback_hours || 0),
+    timezone: String(row.timezone || "UTC"),
+    next_run_at: toIso(row.next_run_at) || nowIso(),
+    last_run_at: toIso(row.last_run_at),
+    last_status: row.last_status ? String(row.last_status) : null,
+    last_error: row.last_error ? String(row.last_error) : null,
+    run_count: Number(row.run_count || 0),
+    compose_request: composeRequest,
+    created_at: toIso(row.created_at) || nowIso(),
+    updated_at: toIso(row.updated_at) || nowIso(),
+  };
+}
+
+function mapEmailErrorCode(error) {
+  const message = String(errorMessage(error) || "").toLowerCase();
+  if (message.includes("message rejected")) return "ses_message_rejected";
+  if (message.includes("throttl")) return "ses_throttled";
+  if (message.includes("sandbox")) return "ses_sandbox";
+  if (message.includes("unauthorized") || message.includes("not authorized")) return "ses_auth";
+  return "ses_send_failed";
+}
+
+async function sendEmailDelivery({
+  ownerEmail,
+  source,
+  recipients,
+  subject,
+  bodyMarkdown,
+  bodyText,
+  composeJobId = null,
+  scheduledJobId = null,
+  scheduledRunId = null,
+}) {
+  await ensureEmailSchema();
+  const db = getPool();
+  const fromAddress = emailFromAddress();
+  if (!fromAddress) {
+    return {
+      ok: false,
+      error_code: "email_config_missing",
+      error_message: "XMONITOR_EMAIL_FROM_ADDRESS is not configured.",
+    };
+  }
+
+  const recipientList = parseRecipients(recipients);
+  if (!recipientList.ok) {
+    return {
+      ok: false,
+      error_code: "email_recipient_invalid",
+      error_message: recipientList.error,
+    };
+  }
+
+  const subjectSafe = withLengthLimit(asString(subject) || "", 240);
+  const markdownSafe = withLengthLimit(asString(bodyMarkdown) || "", emailMaxBodyChars());
+  const textSafe = withLengthLimit(asString(bodyText) || markdownToPlainText(markdownSafe), emailMaxBodyChars());
+  if (!subjectSafe || !markdownSafe || !textSafe) {
+    return {
+      ok: false,
+      error_code: "email_payload_invalid",
+      error_message: "subject and body are required",
+    };
+  }
+
+  const inserted = await db.query(
+    `
+      INSERT INTO email_deliveries (
+        owner_email,
+        source,
+        scheduled_job_id,
+        scheduled_run_id,
+        compose_job_id,
+        to_recipients_json,
+        subject,
+        body_markdown,
+        body_text,
+        provider,
+        status
+      )
+      VALUES ($1::citext, $2, $3, $4, $5, $6::jsonb, $7, $8, $9, 'ses', 'queued')
+      RETURNING delivery_id
+    `,
+    [
+      ownerEmail,
+      source,
+      scheduledJobId,
+      scheduledRunId,
+      composeJobId,
+      asJson(recipientList.data),
+      subjectSafe,
+      markdownSafe,
+      textSafe,
+    ]
+  );
+  const deliveryId = String(inserted.rows[0].delivery_id);
+
+  try {
+    const fromHeader = `${emailFromName()} <${fromAddress}>`;
+    const response = await getSesClient().send(
+      new SendEmailCommand({
+        FromEmailAddress: fromHeader,
+        Destination: {
+          ToAddresses: recipientList.data,
+        },
+        Content: {
+          Simple: {
+            Subject: {
+              Charset: "UTF-8",
+              Data: subjectSafe,
+            },
+            Body: {
+              Text: {
+                Charset: "UTF-8",
+                Data: textSafe,
+              },
+            },
+          },
+        },
+      })
+    );
+
+    const providerMessageId = asString(response?.MessageId) || null;
+    await db.query(
+      `
+        UPDATE email_deliveries
+        SET status = 'sent',
+            provider_message_id = $2,
+            sent_at = now(),
+            error_code = NULL,
+            error_message = NULL
+        WHERE delivery_id = $1
+      `,
+      [deliveryId, providerMessageId]
+    );
+
+    return {
+      ok: true,
+      data: {
+        delivery_id: deliveryId,
+        status: "sent",
+        provider: "ses",
+        provider_message_id: providerMessageId,
+        sent_at: nowIso(),
+      },
+    };
+  } catch (error) {
+    const errorCode = mapEmailErrorCode(error);
+    const message = withLengthLimit(errorMessage(error) || "failed to send email", 1200);
+    await db.query(
+      `
+        UPDATE email_deliveries
+        SET status = 'failed',
+            error_code = $2,
+            error_message = $3
+        WHERE delivery_id = $1
+      `,
+      [deliveryId, errorCode, message]
+    );
+    return {
+      ok: false,
+      error_code: errorCode,
+      error_message: message,
+      delivery_id: deliveryId,
+    };
+  }
+}
+
+async function listScheduledEmailJobs(ownerEmail) {
+  await ensureEmailSchema();
+  const db = getPool();
+  const result = await db.query(
+    `
+      SELECT
+        job_id,
+        owner_email,
+        name,
+        enabled,
+        compose_request_json,
+        recipients_json,
+        subject_override,
+        schedule_interval_minutes,
+        lookback_hours,
+        timezone,
+        next_run_at,
+        last_run_at,
+        last_status,
+        last_error,
+        run_count,
+        created_at,
+        updated_at
+      FROM scheduled_email_jobs
+      WHERE owner_email = $1::citext
+      ORDER BY created_at DESC
+    `,
+    [ownerEmail]
+  );
+  return result.rows.map(rowToScheduledEmailJob);
+}
+
+async function createScheduledEmailJob(ownerEmail, payload) {
+  await ensureEmailSchema();
+  const db = getPool();
+  const countResult = await db.query(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM scheduled_email_jobs
+      WHERE owner_email = $1::citext
+    `,
+    [ownerEmail]
+  );
+  const jobCount = Number(countResult.rows[0]?.count || 0);
+  if (jobCount >= emailMaxJobsPerUser()) {
+    throw new Error(`job limit reached (max ${emailMaxJobsPerUser()} per user)`);
+  }
+
+  const result = await db.query(
+    `
+      INSERT INTO scheduled_email_jobs (
+        owner_email,
+        name,
+        enabled,
+        compose_request_json,
+        recipients_json,
+        subject_override,
+        schedule_interval_minutes,
+        lookback_hours,
+        timezone,
+        next_run_at
+      )
+      VALUES ($1::citext, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::timestamptz)
+      RETURNING *
+    `,
+    [
+      ownerEmail,
+      payload.name,
+      payload.enabled,
+      asJson(payload.compose_request_json),
+      asJson(payload.recipients_json),
+      payload.subject_override,
+      payload.schedule_interval_minutes,
+      payload.lookback_hours,
+      payload.timezone,
+      payload.next_run_at,
+    ]
+  );
+  return rowToScheduledEmailJob(result.rows[0]);
+}
+
+async function updateScheduledEmailJob(ownerEmail, jobId, patch) {
+  await ensureEmailSchema();
+  const fields = [];
+  const params = [jobId, ownerEmail];
+
+  for (const [key, rawValue] of Object.entries(patch)) {
+    let value = rawValue;
+    if (key === "compose_request_json" || key === "recipients_json") {
+      value = asJson(rawValue);
+      fields.push(`${key} = $${params.length + 1}::jsonb`);
+    } else if (key === "next_run_at") {
+      fields.push(`${key} = $${params.length + 1}::timestamptz`);
+    } else {
+      fields.push(`${key} = $${params.length + 1}`);
+    }
+    params.push(value);
+  }
+
+  if (patch.schedule_interval_minutes && !patch.next_run_at) {
+    fields.push(`next_run_at = $${params.length + 1}::timestamptz`);
+    params.push(computeNextRunAtIso(nowIso(), patch.schedule_interval_minutes));
+  }
+
+  fields.push("updated_at = now()");
+  const sql = `
+    UPDATE scheduled_email_jobs
+    SET ${fields.join(", ")}
+    WHERE job_id = $1::uuid
+      AND owner_email = $2::citext
+    RETURNING *
+  `;
+  const result = await getPool().query(sql, params);
+  return result.rows[0] ? rowToScheduledEmailJob(result.rows[0]) : null;
+}
+
+async function deleteScheduledEmailJob(ownerEmail, jobId) {
+  await ensureEmailSchema();
+  const result = await getPool().query(
+    `
+      DELETE FROM scheduled_email_jobs
+      WHERE job_id = $1::uuid
+        AND owner_email = $2::citext
+    `,
+    [jobId, ownerEmail]
+  );
+  return result.rowCount > 0;
+}
+
+async function enqueueScheduledEmailRun(runId, delaySeconds = 0) {
+  const queueUrl = composeJobsQueueUrl();
+  if (!queueUrl) {
+    throw new Error("compose jobs queue is not configured. Set XMONITOR_COMPOSE_JOBS_QUEUE_URL.");
+  }
+  await getSqsClient().send(
+    new SendMessageCommand({
+      QueueUrl: queueUrl,
+      MessageBody: JSON.stringify({ type: "scheduled_email_run", run_id: runId }),
+      DelaySeconds: Math.max(0, Math.min(900, Math.floor(delaySeconds || 0))),
+    })
+  );
+}
+
+async function createRunNowForScheduledJob(ownerEmail, jobId) {
+  await ensureEmailSchema();
+  const db = getPool();
+  const job = await db.query(
+    `
+      SELECT job_id, owner_email
+      FROM scheduled_email_jobs
+      WHERE job_id = $1::uuid
+        AND owner_email = $2::citext
+      LIMIT 1
+    `,
+    [jobId, ownerEmail]
+  );
+  if (job.rowCount === 0) return null;
+
+  const scheduledFor = nowIso();
+  const inserted = await db.query(
+    `
+      INSERT INTO scheduled_email_runs (
+        scheduled_job_id,
+        owner_email,
+        scheduled_for,
+        status
+      )
+      VALUES ($1::uuid, $2::citext, $3::timestamptz, 'queued')
+      RETURNING run_id
+    `,
+    [jobId, ownerEmail, scheduledFor]
+  );
+  const runId = String(inserted.rows[0].run_id);
+  await enqueueScheduledEmailRun(runId, 0);
+  return { run_id: runId, scheduled_for: scheduledFor };
+}
+
+async function dispatchDueScheduledEmailRuns(requestId) {
+  await ensureEmailSchema();
+  const db = getPool();
+  const client = await db.connect();
+  const toEnqueue = [];
+  try {
+    await client.query("BEGIN");
+    const due = await client.query(
+      `
+        SELECT
+          job_id,
+          owner_email,
+          next_run_at,
+          schedule_interval_minutes
+        FROM scheduled_email_jobs
+        WHERE enabled = TRUE
+          AND next_run_at <= now()
+        ORDER BY next_run_at ASC
+        LIMIT $1
+        FOR UPDATE SKIP LOCKED
+      `,
+      [emailScheduleDispatchLimit()]
+    );
+
+    for (const row of due.rows) {
+      const scheduledForIso = toIso(row.next_run_at) || nowIso();
+      const insertedRun = await client.query(
+        `
+          INSERT INTO scheduled_email_runs (
+            scheduled_job_id,
+            owner_email,
+            scheduled_for,
+            status
+          )
+          VALUES ($1::uuid, $2::citext, $3::timestamptz, 'queued')
+          ON CONFLICT (scheduled_job_id, scheduled_for) DO NOTHING
+          RETURNING run_id
+        `,
+        [row.job_id, row.owner_email, scheduledForIso]
+      );
+
+      const nextRunAt = computeNextRunAtIso(
+        scheduledForIso,
+        Number(row.schedule_interval_minutes || 60)
+      );
+      await client.query(
+        `
+          UPDATE scheduled_email_jobs
+          SET next_run_at = $2::timestamptz,
+              last_status = 'queued',
+              last_error = NULL,
+              updated_at = now()
+          WHERE job_id = $1::uuid
+        `,
+        [row.job_id, nextRunAt]
+      );
+
+      if (insertedRun.rowCount > 0) {
+        toEnqueue.push(String(insertedRun.rows[0].run_id));
+      }
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  let enqueued = 0;
+  for (const runId of toEnqueue) {
+    try {
+      await enqueueScheduledEmailRun(runId, 0);
+      enqueued += 1;
+    } catch (error) {
+      await getPool().query(
+        `
+          UPDATE scheduled_email_runs
+          SET status = 'failed',
+              completed_at = now(),
+              error_code = 'schedule_enqueue_failed',
+              error_message = $2
+          WHERE run_id = $1::uuid
+        `,
+        [runId, withLengthLimit(errorMessage(error) || "failed to enqueue scheduled run", 1200)]
+      );
+    }
+  }
+
+  console.log(
+    JSON.stringify({
+      event: "scheduled_email_dispatch",
+      request_id: requestId || null,
+      due_count: toEnqueue.length,
+      enqueued_count: enqueued,
+    })
+  );
+  return { due_count: toEnqueue.length, enqueued_count: enqueued };
+}
+
+async function processScheduledEmailRun(runId, requestId) {
+  await ensureEmailSchema();
+  if (!isUuid(runId)) {
+    throw new Error("invalid scheduled email run id");
+  }
+  const db = getPool();
+  const client = await db.connect();
+  let runRow = null;
+  try {
+    await client.query("BEGIN");
+    const selected = await client.query(
+      `
+        SELECT
+          r.run_id,
+          r.status AS run_status,
+          r.scheduled_job_id,
+          r.owner_email AS run_owner_email,
+          r.scheduled_for,
+          j.owner_email AS owner_email,
+          j.enabled,
+          j.compose_request_json,
+          j.recipients_json,
+          j.subject_override,
+          j.lookback_hours,
+          j.run_count
+        FROM scheduled_email_runs r
+        JOIN scheduled_email_jobs j ON j.job_id = r.scheduled_job_id
+        WHERE r.run_id = $1::uuid
+        FOR UPDATE
+      `,
+      [runId]
+    );
+
+    if (selected.rowCount === 0) {
+      await client.query("COMMIT");
+      return { ok: false, skipped: "not_found" };
+    }
+
+    runRow = selected.rows[0];
+    if (runRow.run_status !== "queued") {
+      await client.query("COMMIT");
+      return { ok: false, skipped: `status_${runRow.run_status}` };
+    }
+
+    if (!runRow.enabled) {
+      await client.query(
+        `
+          UPDATE scheduled_email_runs
+          SET status = 'skipped',
+              completed_at = now(),
+              error_code = 'job_disabled',
+              error_message = 'scheduled job is disabled'
+          WHERE run_id = $1::uuid
+        `,
+        [runId]
+      );
+      await client.query(
+        `
+          UPDATE scheduled_email_jobs
+          SET last_run_at = now(),
+              last_status = 'skipped',
+              last_error = 'scheduled job is disabled',
+              run_count = run_count + 1,
+              updated_at = now()
+          WHERE job_id = $1::uuid
+        `,
+        [runRow.scheduled_job_id]
+      );
+      await client.query("COMMIT");
+      return { ok: false, skipped: "job_disabled" };
+    }
+
+    await client.query(
+      `
+        UPDATE scheduled_email_runs
+        SET status = 'running',
+            started_at = COALESCE(started_at, now()),
+            error_code = NULL,
+            error_message = NULL
+        WHERE run_id = $1::uuid
+      `,
+      [runId]
+    );
+    await client.query(
+      `
+        UPDATE scheduled_email_jobs
+        SET last_status = 'running',
+            last_error = NULL,
+            updated_at = now()
+        WHERE job_id = $1::uuid
+      `,
+      [runRow.scheduled_job_id]
+    );
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  try {
+    const composeRequest = asObject(runRow.compose_request_json) || {};
+    const lookbackHours = Number(runRow.lookback_hours || 24);
+    const until = nowIso();
+    const since = new Date(Date.now() - lookbackHours * 60 * 60 * 1000).toISOString();
+    const parsedCompose = parseComposeQueryBody({
+      ...composeRequest,
+      draft_format: "email",
+      since,
+      until,
+    });
+    if (!parsedCompose.ok) {
+      throw new Error(`invalid stored compose request: ${parsedCompose.error}`);
+    }
+
+    const recipients = parseRecipients(runRow.recipients_json);
+    if (!recipients.ok) {
+      throw new Error(recipients.error);
+    }
+
+    const queryEmbedding = parsedCompose.data.query_vector || await createQueryEmbedding(parsedCompose.data.task_text);
+    const evidencePayload = await queryComposeEvidence(parsedCompose.data, queryEmbedding);
+    const composed = await synthesizeComposeAnswer(parsedCompose.data, evidencePayload, requestId || runId);
+    const emailDraft = enforceEmailDraftGuardrails(composed.email_draft, "email", parsedCompose.data.task_text);
+    const subject = withLengthLimit(asString(runRow.subject_override) || emailDraft.subject, 240);
+    const bodyMarkdown = withLengthLimit(emailDraft.body_markdown || composed.answer_text, emailMaxBodyChars());
+    const bodyText = withLengthLimit(emailDraft.body_text || markdownToPlainText(bodyMarkdown), emailMaxBodyChars());
+
+    const delivery = await sendEmailDelivery({
+      ownerEmail: String(runRow.owner_email),
+      source: "scheduled",
+      recipients: recipients.data,
+      subject,
+      bodyMarkdown,
+      bodyText,
+      scheduledJobId: String(runRow.scheduled_job_id),
+      scheduledRunId: runId,
+    });
+
+    if (!delivery.ok) {
+      throw new Error(delivery.error_message || "failed to send scheduled email");
+    }
+
+    await db.query(
+      `
+        UPDATE scheduled_email_runs
+        SET status = 'succeeded',
+            completed_at = now(),
+            delivery_id = $2::uuid,
+            error_code = NULL,
+            error_message = NULL
+        WHERE run_id = $1::uuid
+      `,
+      [runId, delivery.data.delivery_id]
+    );
+    await db.query(
+      `
+        UPDATE scheduled_email_jobs
+        SET last_run_at = now(),
+            last_status = 'succeeded',
+            last_error = NULL,
+            run_count = run_count + 1,
+            updated_at = now()
+        WHERE job_id = $1::uuid
+      `,
+      [runRow.scheduled_job_id]
+    );
+
+    return { ok: true };
+  } catch (error) {
+    const message = withLengthLimit(errorMessage(error) || "scheduled email run failed", 1200);
+    await db.query(
+      `
+        UPDATE scheduled_email_runs
+        SET status = 'failed',
+            completed_at = now(),
+            error_code = 'scheduled_run_failed',
+            error_message = $2
+        WHERE run_id = $1::uuid
+      `,
+      [runId, message]
+    );
+    await db.query(
+      `
+        UPDATE scheduled_email_jobs
+        SET last_run_at = now(),
+            last_status = 'failed',
+            last_error = $2,
+            run_count = run_count + 1,
+            updated_at = now()
+        WHERE job_id = $1::uuid
+      `,
+      [runRow?.scheduled_job_id, message]
     );
     return { ok: false, skipped: "failed" };
   }
@@ -3371,16 +4609,17 @@ async function handleComposeJobCreate(event) {
   }
 
   const requestId = asString(headerValue(event?.headers, "x-request-id")) || randomUUID();
+  const viewer = optionalViewerContext(event);
 
   try {
-    const created = await createComposeJob(parsedQuery.data, requestId);
+    const created = await createComposeJob(parsedQuery.data, requestId, viewer);
     return jsonOk(created, 202);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to enqueue compose job", 503);
   }
 }
 
-async function handleComposeJobGet(path) {
+async function handleComposeJobGet(event, path) {
   if (!composeEnabled()) {
     return jsonError("compose query is disabled", 503);
   }
@@ -3398,15 +4637,213 @@ async function handleComposeJobGet(path) {
   if (!isUuid(jobId)) {
     return jsonError("invalid compose job id", 400);
   }
+  const viewer = optionalViewerContext(event);
 
   try {
-    const row = await getComposeJobById(jobId);
+    const row = await getComposeJobById(jobId, viewer?.email || null);
     if (!row) {
       return jsonError("compose job not found", 404);
     }
     return jsonOk(composeJobPayloadToResponse(row));
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to read compose job", 503);
+  }
+}
+
+async function handleEmailSend(event) {
+  if (!emailEnabled()) {
+    return jsonError("email sending is disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: emailRequireOAuth() });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+  const parsedPayload = parseEmailSendBody(parsedBody.body);
+  if (!parsedPayload.ok) {
+    return jsonError(parsedPayload.error, 400);
+  }
+
+  const delivery = await sendEmailDelivery({
+    ownerEmail: viewer.viewer.email,
+    source: "manual",
+    recipients: parsedPayload.data.to,
+    subject: parsedPayload.data.subject,
+    bodyMarkdown: parsedPayload.data.body_markdown,
+    bodyText: parsedPayload.data.body_text,
+    composeJobId: parsedPayload.data.compose_job_id,
+    scheduledJobId: parsedPayload.data.scheduled_job_id,
+    scheduledRunId: parsedPayload.data.scheduled_run_id,
+  });
+
+  if (!delivery.ok) {
+    return jsonResponse(502, {
+      error: delivery.error_message || "failed to send email",
+      code: delivery.error_code || "email_send_failed",
+      delivery_id: delivery.delivery_id || null,
+    });
+  }
+  return jsonOk(delivery.data);
+}
+
+async function handleEmailSchedulesList(event) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return jsonError("email schedules are disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: emailRequireOAuth() });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  try {
+    const items = await listScheduledEmailJobs(viewer.viewer.email);
+    return jsonOk({ items });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to list scheduled email jobs", 503);
+  }
+}
+
+async function handleEmailSchedulesCreate(event) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return jsonError("email schedules are disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: emailRequireOAuth() });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseScheduledEmailJobCreateBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const created = await createScheduledEmailJob(viewer.viewer.email, parsed.data);
+    return jsonOk(created, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to create scheduled email job", 503);
+  }
+}
+
+async function handleEmailSchedulePatch(event, path) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return jsonError("email schedules are disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: emailRequireOAuth() });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const match = path.match(/^\/v1\/email\/schedules\/([^/]+)$/);
+  const jobId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(jobId)) {
+    return jsonError("invalid schedule id", 400);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseScheduledEmailJobPatchBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const updated = await updateScheduledEmailJob(viewer.viewer.email, jobId, parsed.data);
+    if (!updated) return jsonError("scheduled email job not found", 404);
+    return jsonOk(updated);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to update scheduled email job", 503);
+  }
+}
+
+async function handleEmailScheduleDelete(event, path) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return jsonError("email schedules are disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: emailRequireOAuth() });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const match = path.match(/^\/v1\/email\/schedules\/([^/]+)$/);
+  const jobId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(jobId)) {
+    return jsonError("invalid schedule id", 400);
+  }
+
+  try {
+    const deleted = await deleteScheduledEmailJob(viewer.viewer.email, jobId);
+    if (!deleted) return jsonError("scheduled email job not found", 404);
+    return jsonOk({ deleted: true, job_id: jobId });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to delete scheduled email job", 503);
+  }
+}
+
+async function handleEmailScheduleRunNow(event, path) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return jsonError("email schedules are disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: emailRequireOAuth() });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const match = path.match(/^\/v1\/email\/schedules\/([^/]+)\/run-now$/);
+  const jobId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(jobId)) {
+    return jsonError("invalid schedule id", 400);
+  }
+
+  try {
+    const run = await createRunNowForScheduledJob(viewer.viewer.email, jobId);
+    if (!run) return jsonError("scheduled email job not found", 404);
+    return jsonOk({ queued: true, ...run }, 202);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to enqueue run-now", 503);
+  }
+}
+
+async function handleDispatchDueScheduledEmailRuns(event) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return jsonError("email schedules are disabled", 503);
+  }
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const requestId = asString(headerValue(event?.headers, "x-request-id")) || randomUUID();
+  try {
+    const result = await dispatchDueScheduledEmailRuns(requestId);
+    return jsonOk(result);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to dispatch due scheduled runs", 503);
   }
 }
 
@@ -3580,6 +5017,23 @@ export async function sqsHandler(event) {
     const messageId = String(record?.messageId || "");
     try {
       const payload = JSON.parse(String(record?.body || "{}"));
+      const itemType = asString(payload?.type) || "compose_job";
+
+      if (itemType === "scheduled_email_run") {
+        const runId = asString(payload?.run_id);
+        if (!runId || !isUuid(runId)) {
+          console.log(
+            JSON.stringify({
+              event: "scheduled_email_run_message_invalid",
+              message_id: messageId || null,
+            })
+          );
+          continue;
+        }
+        await processScheduledEmailRun(runId, messageId || undefined);
+        continue;
+      }
+
       const jobId = asString(payload?.job_id);
       if (!jobId || !isUuid(jobId)) {
         console.log(
@@ -3604,6 +5058,33 @@ export async function sqsHandler(event) {
   }
 
   return { batchItemFailures: failures };
+}
+
+export async function schedulerHandler(event) {
+  if (!emailEnabled() || !emailSchedulesEnabled()) {
+    return {
+      ok: true,
+      skipped: "disabled",
+      dispatched_at: nowIso(),
+    };
+  }
+
+  if (!hasDatabaseConfig()) {
+    throw new Error("Database is not configured. Set DATABASE_URL or PG* variables.");
+  }
+
+  if (!composeJobsQueueUrl()) {
+    throw new Error("compose jobs queue is not configured. Set XMONITOR_COMPOSE_JOBS_QUEUE_URL.");
+  }
+
+  const requestId = asString(event?.id) || randomUUID();
+  const result = await dispatchDueScheduledEmailRuns(requestId);
+  return {
+    ok: true,
+    request_id: requestId,
+    dispatched_at: nowIso(),
+    ...result,
+  };
 }
 
 export async function handler(event) {
@@ -3645,7 +5126,35 @@ export async function handler(event) {
   }
 
   if (method === "GET" && /^\/v1\/query\/compose\/jobs\/[^/]+$/.test(path)) {
-    return handleComposeJobGet(path);
+    return handleComposeJobGet(event, path);
+  }
+
+  if (method === "POST" && path === "/v1/email/send") {
+    return handleEmailSend(event);
+  }
+
+  if (method === "GET" && path === "/v1/email/schedules") {
+    return handleEmailSchedulesList(event);
+  }
+
+  if (method === "POST" && path === "/v1/email/schedules") {
+    return handleEmailSchedulesCreate(event);
+  }
+
+  if (method === "POST" && /^\/v1\/email\/schedules\/[^/]+\/run-now$/.test(path)) {
+    return handleEmailScheduleRunNow(event, path);
+  }
+
+  if (method === "PATCH" && /^\/v1\/email\/schedules\/[^/]+$/.test(path)) {
+    return handleEmailSchedulePatch(event, path);
+  }
+
+  if (method === "DELETE" && /^\/v1\/email\/schedules\/[^/]+$/.test(path)) {
+    return handleEmailScheduleDelete(event, path);
+  }
+
+  if (method === "POST" && path === "/v1/email/schedules/dispatch-due") {
+    return handleDispatchDueScheduledEmailRuns(event);
   }
 
   if (method === "GET" && path === "/v1/window-summaries/latest") {

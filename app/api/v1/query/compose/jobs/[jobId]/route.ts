@@ -1,3 +1,5 @@
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
 import { jsonError } from "@/lib/xmonitor/http";
@@ -23,12 +25,22 @@ export async function GET(
   }
 
   try {
+    const session = await getServerSession(authOptions);
+    const viewerEmail = session?.user?.email?.trim().toLowerCase() || "";
+    const proxySecret = process.env.XMONITOR_USER_PROXY_SECRET?.trim() || "";
+    const requestHeaders: Record<string, string> = {
+      accept: "application/json",
+    };
+    if (viewerEmail && proxySecret) {
+      requestHeaders["x-xmonitor-viewer-email"] = viewerEmail;
+      requestHeaders["x-xmonitor-viewer-auth-mode"] = "oauth";
+      requestHeaders["x-xmonitor-viewer-secret"] = proxySecret;
+    }
+
     const response = await fetch(`${backendBase}/query/compose/jobs/${encodeURIComponent(jobId)}`, {
       method: "GET",
       cache: "no-store",
-      headers: {
-        accept: "application/json",
-      },
+      headers: requestHeaders,
     });
 
     const headers = new Headers();

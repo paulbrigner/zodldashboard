@@ -55,7 +55,23 @@ set -euo pipefail
 #   COMPOSE_WORKER_FUNCTION_NAME=xmonitor-vpc-compose-worker
 #   COMPOSE_WORKER_TIMEOUT=300
 #   COMPOSE_WORKER_MEMORY_MB=1024
+#   EMAIL_SCHEDULER_FUNCTION_NAME=xmonitor-vpc-email-scheduler
+#   EMAIL_SCHEDULER_TIMEOUT=60
+#   EMAIL_SCHEDULER_MEMORY_MB=512
+#   EMAIL_SCHEDULER_RULE_NAME=xmonitor-email-schedule-dispatch
+#   EMAIL_SCHEDULER_EXPRESSION=rate(5 minutes)
 #   COMPOSE_JOBS_SCHEMA_BOOTSTRAP=false
+#   EMAIL_ENABLED=false
+#   EMAIL_SCHEDULES_ENABLED=false
+#   EMAIL_REQUIRE_OAUTH=true
+#   EMAIL_FROM_ADDRESS=alerts@zodldashboard.com
+#   EMAIL_FROM_NAME="ZodlDashboard X Monitor"
+#   EMAIL_MAX_RECIPIENTS=10
+#   EMAIL_MAX_JOBS_PER_USER=25
+#   EMAIL_MAX_BODY_CHARS=20000
+#   EMAIL_SCHEDULE_DISPATCH_LIMIT=25
+#   EMAIL_SCHEMA_BOOTSTRAP=true
+#   USER_PROXY_SECRET=...
 #   SUMMARY_SCHEMA_BOOTSTRAP=true
 #   SUMMARY_SCHEMA_GRANT_ROLE=xmonitor_app
 #   ENABLE_NAT_EGRESS=false
@@ -79,6 +95,11 @@ API_NAME="${API_NAME:-xmonitor-vpc-api}"
 COMPOSE_WORKER_FUNCTION_NAME="${COMPOSE_WORKER_FUNCTION_NAME:-xmonitor-vpc-compose-worker}"
 COMPOSE_WORKER_TIMEOUT="${COMPOSE_WORKER_TIMEOUT:-300}"
 COMPOSE_WORKER_MEMORY_MB="${COMPOSE_WORKER_MEMORY_MB:-1024}"
+EMAIL_SCHEDULER_FUNCTION_NAME="${EMAIL_SCHEDULER_FUNCTION_NAME:-xmonitor-vpc-email-scheduler}"
+EMAIL_SCHEDULER_TIMEOUT="${EMAIL_SCHEDULER_TIMEOUT:-60}"
+EMAIL_SCHEDULER_MEMORY_MB="${EMAIL_SCHEDULER_MEMORY_MB:-512}"
+EMAIL_SCHEDULER_RULE_NAME="${EMAIL_SCHEDULER_RULE_NAME:-xmonitor-email-schedule-dispatch}"
+EMAIL_SCHEDULER_EXPRESSION="${EMAIL_SCHEDULER_EXPRESSION:-rate(5 minutes)}"
 COMPOSE_JOBS_QUEUE_NAME="${COMPOSE_JOBS_QUEUE_NAME:-xmonitor-compose-jobs}"
 COMPOSE_JOBS_DLQ_NAME="${COMPOSE_JOBS_DLQ_NAME:-xmonitor-compose-jobs-dlq}"
 COMPOSE_JOBS_SCHEMA_BOOTSTRAP="${COMPOSE_JOBS_SCHEMA_BOOTSTRAP:-false}"
@@ -123,6 +144,17 @@ COMPOSE_USE_JSON_MODE="${COMPOSE_USE_JSON_MODE:-true}"
 COMPOSE_DISABLE_THINKING="${COMPOSE_DISABLE_THINKING:-true}"
 COMPOSE_STRIP_THINKING_RESPONSE="${COMPOSE_STRIP_THINKING_RESPONSE:-true}"
 COMPOSE_API_KEY="${COMPOSE_API_KEY:-}"
+EMAIL_ENABLED="${EMAIL_ENABLED:-false}"
+EMAIL_SCHEDULES_ENABLED="${EMAIL_SCHEDULES_ENABLED:-false}"
+EMAIL_REQUIRE_OAUTH="${EMAIL_REQUIRE_OAUTH:-true}"
+EMAIL_FROM_ADDRESS="${EMAIL_FROM_ADDRESS:-}"
+EMAIL_FROM_NAME="${EMAIL_FROM_NAME:-ZodlDashboard X Monitor}"
+EMAIL_MAX_RECIPIENTS="${EMAIL_MAX_RECIPIENTS:-10}"
+EMAIL_MAX_JOBS_PER_USER="${EMAIL_MAX_JOBS_PER_USER:-25}"
+EMAIL_MAX_BODY_CHARS="${EMAIL_MAX_BODY_CHARS:-20000}"
+EMAIL_SCHEDULE_DISPATCH_LIMIT="${EMAIL_SCHEDULE_DISPATCH_LIMIT:-25}"
+EMAIL_SCHEMA_BOOTSTRAP="${EMAIL_SCHEMA_BOOTSTRAP:-false}"
+USER_PROXY_SECRET="${USER_PROXY_SECRET:-}"
 SUMMARY_SCHEMA_BOOTSTRAP="${SUMMARY_SCHEMA_BOOTSTRAP:-}"
 SUMMARY_SCHEMA_GRANT_ROLE="${SUMMARY_SCHEMA_GRANT_ROLE:-xmonitor_app}"
 
@@ -350,6 +382,14 @@ cat >"$SQS_POLICY_FILE" <<JSON
         "$COMPOSE_QUEUE_ARN",
         "$COMPOSE_DLQ_ARN"
       ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ses:SendEmail",
+        "ses:SendRawEmail"
+      ],
+      "Resource": "*"
     }
   ]
 }
@@ -438,6 +478,12 @@ fi
 if [[ -z "$COMPOSE_API_KEY" ]]; then
   COMPOSE_API_KEY="$(existing_lambda_var "XMONITOR_COMPOSE_API_KEY")"
 fi
+if [[ -z "$EMAIL_FROM_ADDRESS" ]]; then
+  EMAIL_FROM_ADDRESS="$(existing_lambda_var "XMONITOR_EMAIL_FROM_ADDRESS")"
+fi
+if [[ -z "$USER_PROXY_SECRET" ]]; then
+  USER_PROXY_SECRET="$(existing_lambda_var "XMONITOR_USER_PROXY_SECRET")"
+fi
 
 if [[ -z "$DB_HOST" || -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASS" ]]; then
   echo "error: secret $DB_SECRET_ID is missing required fields (host/dbname/username/password)" >&2
@@ -498,6 +544,17 @@ ENV_JSON="$(
   COMPOSE_DISABLE_THINKING="$COMPOSE_DISABLE_THINKING" \
   COMPOSE_STRIP_THINKING_RESPONSE="$COMPOSE_STRIP_THINKING_RESPONSE" \
   COMPOSE_API_KEY="$COMPOSE_API_KEY" \
+  EMAIL_ENABLED="$EMAIL_ENABLED" \
+  EMAIL_SCHEDULES_ENABLED="$EMAIL_SCHEDULES_ENABLED" \
+  EMAIL_REQUIRE_OAUTH="$EMAIL_REQUIRE_OAUTH" \
+  EMAIL_FROM_ADDRESS="$EMAIL_FROM_ADDRESS" \
+  EMAIL_FROM_NAME="$EMAIL_FROM_NAME" \
+  EMAIL_MAX_RECIPIENTS="$EMAIL_MAX_RECIPIENTS" \
+  EMAIL_MAX_JOBS_PER_USER="$EMAIL_MAX_JOBS_PER_USER" \
+  EMAIL_MAX_BODY_CHARS="$EMAIL_MAX_BODY_CHARS" \
+  EMAIL_SCHEDULE_DISPATCH_LIMIT="$EMAIL_SCHEDULE_DISPATCH_LIMIT" \
+  EMAIL_SCHEMA_BOOTSTRAP="$EMAIL_SCHEMA_BOOTSTRAP" \
+  USER_PROXY_SECRET="$USER_PROXY_SECRET" \
   COMPOSE_QUEUE_URL="$COMPOSE_QUEUE_URL" \
   COMPOSE_JOBS_SCHEMA_BOOTSTRAP="$COMPOSE_JOBS_SCHEMA_BOOTSTRAP" \
   SUMMARY_SCHEMA_BOOTSTRAP="$SUMMARY_SCHEMA_BOOTSTRAP" \
@@ -549,6 +606,17 @@ print(json.dumps({
     "XMONITOR_COMPOSE_DISABLE_THINKING": os.environ.get("COMPOSE_DISABLE_THINKING", ""),
     "XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE": os.environ.get("COMPOSE_STRIP_THINKING_RESPONSE", ""),
     "XMONITOR_COMPOSE_API_KEY": os.environ.get("COMPOSE_API_KEY", ""),
+    "XMONITOR_EMAIL_ENABLED": os.environ.get("EMAIL_ENABLED", ""),
+    "XMONITOR_EMAIL_SCHEDULES_ENABLED": os.environ.get("EMAIL_SCHEDULES_ENABLED", ""),
+    "XMONITOR_EMAIL_REQUIRE_OAUTH": os.environ.get("EMAIL_REQUIRE_OAUTH", ""),
+    "XMONITOR_EMAIL_FROM_ADDRESS": os.environ.get("EMAIL_FROM_ADDRESS", ""),
+    "XMONITOR_EMAIL_FROM_NAME": os.environ.get("EMAIL_FROM_NAME", ""),
+    "XMONITOR_EMAIL_MAX_RECIPIENTS": os.environ.get("EMAIL_MAX_RECIPIENTS", ""),
+    "XMONITOR_EMAIL_MAX_JOBS_PER_USER": os.environ.get("EMAIL_MAX_JOBS_PER_USER", ""),
+    "XMONITOR_EMAIL_MAX_BODY_CHARS": os.environ.get("EMAIL_MAX_BODY_CHARS", ""),
+    "XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT": os.environ.get("EMAIL_SCHEDULE_DISPATCH_LIMIT", ""),
+    "XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP": os.environ.get("EMAIL_SCHEMA_BOOTSTRAP", ""),
+    "XMONITOR_USER_PROXY_SECRET": os.environ.get("USER_PROXY_SECRET", ""),
     "XMONITOR_ENABLE_COMPOSE_JOBS_SCHEMA_BOOTSTRAP": os.environ.get("COMPOSE_JOBS_SCHEMA_BOOTSTRAP", ""),
     "XMONITOR_ENABLE_SUMMARY_SCHEMA_BOOTSTRAP": os.environ.get("SUMMARY_SCHEMA_BOOTSTRAP", ""),
     "XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE": os.environ.get("SUMMARY_SCHEMA_GRANT_ROLE", ""),
@@ -650,6 +718,65 @@ else
     --enabled >/dev/null
 fi
 
+echo "==> Creating/updating email scheduler Lambda: $EMAIL_SCHEDULER_FUNCTION_NAME"
+SCHEDULER_ARN="$(aws_cli lambda get-function --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME" --query 'Configuration.FunctionArn' --output text 2>/dev/null || true)"
+if [[ -z "$SCHEDULER_ARN" || "$SCHEDULER_ARN" == "None" ]]; then
+  SCHEDULER_ARN="$(aws_cli lambda create-function \
+    --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME" \
+    --runtime nodejs22.x \
+    --handler index.schedulerHandler \
+    --role "$ROLE_ARN" \
+    --zip-file "fileb://$LAMBDA_DIR/function.zip" \
+    --timeout "$EMAIL_SCHEDULER_TIMEOUT" \
+    --memory-size "$EMAIL_SCHEDULER_MEMORY_MB" \
+    --vpc-config "SubnetIds=$SUBNET_CSV,SecurityGroupIds=$LAMBDA_SG_ID" \
+    --environment "$ENV_JSON" \
+    --query 'FunctionArn' --output text)"
+else
+  aws_cli lambda update-function-code \
+    --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME" \
+    --zip-file "fileb://$LAMBDA_DIR/function.zip" >/dev/null
+
+  aws_cli lambda wait function-updated --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME"
+
+  aws_cli lambda update-function-configuration \
+    --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME" \
+    --runtime nodejs22.x \
+    --handler index.schedulerHandler \
+    --role "$ROLE_ARN" \
+    --timeout "$EMAIL_SCHEDULER_TIMEOUT" \
+    --memory-size "$EMAIL_SCHEDULER_MEMORY_MB" \
+    --vpc-config "SubnetIds=$SUBNET_CSV,SecurityGroupIds=$LAMBDA_SG_ID" \
+    --environment "$ENV_JSON" >/dev/null
+fi
+
+aws_cli lambda wait function-active-v2 --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME"
+SCHEDULER_ARN="$(aws_cli lambda get-function --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME" --query 'Configuration.FunctionArn' --output text)"
+
+echo "==> Ensuring EventBridge rule for scheduled email dispatch: $EMAIL_SCHEDULER_RULE_NAME"
+SCHEDULER_RULE_ARN="$(
+  aws_cli events put-rule \
+    --name "$EMAIL_SCHEDULER_RULE_NAME" \
+    --schedule-expression "$EMAIL_SCHEDULER_EXPRESSION" \
+    --state ENABLED \
+    --query 'RuleArn' \
+    --output text
+)"
+
+SCHEDULER_STATEMENT_ID="eventbridge-invoke-${EMAIL_SCHEDULER_RULE_NAME}"
+if ! aws_cli lambda add-permission \
+  --function-name "$EMAIL_SCHEDULER_FUNCTION_NAME" \
+  --statement-id "$SCHEDULER_STATEMENT_ID" \
+  --action "lambda:InvokeFunction" \
+  --principal events.amazonaws.com \
+  --source-arn "$SCHEDULER_RULE_ARN" >/dev/null 2>&1; then
+  echo "EventBridge invoke permission already exists for scheduler Lambda."
+fi
+
+aws_cli events put-targets \
+  --rule "$EMAIL_SCHEDULER_RULE_NAME" \
+  --targets "Id"="xmonitor-email-scheduler","Arn"="$SCHEDULER_ARN" >/dev/null
+
 echo "==> Creating/updating API Gateway HTTP API: $API_NAME"
 API_ID="$(aws_cli apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiId | [0]" --output text)"
 if [[ -z "$API_ID" || "$API_ID" == "None" ]]; then
@@ -722,6 +849,9 @@ echo "  Lambda function: $LAMBDA_FUNCTION_NAME"
 echo "  Lambda ARN:      $LAMBDA_ARN"
 echo "  Worker function: $COMPOSE_WORKER_FUNCTION_NAME"
 echo "  Worker ARN:      $WORKER_ARN"
+echo "  Scheduler fn:    $EMAIL_SCHEDULER_FUNCTION_NAME"
+echo "  Scheduler ARN:   $SCHEDULER_ARN"
+echo "  Scheduler rule:  $EMAIL_SCHEDULER_RULE_NAME ($EMAIL_SCHEDULER_EXPRESSION)"
 echo "  Lambda SG:       $LAMBDA_SG_ID"
 echo "  Compose queue:   $COMPOSE_QUEUE_URL"
 echo "  Compose DLQ:     $COMPOSE_DLQ_URL"

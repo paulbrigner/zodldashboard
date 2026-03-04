@@ -10,7 +10,7 @@ export type RunMode = (typeof RUN_MODES)[number];
 export const COMPOSE_ANSWER_STYLES = ["brief", "balanced", "detailed"] as const;
 export type ComposeAnswerStyle = (typeof COMPOSE_ANSWER_STYLES)[number];
 
-export const COMPOSE_DRAFT_FORMATS = ["none", "x_post", "thread"] as const;
+export const COMPOSE_DRAFT_FORMATS = ["none", "x_post", "thread", "email"] as const;
 export type ComposeDraftFormat = (typeof COMPOSE_DRAFT_FORMATS)[number];
 
 export type BatchUpsertResult = {
@@ -241,6 +241,12 @@ export type ComposeQueryRequest = {
   draft_format?: ComposeDraftFormat;
 };
 
+export type ComposeEmailDraft = {
+  subject: string;
+  body_markdown: string;
+  body_text?: string | null;
+};
+
 export type ComposeCitation = {
   status_id: string;
   url: string;
@@ -260,6 +266,7 @@ export type ComposeRetrievalStats = {
 export type ComposeQueryResponse = {
   answer_text: string;
   draft_text?: string | null;
+  email_draft?: ComposeEmailDraft | null;
   key_points: string[];
   citations: ComposeCitation[];
   retrieval_stats: ComposeRetrievalStats;
@@ -288,4 +295,61 @@ export type ComposeJobStatusResponse = {
     message: string;
   } | null;
   result?: ComposeQueryResponse | null;
+};
+
+export type EmailSendRequest = {
+  to: string[] | string;
+  subject: string;
+  body_markdown: string;
+  body_text?: string | null;
+  compose_job_id?: string;
+  scheduled_job_id?: string;
+  scheduled_run_id?: string;
+};
+
+export type EmailSendResponse = {
+  delivery_id: string;
+  status: "sent" | "failed";
+  provider: "ses";
+  provider_message_id?: string | null;
+  sent_at?: string | null;
+};
+
+export type ScheduledEmailJob = {
+  job_id: string;
+  owner_email: string;
+  name: string;
+  enabled: boolean;
+  recipients: string[];
+  subject_override?: string | null;
+  schedule_interval_minutes: number;
+  lookback_hours: number;
+  timezone: string;
+  next_run_at: string;
+  last_run_at?: string | null;
+  last_status?: "queued" | "running" | "succeeded" | "failed" | "skipped" | null;
+  last_error?: string | null;
+  run_count: number;
+  compose_request: ComposeQueryRequest;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ScheduledEmailRun = {
+  run_id: string;
+  scheduled_job_id: string;
+  owner_email: string;
+  scheduled_for: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "skipped";
+  started_at?: string | null;
+  completed_at?: string | null;
+  compose_job_id?: string | null;
+  delivery_id?: string | null;
+  error_code?: string | null;
+  error_message?: string | null;
+  created_at: string;
+};
+
+export type ScheduledEmailJobListResponse = {
+  items: ScheduledEmailJob[];
 };

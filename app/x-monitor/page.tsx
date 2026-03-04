@@ -43,6 +43,15 @@ function asPositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function envFlag(value: string | undefined, fallback = false): boolean {
+  if (!value) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (!normalized) return fallback;
+  if (["1", "true", "yes", "y", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "n", "off"].includes(normalized)) return false;
+  return fallback;
+}
+
 function parseSearchMode(value: string | string[] | undefined): SearchMode {
   const text = asString(value);
   return text === "keyword" ? "keyword" : "semantic";
@@ -226,6 +235,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     asPositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT, 14),
     composeDefaultRetrievalLimit
   );
+  const emailFeatureEnabled = envFlag(process.env.XMONITOR_EMAIL_ENABLED, false) && viewer.mode === "oauth";
+  const emailSchedulesFeatureEnabled =
+    emailFeatureEnabled && envFlag(process.env.XMONITOR_EMAIL_SCHEDULES_ENABLED, false);
   const composeUnavailableReason = !composeFeatureEnabled
     ? "Compose mode is disabled by XMONITOR_COMPOSE_ENABLED."
     : !semanticAvailable
@@ -367,6 +379,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <ComposePanel
           enabled={composePanelEnabled}
+          emailEnabled={emailFeatureEnabled}
+          emailSchedulesEnabled={emailSchedulesFeatureEnabled}
           initialHandle={query.handle}
           initialContextLimit={composeDefaultContextLimit}
           initialRetrievalLimit={composeDefaultRetrievalLimit}

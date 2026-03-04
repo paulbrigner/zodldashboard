@@ -45,6 +45,7 @@ frontend:
         - env | grep -e XMONITOR_INGEST_OMIT_HANDLES >> .env.production || true
         - env | grep -e XMONITOR_BACKEND_API_BASE_URL >> .env.production || true
         - env | grep -e XMONITOR_READ_API_BASE_URL >> .env.production || true
+        - env | grep -e XMONITOR_USER_PROXY_SECRET >> .env.production || true
         - env | grep -e XMONITOR_SEMANTIC_ENABLED >> .env.production || true
         - env | grep -e XMONITOR_SEMANTIC_DEFAULT_LIMIT >> .env.production || true
         - env | grep -e XMONITOR_SEMANTIC_MAX_LIMIT >> .env.production || true
@@ -77,6 +78,15 @@ frontend:
         - env | grep -e XMONITOR_COMPOSE_DISABLE_THINKING >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE >> .env.production || true
         - env | grep -e XMONITOR_COMPOSE_API_KEY >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_ENABLED >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_SCHEDULES_ENABLED >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_REQUIRE_OAUTH >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_FROM_ADDRESS >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_FROM_NAME >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_MAX_RECIPIENTS >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_MAX_JOBS_PER_USER >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_MAX_BODY_CHARS >> .env.production || true
+        - env | grep -e XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT >> .env.production || true
         - npm run build
   artifacts:
     baseDirectory: .next

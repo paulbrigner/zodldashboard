@@ -15,6 +15,7 @@ Primary write path (AWS-only):
 4. Collector ingests to hosted API (`/api/v1/ingest/*`) using shared-secret auth.
 5. Hosted API proxies to VPC API Lambda (`/v1/*`) and writes to RDS PostgreSQL.
 6. Discovery collector also generates/ingests `rolling_2h` + `rolling_12h` summaries (aligned windows, every 2 hours UTC).
+7. Email scheduler Lambda dispatches due scheduled-email jobs to SQS; compose worker executes runs and sends via SES.
 
 Read path:
 1. Browser requests Amplify-hosted Next.js app.
@@ -31,8 +32,10 @@ Region: `us-east-1`
 - API Gateway HTTP API: `xmonitor-vpc-api` (`84kb8ehtp2`)
 - Backend Lambda: `xmonitor-vpc-api`
 - Compose worker Lambda: `xmonitor-vpc-compose-worker`
+- Email scheduler Lambda: `xmonitor-vpc-email-scheduler`
 - Compose SQS queue: `xmonitor-compose-jobs`
 - Compose DLQ: `xmonitor-compose-jobs-dlq`
+- Email schedule rule: `xmonitor-email-schedule-dispatch` (`rate(5 minutes)`)
 - Priority collector Lambda: `xmonitor-xapi-priority-collector`
 - Discovery collector Lambda: `xmonitor-xapi-discovery-collector`
 - Priority EventBridge rule: `xmonitor-xapi-priority-collector-15m`
@@ -47,6 +50,14 @@ Backend/API:
 - `XMONITOR_INGEST_SHARED_SECRET`
 - `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE=require`
 - Compose env (`XMONITOR_COMPOSE_*`) and embedding env (`XMONITOR_EMBEDDING_*`) as needed
+- Email env when enabled:
+  - `XMONITOR_EMAIL_ENABLED`
+  - `XMONITOR_EMAIL_SCHEDULES_ENABLED`
+  - `XMONITOR_EMAIL_REQUIRE_OAUTH`
+  - `XMONITOR_USER_PROXY_SECRET`
+  - `XMONITOR_EMAIL_FROM_ADDRESS`
+  - `XMONITOR_EMAIL_FROM_NAME`
+  - `XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP` (set `true` if applying schema inside VPC Lambda instead of direct `psql` from ops host)
 
 Collectors:
 - `XMON_X_API_BEARER_TOKEN`
@@ -76,7 +87,7 @@ aws --profile zodldashboard --region us-east-1 amplify start-job \
   --job-type RELEASE
 ```
 
-### 5.2 Reprovision backend API + compose worker
+### 5.2 Reprovision backend API + compose worker + email scheduler
 
 ```bash
 AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
@@ -197,6 +208,14 @@ Compose worker logs:
 ```bash
 aws --profile zodldashboard --region us-east-1 logs tail \
   '/aws/lambda/xmonitor-vpc-compose-worker' \
+  --since 1h --follow
+```
+
+Email scheduler logs:
+
+```bash
+aws --profile zodldashboard --region us-east-1 logs tail \
+  '/aws/lambda/xmonitor-vpc-email-scheduler' \
   --since 1h --follow
 ```
 
