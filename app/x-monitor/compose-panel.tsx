@@ -213,7 +213,7 @@ export function ComposePanel(props: ComposePanelProps) {
   const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
-  const [scheduleName, setScheduleName] = useState("");
+  const [scheduleName, setScheduleName] = useState("Scheduled X Monitor email");
   const [scheduleIntervalMinutes, setScheduleIntervalMinutes] = useState("1440");
   const [scheduleLookbackHours, setScheduleLookbackHours] = useState("24");
   const [scheduleTimezone, setScheduleTimezone] = useState("UTC");
@@ -460,6 +460,19 @@ export function ComposePanel(props: ComposePanelProps) {
     setScheduleEnabled(job.enabled);
     setEmailTo(job.recipients.join(", "));
     setEmailSubject(job.subject_override || emailSubject);
+    if (job.compose_request?.task_text) {
+      setTaskText(job.compose_request.task_text);
+    }
+    if (job.compose_request?.answer_style) {
+      setAnswerStyle(job.compose_request.answer_style);
+    }
+    if (job.compose_request?.retrieval_limit && Number.isFinite(job.compose_request.retrieval_limit)) {
+      setRetrievalLimit(String(job.compose_request.retrieval_limit));
+    }
+    if (job.compose_request?.context_limit && Number.isFinite(job.compose_request.context_limit)) {
+      setContextLimit(String(job.compose_request.context_limit));
+    }
+    setDraftFormat("email");
     setScheduleStatusText(`Editing schedule ${job.name}`);
   }
 
@@ -749,6 +762,125 @@ export function ComposePanel(props: ComposePanelProps) {
           <p className="subtle-text">Answer job {activeJob.jobId.slice(0, 8)}... is {activeJob.status}.</p>
         ) : null}
 
+        {props.emailSchedulesEnabled ? (
+          <section className="compose-section">
+            <div className="compose-section-header">
+              <h3>Scheduled emails</h3>
+              {isLoadingSchedules ? <span className="subtle-text">Loading...</span> : null}
+            </div>
+            <label className="compose-task-field">
+              <span>Recipients</span>
+              <textarea
+                onChange={(event) => setEmailTo(event.target.value)}
+                placeholder="recipient1@example.com, recipient2@example.com"
+                rows={2}
+                value={emailTo}
+              />
+            </label>
+            <label className="compose-task-field">
+              <span>Subject override (optional)</span>
+              <input
+                onChange={(event) => setEmailSubject(event.target.value)}
+                placeholder="Optional subject override for scheduled runs"
+                type="text"
+                value={emailSubject}
+              />
+            </label>
+            <div className="compose-controls">
+              <label>
+                <span>Schedule name</span>
+                <input onChange={(event) => setScheduleName(event.target.value)} type="text" value={scheduleName} />
+              </label>
+              <label>
+                <span>Interval (minutes)</span>
+                <input
+                  min={15}
+                  onChange={(event) => setScheduleIntervalMinutes(event.target.value)}
+                  step={1}
+                  type="number"
+                  value={scheduleIntervalMinutes}
+                />
+              </label>
+              <label>
+                <span>Lookback (hours)</span>
+                <input
+                  min={1}
+                  onChange={(event) => setScheduleLookbackHours(event.target.value)}
+                  step={1}
+                  type="number"
+                  value={scheduleLookbackHours}
+                />
+              </label>
+              <label>
+                <span>Timezone</span>
+                <input onChange={(event) => setScheduleTimezone(event.target.value)} type="text" value={scheduleTimezone} />
+              </label>
+              <label className="schedule-enabled-label">
+                <span>Enabled</span>
+                <input
+                  checked={scheduleEnabled}
+                  onChange={(event) => setScheduleEnabled(event.target.checked)}
+                  type="checkbox"
+                />
+              </label>
+            </div>
+            <p className="subtle-text">
+              Schedules use the current Task + answer settings and run as Email draft format.
+            </p>
+            <div className="compose-actions">
+              <button className="button" disabled={isSavingSchedule} onClick={handleSaveSchedule} type="button">
+                {isSavingSchedule ? "Saving..." : editingScheduleId ? "Update schedule" : "Create schedule"}
+              </button>
+              {editingScheduleId ? (
+                <button className="button button-secondary" onClick={resetScheduleEditor} type="button">
+                  Cancel edit
+                </button>
+              ) : null}
+            </div>
+            {scheduleStatusText ? <p className="subtle-text">{scheduleStatusText}</p> : null}
+            {schedules.length > 0 ? (
+              <ul className="scheduled-jobs-list">
+                {schedules.map((job) => (
+                  <li className="scheduled-job-item" key={job.job_id}>
+                    <p className="scheduled-job-title">{job.name}</p>
+                    <p className="subtle-text">
+                      Every {job.schedule_interval_minutes} min • Lookback {job.lookback_hours}h • Next{" "}
+                      {new Date(job.next_run_at).toLocaleString()}
+                    </p>
+                    <p className="subtle-text">
+                      {job.enabled ? "Enabled" : "Disabled"} • Last status {job.last_status || "n/a"}
+                    </p>
+                    <div className="compose-actions">
+                      <button className="button button-secondary" onClick={() => handleEditSchedule(job)} type="button">
+                        Edit
+                      </button>
+                      <button className="button button-secondary" onClick={() => handleToggleSchedule(job)} type="button">
+                        {job.enabled ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        onClick={() => handleRunScheduleNow(job.job_id)}
+                        type="button"
+                      >
+                        Run now
+                      </button>
+                      <button
+                        className="button button-secondary"
+                        onClick={() => handleDeleteSchedule(job.job_id)}
+                        type="button"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="subtle-text">No scheduled email jobs yet.</p>
+            )}
+          </section>
+        ) : null}
+
         {result ? (
           <div className="compose-result">
             <div className="compose-result-meta">
@@ -822,103 +954,6 @@ export function ComposePanel(props: ComposePanelProps) {
                 </div>
                 {emailStatusText ? <p className="subtle-text">{emailStatusText}</p> : null}
 
-                {props.emailSchedulesEnabled ? (
-                  <div className="email-schedule-block">
-                    <div className="compose-section-header">
-                      <h3>Scheduled emails</h3>
-                      {isLoadingSchedules ? <span className="subtle-text">Loading...</span> : null}
-                    </div>
-                    <div className="compose-controls">
-                      <label>
-                        <span>Schedule name</span>
-                        <input onChange={(event) => setScheduleName(event.target.value)} type="text" value={scheduleName} />
-                      </label>
-                      <label>
-                        <span>Interval (minutes)</span>
-                        <input
-                          min={15}
-                          onChange={(event) => setScheduleIntervalMinutes(event.target.value)}
-                          step={1}
-                          type="number"
-                          value={scheduleIntervalMinutes}
-                        />
-                      </label>
-                      <label>
-                        <span>Lookback (hours)</span>
-                        <input
-                          min={1}
-                          onChange={(event) => setScheduleLookbackHours(event.target.value)}
-                          step={1}
-                          type="number"
-                          value={scheduleLookbackHours}
-                        />
-                      </label>
-                      <label>
-                        <span>Timezone</span>
-                        <input onChange={(event) => setScheduleTimezone(event.target.value)} type="text" value={scheduleTimezone} />
-                      </label>
-                      <label className="schedule-enabled-label">
-                        <span>Enabled</span>
-                        <input
-                          checked={scheduleEnabled}
-                          onChange={(event) => setScheduleEnabled(event.target.checked)}
-                          type="checkbox"
-                        />
-                      </label>
-                    </div>
-                    <div className="compose-actions">
-                      <button className="button" disabled={isSavingSchedule} onClick={handleSaveSchedule} type="button">
-                        {isSavingSchedule ? "Saving..." : editingScheduleId ? "Update schedule" : "Create schedule"}
-                      </button>
-                      {editingScheduleId ? (
-                        <button className="button button-secondary" onClick={resetScheduleEditor} type="button">
-                          Cancel edit
-                        </button>
-                      ) : null}
-                    </div>
-                    {scheduleStatusText ? <p className="subtle-text">{scheduleStatusText}</p> : null}
-                    {schedules.length > 0 ? (
-                      <ul className="scheduled-jobs-list">
-                        {schedules.map((job) => (
-                          <li className="scheduled-job-item" key={job.job_id}>
-                            <p className="scheduled-job-title">{job.name}</p>
-                            <p className="subtle-text">
-                              Every {job.schedule_interval_minutes} min • Lookback {job.lookback_hours}h • Next{" "}
-                              {new Date(job.next_run_at).toLocaleString()}
-                            </p>
-                            <p className="subtle-text">
-                              {job.enabled ? "Enabled" : "Disabled"} • Last status {job.last_status || "n/a"}
-                            </p>
-                            <div className="compose-actions">
-                              <button className="button button-secondary" onClick={() => handleEditSchedule(job)} type="button">
-                                Edit
-                              </button>
-                              <button className="button button-secondary" onClick={() => handleToggleSchedule(job)} type="button">
-                                {job.enabled ? "Disable" : "Enable"}
-                              </button>
-                              <button
-                                className="button button-secondary"
-                                onClick={() => handleRunScheduleNow(job.job_id)}
-                                type="button"
-                              >
-                                Run now
-                              </button>
-                              <button
-                                className="button button-secondary"
-                                onClick={() => handleDeleteSchedule(job.job_id)}
-                                type="button"
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="subtle-text">No scheduled email jobs yet.</p>
-                    )}
-                  </div>
-                ) : null}
               </section>
             ) : null}
 
