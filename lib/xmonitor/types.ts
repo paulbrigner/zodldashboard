@@ -195,6 +195,78 @@ export type FeedResponse = {
   next_cursor: string | null;
 };
 
+export type EngagementTotals = {
+  post_count: number;
+  significant_count: number;
+  likes: number;
+  reposts: number;
+  replies: number;
+  views: number;
+  engagement_score: number;
+};
+
+export type EngagementBucket = {
+  bucket_start: string;
+  bucket_end: string;
+  post_count: number;
+  significant_count: number;
+  likes: number;
+  reposts: number;
+  replies: number;
+  views: number;
+  engagement_score: number;
+};
+
+export type EngagementTierBreakdown = {
+  watch_tier: string;
+  post_count: number;
+  significant_count: number;
+  likes: number;
+  reposts: number;
+  replies: number;
+  views: number;
+  engagement_score: number;
+};
+
+export type EngagementHandleBreakdown = {
+  author_handle: string;
+  post_count: number;
+  significant_count: number;
+  likes: number;
+  reposts: number;
+  replies: number;
+  views: number;
+  engagement_score: number;
+};
+
+export type EngagementTopPost = {
+  status_id: string;
+  discovered_at: string;
+  author_handle: string;
+  watch_tier: string | null;
+  body_text: string | null;
+  url: string;
+  likes: number;
+  reposts: number;
+  replies: number;
+  views: number;
+  engagement_score: number;
+};
+
+export type EngagementResponse = {
+  scope: {
+    since: string;
+    until: string;
+    bucket_hours: number;
+    text_filter_applied: boolean;
+  };
+  totals: EngagementTotals;
+  buckets: EngagementBucket[];
+  by_tier: EngagementTierBreakdown[];
+  top_handles: EngagementHandleBreakdown[];
+  top_posts: EngagementTopPost[];
+};
+
 export type PostDetail = {
   post: FeedItem;
   snapshots: MetricsSnapshotUpsert[];

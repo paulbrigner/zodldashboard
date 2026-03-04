@@ -3,11 +3,18 @@ import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
-import { getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
+import { getEngagement, getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
-import type { FeedResponse, SemanticQueryResponse, WindowSummariesLatestResponse, WindowSummary } from "@/lib/xmonitor/types";
+import type {
+  EngagementResponse,
+  FeedResponse,
+  SemanticQueryResponse,
+  WindowSummariesLatestResponse,
+  WindowSummary,
+} from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
 import { ComposePanel } from "./compose-panel";
+import { EngagementPanel } from "./engagement-panel";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { FilterPanel } from "./filter-panel";
 import { QueryReferencePopup } from "./query-reference-popup";
@@ -127,6 +134,25 @@ function buildWindowSummariesApiUrl(baseUrl: string): string {
   return `${normalizedBase}/window-summaries/latest`;
 }
 
+function buildEngagementApiUrl(
+  baseUrl: string,
+  query: ReturnType<typeof parseFeedQuery>,
+  searchMode: SearchMode
+): string {
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const url = new URL(`${normalizedBase}/engagement`);
+
+  if (query.since) url.searchParams.set("since", query.since);
+  if (query.until) url.searchParams.set("until", query.until);
+  if (query.tier) url.searchParams.set("tier", query.tier);
+  if (query.handle) url.searchParams.set("handle", query.handle);
+  if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
+  if (query.q) url.searchParams.set("q", query.q);
+  if (searchMode === "semantic") url.searchParams.set("search_mode", "semantic");
+
+  return url.toString();
+}
+
 async function readApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { error?: unknown };
@@ -217,6 +243,27 @@ async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummar
   return payload.items;
 }
 
+async function fetchEngagementViaApi(
+  baseUrl: string,
+  query: ReturnType<typeof parseFeedQuery>,
+  searchMode: SearchMode
+): Promise<EngagementResponse> {
+  const response = await fetch(buildEngagementApiUrl(baseUrl, query, searchMode), {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  const payload = (await response.json()) as EngagementResponse;
+  if (!payload || !payload.totals || !Array.isArray(payload.buckets)) {
+    throw new Error("Invalid engagement response payload");
+  }
+
+  return payload;
+}
+
 export default async function HomePage({ searchParams }: HomePageProps) {
   const viewer = await requireAuthenticatedViewer("/x-monitor");
   const identityText =
@@ -255,6 +302,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   let feedError: string | null = null;
   let summaries: WindowSummary[] = [];
   let summariesError: string | null = null;
+  let engagement: EngagementResponse | null = null;
+  let engagementError: string | null = null;
 
   if (apiBaseUrl) {
     try {
@@ -276,6 +325,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     } catch (error) {
       summariesError = error instanceof Error ? error.message : "Failed to load summaries";
     }
+
+    try {
+      engagement = await fetchEngagementViaApi(apiBaseUrl, query, searchMode);
+    } catch (error) {
+      engagementError = error instanceof Error ? error.message : "Failed to load engagement";
+    }
   } else if (hasDatabaseConfig()) {
     try {
       if (useSemanticRetrieval) {
@@ -292,9 +347,16 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     } catch (error) {
       summariesError = error instanceof Error ? error.message : "Failed to load summaries";
     }
+
+    try {
+      engagement = await getEngagement(query, { applyTextQuery: searchMode !== "semantic" });
+    } catch (error) {
+      engagementError = error instanceof Error ? error.message : "Failed to load engagement";
+    }
   } else {
     feedError = "No feed backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
     summariesError = "No summary backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
+    engagementError = "No engagement backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
   }
 
   const latestItem = feed.items[0];
@@ -376,6 +438,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           </div>
           {summariesError ? <p className="error-text summary-error">{summariesError}</p> : null}
         </details>
+
+        <EngagementPanel error={engagementError} payload={engagement} />
 
         <ComposePanel
           enabled={composePanelEnabled}

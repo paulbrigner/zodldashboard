@@ -13,6 +13,9 @@ const DEFAULT_SERVICE_NAME = "xmonitor-api";
 const DEFAULT_API_VERSION = "v1";
 const DEFAULT_FEED_LIMIT = 50;
 const DEFAULT_MAX_FEED_LIMIT = 200;
+const DEFAULT_ENGAGEMENT_LOOKBACK_HOURS = 24 * 7;
+const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 30;
+const MAX_ENGAGEMENT_TOP_ITEMS = 12;
 const DEFAULT_SEMANTIC_DEFAULT_LIMIT = 25;
 const DEFAULT_SEMANTIC_MAX_LIMIT = 100;
 const DEFAULT_SEMANTIC_MIN_SCORE = 0;
@@ -103,6 +106,10 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "ma1973sk",
   "hari14q",
   "cryptociampa",
+  "nvnguyen9999",
+  "nesleyfilsaime1",
+  "coinminerss",
+  "aicryptopattern",
 ];
 
 let pool;
@@ -1383,6 +1390,102 @@ function parseFeedQuery(input) {
     q: asString(firstValue(input.q)),
     limit: finalLimit,
     cursor: asString(firstValue(input.cursor)),
+  };
+}
+
+function buildFeedWhereClause(query, options = {}) {
+  const where = [];
+  const params = [];
+
+  if (query.since) {
+    params.push(query.since);
+    where.push(`p.discovered_at >= $${params.length}`);
+  }
+
+  if (query.until) {
+    params.push(query.until);
+    where.push(`p.discovered_at <= $${params.length}`);
+  }
+
+  if (query.tier) {
+    params.push(query.tier);
+    where.push(`p.watch_tier = $${params.length}`);
+  }
+
+  if (query.handle) {
+    const handles = parseHandleFilter(query.handle);
+
+    if (handles.length === 1) {
+      params.push(handles[0]);
+      where.push(`p.author_handle = $${params.length}`);
+    } else if (handles.length > 1) {
+      params.push(handles);
+      where.push(`p.author_handle = ANY($${params.length}::text[])`);
+    }
+  }
+
+  if (query.significant !== undefined) {
+    params.push(query.significant);
+    where.push(`p.is_significant = $${params.length}`);
+  }
+
+  if (options.includeTextQuery !== false && query.q) {
+    params.push(`%${query.q}%`);
+    where.push(`(
+      p.body_text ILIKE $${params.length}
+      OR p.author_handle::text ILIKE $${params.length}
+    )`);
+  }
+
+  if (options.includeCursor && query.cursor) {
+    const decoded = decodeFeedCursor(query.cursor);
+    if (decoded) {
+      params.push(decoded.discovered_at);
+      params.push(decoded.status_id);
+      where.push(`(p.discovered_at, p.status_id) < ($${params.length - 1}, $${params.length})`);
+    }
+  }
+
+  return { where, params };
+}
+
+function parseDateOrNull(value) {
+  if (!value) return null;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return null;
+  return parsed;
+}
+
+function normalizeEngagementRange(query) {
+  const now = new Date();
+  const requestedUntil = parseDateOrNull(query.until);
+  const requestedSince = parseDateOrNull(query.since);
+
+  let until = requestedUntil || now;
+  let since = requestedSince || new Date(until.getTime() - DEFAULT_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000);
+
+  if (since > until) {
+    const originalSince = since;
+    since = until;
+    until = originalSince;
+  }
+
+  const maxLookbackMs = MAX_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000;
+  if (until.getTime() - since.getTime() > maxLookbackMs) {
+    since = new Date(until.getTime() - maxLookbackMs);
+  }
+
+  const durationHours = Math.max((until.getTime() - since.getTime()) / (60 * 60 * 1000), 1);
+  let bucketHours = 1;
+  if (durationHours > 48) bucketHours = 2;
+  if (durationHours > 24 * 7) bucketHours = 6;
+  if (durationHours > 24 * 14) bucketHours = 12;
+  if (durationHours > 24 * 21) bucketHours = 24;
+
+  return {
+    since: since.toISOString(),
+    until: until.toISOString(),
+    bucket_hours: bucketHours,
   };
 }
 
@@ -4450,57 +4553,7 @@ async function processScheduledEmailRun(runId, requestId) {
 
 async function getFeed(query) {
   const db = getPool();
-  const where = [];
-  const params = [];
-
-  if (query.since) {
-    params.push(query.since);
-    where.push(`p.discovered_at >= $${params.length}`);
-  }
-
-  if (query.until) {
-    params.push(query.until);
-    where.push(`p.discovered_at <= $${params.length}`);
-  }
-
-  if (query.tier) {
-    params.push(query.tier);
-    where.push(`p.watch_tier = $${params.length}`);
-  }
-
-  if (query.handle) {
-    const handles = parseHandleFilter(query.handle);
-
-    if (handles.length === 1) {
-      params.push(handles[0]);
-      where.push(`p.author_handle = $${params.length}`);
-    } else if (handles.length > 1) {
-      params.push(handles);
-      where.push(`p.author_handle = ANY($${params.length}::text[])`);
-    }
-  }
-
-  if (query.significant !== undefined) {
-    params.push(query.significant);
-    where.push(`p.is_significant = $${params.length}`);
-  }
-
-  if (query.q) {
-    params.push(`%${query.q}%`);
-    where.push(`(
-      p.body_text ILIKE $${params.length}
-      OR p.author_handle::text ILIKE $${params.length}
-    )`);
-  }
-
-  if (query.cursor) {
-    const decoded = decodeFeedCursor(query.cursor);
-    if (decoded) {
-      params.push(decoded.discovered_at);
-      params.push(decoded.status_id);
-      where.push(`(p.discovered_at, p.status_id) < ($${params.length - 1}, $${params.length})`);
-    }
-  }
+  const { where, params } = buildFeedWhereClause(query, { includeCursor: true, includeTextQuery: true });
 
   const limit = Math.min(Math.max(query.limit || defaultFeedLimit(), 1), maxFeedLimit());
   params.push(limit + 1);
@@ -4539,6 +4592,219 @@ async function getFeed(query) {
   }
 
   return { items, next_cursor: nextCursor };
+}
+
+async function getEngagement(query, options = {}) {
+  const db = getPool();
+  const range = normalizeEngagementRange(query);
+  const scopedQuery = {
+    ...query,
+    since: range.since,
+    until: range.until,
+    cursor: undefined,
+  };
+  const { where, params } = buildFeedWhereClause(scopedQuery, {
+    includeCursor: false,
+    includeTextQuery: options.applyTextQuery !== false,
+  });
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const bucketSeconds = range.bucket_hours * 60 * 60;
+  const topLimit = MAX_ENGAGEMENT_TOP_ITEMS;
+
+  const totalsSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COALESCE(SUM(likes), 0)::bigint AS likes,
+      COALESCE(SUM(reposts), 0)::bigint AS reposts,
+      COALESCE(SUM(replies), 0)::bigint AS replies,
+      COALESCE(SUM(views), 0)::bigint AS views,
+      COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+    FROM filtered
+  `;
+
+  const bucketsSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    ),
+    bucketed AS (
+      SELECT
+        to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
+        COUNT(*)::bigint AS post_count,
+        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COALESCE(SUM(likes), 0)::bigint AS likes,
+        COALESCE(SUM(reposts), 0)::bigint AS reposts,
+        COALESCE(SUM(replies), 0)::bigint AS replies,
+        COALESCE(SUM(views), 0)::bigint AS views,
+        COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+      FROM filtered
+      GROUP BY 1
+    )
+    SELECT
+      bucket_start,
+      bucket_start + make_interval(secs => $${params.length + 1}) AS bucket_end,
+      post_count,
+      significant_count,
+      likes,
+      reposts,
+      replies,
+      views,
+      engagement_score
+    FROM bucketed
+    ORDER BY bucket_start ASC
+  `;
+
+  const tiersSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      COALESCE(watch_tier, 'other') AS watch_tier,
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COALESCE(SUM(likes), 0)::bigint AS likes,
+      COALESCE(SUM(reposts), 0)::bigint AS reposts,
+      COALESCE(SUM(replies), 0)::bigint AS replies,
+      COALESCE(SUM(views), 0)::bigint AS views,
+      COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+    FROM filtered
+    GROUP BY COALESCE(watch_tier, 'other')
+    ORDER BY engagement_score DESC, post_count DESC
+  `;
+
+  const handlesSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      author_handle,
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COALESCE(SUM(likes), 0)::bigint AS likes,
+      COALESCE(SUM(reposts), 0)::bigint AS reposts,
+      COALESCE(SUM(replies), 0)::bigint AS replies,
+      COALESCE(SUM(views), 0)::bigint AS views,
+      COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+    FROM filtered
+    GROUP BY author_handle
+    ORDER BY engagement_score DESC, post_count DESC
+    LIMIT $${params.length + 1}
+  `;
+
+  const postsSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      status_id,
+      discovered_at,
+      author_handle,
+      watch_tier,
+      body_text,
+      url,
+      likes,
+      reposts,
+      replies,
+      views,
+      (likes + (2 * reposts) + (3 * replies) + (views * 0.01))::double precision AS engagement_score
+    FROM filtered
+    ORDER BY engagement_score DESC, discovered_at DESC
+    LIMIT $${params.length + 1}
+  `;
+
+  const [totalsResult, bucketsResult, tiersResult, handlesResult, postsResult] = await Promise.all([
+    db.query(totalsSql, params),
+    db.query(bucketsSql, [...params, bucketSeconds]),
+    db.query(tiersSql, params),
+    db.query(handlesSql, [...params, topLimit]),
+    db.query(postsSql, [...params, topLimit]),
+  ]);
+
+  const totalsRow = totalsResult.rows[0] || {};
+  const totals = {
+    post_count: Number(totalsRow.post_count || 0),
+    significant_count: Number(totalsRow.significant_count || 0),
+    likes: Number(totalsRow.likes || 0),
+    reposts: Number(totalsRow.reposts || 0),
+    replies: Number(totalsRow.replies || 0),
+    views: Number(totalsRow.views || 0),
+    engagement_score: Number(totalsRow.engagement_score || 0),
+  };
+
+  const buckets = bucketsResult.rows.map((row) => ({
+    bucket_start: toIso(row.bucket_start) || new Date(0).toISOString(),
+    bucket_end: toIso(row.bucket_end) || new Date(0).toISOString(),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  const by_tier = tiersResult.rows.map((row) => ({
+    watch_tier: String(row.watch_tier || "other"),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  const top_handles = handlesResult.rows.map((row) => ({
+    author_handle: String(row.author_handle),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  const top_posts = postsResult.rows.map((row) => ({
+    status_id: String(row.status_id),
+    discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
+    author_handle: String(row.author_handle),
+    watch_tier: row.watch_tier ? String(row.watch_tier) : null,
+    body_text: row.body_text ? String(row.body_text) : null,
+    url: String(row.url),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  return {
+    scope: {
+      since: range.since,
+      until: range.until,
+      bucket_hours: range.bucket_hours,
+      text_filter_applied: options.applyTextQuery !== false,
+    },
+    totals,
+    buckets,
+    by_tier,
+    top_handles,
+    top_posts,
+  };
 }
 
 async function getLatestWindowSummaries() {
@@ -4725,6 +4991,31 @@ async function handleFeed(event) {
     return jsonOk(feed);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to query feed", 503);
+  }
+}
+
+async function handleEngagement(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const input = {};
+  const params = event?.queryStringParameters || {};
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string" && input[key] === undefined) {
+      input[key] = value;
+    }
+  }
+
+  const query = parseFeedQuery(input);
+  const searchMode = asString(firstValue(input.search_mode));
+  const applyTextQuery = searchMode !== "semantic";
+
+  try {
+    const payload = await getEngagement(query, { applyTextQuery });
+    return jsonOk(payload);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to query engagement", 503);
   }
 }
 
@@ -5314,6 +5605,10 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/feed") {
     return handleFeed(event);
+  }
+
+  if (method === "GET" && path === "/v1/engagement") {
+    return handleEngagement(event);
   }
 
   if (method === "POST" && path === "/v1/query/semantic") {

@@ -5,6 +5,12 @@ import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
 import type {
   BatchUpsertResult,
   DeletePostsByHandleResult,
+  EngagementHandleBreakdown,
+  EngagementResponse,
+  EngagementTierBreakdown,
+  EngagementTopPost,
+  EngagementTotals,
+  EngagementBucket,
   EmbeddingUpsert,
   FeedItem,
   FeedQuery,
@@ -19,6 +25,10 @@ import type {
   WindowSummary,
   WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
+
+const DEFAULT_ENGAGEMENT_LOOKBACK_HOURS = 24 * 7;
+const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 30;
+const MAX_ENGAGEMENT_TOP_ITEMS = 12;
 
 function toIso(value: unknown): string | null {
   if (!value) return null;
@@ -679,8 +689,12 @@ export async function getLatestWindowSummaries(): Promise<WindowSummary[]> {
     .map(rowToWindowSummary);
 }
 
-export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
-  const pool = getDbPool();
+type FeedWhereBuildOptions = {
+  includeCursor?: boolean;
+  includeTextQuery?: boolean;
+};
+
+function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions = {}): { where: string[]; params: unknown[] } {
   const where: string[] = [];
   const params: unknown[] = [];
 
@@ -716,16 +730,15 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
     where.push(`p.is_significant = $${params.length}`);
   }
 
-  if (query.q) {
+  if (options.includeTextQuery !== false && query.q) {
     params.push(`%${query.q}%`);
-    const clause = `(
+    where.push(`(
       p.body_text ILIKE $${params.length}
       OR p.author_handle::text ILIKE $${params.length}
-    )`;
-    where.push(clause);
+    )`);
   }
 
-  if (query.cursor) {
+  if (options.includeCursor && query.cursor) {
     const decoded = decodeFeedCursor(query.cursor);
     if (decoded) {
       params.push(decoded.discovered_at);
@@ -733,6 +746,52 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
       where.push(`(p.discovered_at, p.status_id) < ($${params.length - 1}, $${params.length})`);
     }
   }
+
+  return { where, params };
+}
+
+function parseDateOrNull(value: string | undefined): Date | null {
+  if (!value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function normalizeEngagementRange(query: FeedQuery): { since: string; until: string; bucketHours: number } {
+  const now = new Date();
+  const requestedUntil = parseDateOrNull(query.until);
+  const requestedSince = parseDateOrNull(query.since);
+
+  let until = requestedUntil || now;
+  let since = requestedSince || new Date(until.getTime() - DEFAULT_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000);
+
+  if (since > until) {
+    const originalSince = since;
+    since = until;
+    until = originalSince;
+  }
+
+  const maxLookbackMs = MAX_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000;
+  if (until.getTime() - since.getTime() > maxLookbackMs) {
+    since = new Date(until.getTime() - maxLookbackMs);
+  }
+
+  const durationHours = Math.max((until.getTime() - since.getTime()) / (60 * 60 * 1000), 1);
+  let bucketHours = 1;
+  if (durationHours > 48) bucketHours = 2;
+  if (durationHours > 24 * 7) bucketHours = 6;
+  if (durationHours > 24 * 14) bucketHours = 12;
+  if (durationHours > 24 * 21) bucketHours = 24;
+
+  return {
+    since: since.toISOString(),
+    until: until.toISOString(),
+    bucketHours,
+  };
+}
+
+export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
+  const pool = getDbPool();
+  const { where, params } = buildFeedWhereClause(query, { includeCursor: true, includeTextQuery: true });
 
   const limit = Math.min(Math.max(query.limit || defaultFeedLimit(), 1), maxFeedLimit());
   params.push(limit + 1);
@@ -771,6 +830,222 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
   }
 
   return { items, next_cursor: nextCursor };
+}
+
+export async function getEngagement(
+  query: FeedQuery,
+  options: { applyTextQuery?: boolean } = {}
+): Promise<EngagementResponse> {
+  const pool = getDbPool();
+  const range = normalizeEngagementRange(query);
+  const scopedQuery: FeedQuery = {
+    ...query,
+    since: range.since,
+    until: range.until,
+    cursor: undefined,
+  };
+  const { where, params } = buildFeedWhereClause(scopedQuery, {
+    includeCursor: false,
+    includeTextQuery: options.applyTextQuery !== false,
+  });
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const bucketSeconds = range.bucketHours * 60 * 60;
+  const topLimit = MAX_ENGAGEMENT_TOP_ITEMS;
+
+  const totalsSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COALESCE(SUM(likes), 0)::bigint AS likes,
+      COALESCE(SUM(reposts), 0)::bigint AS reposts,
+      COALESCE(SUM(replies), 0)::bigint AS replies,
+      COALESCE(SUM(views), 0)::bigint AS views,
+      COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+    FROM filtered
+  `;
+
+  const bucketsSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    ),
+    bucketed AS (
+      SELECT
+        to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
+        COUNT(*)::bigint AS post_count,
+        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COALESCE(SUM(likes), 0)::bigint AS likes,
+        COALESCE(SUM(reposts), 0)::bigint AS reposts,
+        COALESCE(SUM(replies), 0)::bigint AS replies,
+        COALESCE(SUM(views), 0)::bigint AS views,
+        COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+      FROM filtered
+      GROUP BY 1
+    )
+    SELECT
+      bucket_start,
+      bucket_start + make_interval(secs => $${params.length + 1}) AS bucket_end,
+      post_count,
+      significant_count,
+      likes,
+      reposts,
+      replies,
+      views,
+      engagement_score
+    FROM bucketed
+    ORDER BY bucket_start ASC
+  `;
+
+  const tiersSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      COALESCE(watch_tier, 'other') AS watch_tier,
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COALESCE(SUM(likes), 0)::bigint AS likes,
+      COALESCE(SUM(reposts), 0)::bigint AS reposts,
+      COALESCE(SUM(replies), 0)::bigint AS replies,
+      COALESCE(SUM(views), 0)::bigint AS views,
+      COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+    FROM filtered
+    GROUP BY COALESCE(watch_tier, 'other')
+    ORDER BY engagement_score DESC, post_count DESC
+  `;
+
+  const handlesSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      author_handle,
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COALESCE(SUM(likes), 0)::bigint AS likes,
+      COALESCE(SUM(reposts), 0)::bigint AS reposts,
+      COALESCE(SUM(replies), 0)::bigint AS replies,
+      COALESCE(SUM(views), 0)::bigint AS views,
+      COALESCE(SUM(likes + (2 * reposts) + (3 * replies) + (views * 0.01)), 0)::double precision AS engagement_score
+    FROM filtered
+    GROUP BY author_handle
+    ORDER BY engagement_score DESC, post_count DESC
+    LIMIT $${params.length + 1}
+  `;
+
+  const postsSql = `
+    WITH filtered AS (
+      SELECT p.*
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      status_id,
+      discovered_at,
+      author_handle,
+      watch_tier,
+      body_text,
+      url,
+      likes,
+      reposts,
+      replies,
+      views,
+      (likes + (2 * reposts) + (3 * replies) + (views * 0.01))::double precision AS engagement_score
+    FROM filtered
+    ORDER BY engagement_score DESC, discovered_at DESC
+    LIMIT $${params.length + 1}
+  `;
+
+  const [totalsResult, bucketsResult, tiersResult, handlesResult, postsResult] = await Promise.all([
+    pool.query(totalsSql, params),
+    pool.query(bucketsSql, [...params, bucketSeconds]),
+    pool.query(tiersSql, params),
+    pool.query(handlesSql, [...params, topLimit]),
+    pool.query(postsSql, [...params, topLimit]),
+  ]);
+
+  const totalsRow = totalsResult.rows[0] || {};
+  const totals: EngagementTotals = {
+    post_count: Number(totalsRow.post_count || 0),
+    significant_count: Number(totalsRow.significant_count || 0),
+    likes: Number(totalsRow.likes || 0),
+    reposts: Number(totalsRow.reposts || 0),
+    replies: Number(totalsRow.replies || 0),
+    views: Number(totalsRow.views || 0),
+    engagement_score: Number(totalsRow.engagement_score || 0),
+  };
+
+  const buckets: EngagementBucket[] = bucketsResult.rows.map((row) => ({
+    bucket_start: toIso(row.bucket_start) || new Date(0).toISOString(),
+    bucket_end: toIso(row.bucket_end) || new Date(0).toISOString(),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  const by_tier: EngagementTierBreakdown[] = tiersResult.rows.map((row) => ({
+    watch_tier: String(row.watch_tier || "other"),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  const top_handles: EngagementHandleBreakdown[] = handlesResult.rows.map((row) => ({
+    author_handle: String(row.author_handle),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  const top_posts: EngagementTopPost[] = postsResult.rows.map((row) => ({
+    status_id: String(row.status_id),
+    discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
+    author_handle: String(row.author_handle),
+    watch_tier: row.watch_tier ? String(row.watch_tier) : null,
+    body_text: row.body_text ? String(row.body_text) : null,
+    url: String(row.url),
+    likes: Number(row.likes || 0),
+    reposts: Number(row.reposts || 0),
+    replies: Number(row.replies || 0),
+    views: Number(row.views || 0),
+    engagement_score: Number(row.engagement_score || 0),
+  }));
+
+  return {
+    scope: {
+      since: range.since,
+      until: range.until,
+      bucket_hours: range.bucketHours,
+      text_filter_applied: options.applyTextQuery !== false,
+    },
+    totals,
+    buckets,
+    by_tier,
+    top_handles,
+    top_posts,
+  };
 }
 
 export async function getPostDetail(statusId: string): Promise<PostDetail | null> {
