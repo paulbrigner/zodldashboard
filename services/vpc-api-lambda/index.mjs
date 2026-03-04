@@ -101,6 +101,8 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "mw_intern",
   "desota",
   "ma1973sk",
+  "hari14q",
+  "cryptociampa",
 ];
 
 let pool;
@@ -836,6 +838,199 @@ function markdownToPlainText(markdown) {
     .replace(/\r\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function escapeHtml(text) {
+  return String(text || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function sanitizeEmailHref(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return null;
+  if (/^https?:\/\/[^\s]+$/i.test(raw)) return raw;
+  if (/^mailto:[^\s]+@[^\s]+\.[^\s]+$/i.test(raw)) return raw;
+  return null;
+}
+
+function renderInlineMarkdownToHtml(text) {
+  const stash = [];
+  const keep = (html) => {
+    const token = `%%MDTOK${stash.length}%%`;
+    stash.push(html);
+    return token;
+  };
+
+  let working = String(text || "");
+
+  working = working.replace(/`([^`\n]+)`/g, (_m, code) => keep(`<code>${escapeHtml(code)}</code>`));
+
+  working = working.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_m, label, hrefRaw) => {
+    const href = sanitizeEmailHref(hrefRaw);
+    const labelSafe = escapeHtml(label);
+    if (!href) return keep(labelSafe);
+    return keep(
+      `<a href="${escapeHtml(href)}" target="_blank" rel="noreferrer noopener">${labelSafe}</a>`
+    );
+  });
+
+  working = escapeHtml(working)
+    .replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/__([^_\n]+)__/g, "<strong>$1</strong>")
+    .replace(/(^|[\s(])\*([^*\n]+)\*(?=$|[\s).,!?:;])/g, "$1<em>$2</em>")
+    .replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s).,!?:;])/g, "$1<em>$2</em>");
+
+  return working.replace(/%%MDTOK(\d+)%%/g, (_m, idx) => stash[Number(idx)] || "");
+}
+
+function markdownToHtmlEmailDocument(markdown) {
+  const raw = String(markdown || "").replace(/\r\n/g, "\n");
+  const lines = raw.split("\n");
+  const blocks = [];
+  let paragraph = [];
+  let listType = null;
+  let listItems = [];
+  let quoteLines = [];
+  let inCode = false;
+  let codeLines = [];
+
+  const flushParagraph = () => {
+    if (paragraph.length === 0) return;
+    const joined = paragraph.join(" ").trim();
+    if (joined) {
+      blocks.push(`<p>${renderInlineMarkdownToHtml(joined)}</p>`);
+    }
+    paragraph = [];
+  };
+
+  const flushList = () => {
+    if (!listType || listItems.length === 0) return;
+    const items = listItems.map((item) => `<li>${renderInlineMarkdownToHtml(item)}</li>`).join("");
+    blocks.push(`<${listType}>${items}</${listType}>`);
+    listType = null;
+    listItems = [];
+  };
+
+  const flushQuote = () => {
+    if (quoteLines.length === 0) return;
+    const joined = quoteLines.join(" ").trim();
+    if (joined) {
+      blocks.push(`<blockquote><p>${renderInlineMarkdownToHtml(joined)}</p></blockquote>`);
+    }
+    quoteLines = [];
+  };
+
+  const flushCode = () => {
+    if (codeLines.length === 0) return;
+    blocks.push(`<pre><code>${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+    codeLines = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+
+    if (/^```/.test(trimmed)) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      if (inCode) {
+        flushCode();
+        inCode = false;
+      } else {
+        inCode = true;
+      }
+      continue;
+    }
+
+    if (inCode) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      continue;
+    }
+
+    const headingMatch = /^(#{1,6})\s+(.+)$/.exec(trimmed);
+    if (headingMatch) {
+      flushParagraph();
+      flushList();
+      flushQuote();
+      const level = Math.max(1, Math.min(6, headingMatch[1].length));
+      blocks.push(`<h${level}>${renderInlineMarkdownToHtml(headingMatch[2])}</h${level}>`);
+      continue;
+    }
+
+    const quoteMatch = /^>\s?(.*)$/.exec(trimmed);
+    if (quoteMatch) {
+      flushParagraph();
+      flushList();
+      quoteLines.push(quoteMatch[1] || "");
+      continue;
+    }
+
+    const ulMatch = /^[-*+]\s+(.+)$/.exec(trimmed);
+    if (ulMatch) {
+      flushParagraph();
+      flushQuote();
+      if (listType && listType !== "ul") flushList();
+      listType = "ul";
+      listItems.push(ulMatch[1]);
+      continue;
+    }
+
+    const olMatch = /^\d+\.\s+(.+)$/.exec(trimmed);
+    if (olMatch) {
+      flushParagraph();
+      flushQuote();
+      if (listType && listType !== "ol") flushList();
+      listType = "ol";
+      listItems.push(olMatch[1]);
+      continue;
+    }
+
+    flushList();
+    flushQuote();
+    paragraph.push(trimmed);
+  }
+
+  if (inCode) {
+    flushCode();
+  }
+  flushParagraph();
+  flushList();
+  flushQuote();
+
+  const content = blocks.join("\n");
+  return [
+    "<!doctype html>",
+    '<html lang="en"><head><meta charset="UTF-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1.0" />',
+    "<style>",
+    "body{margin:0;padding:0;background:#f5f8ff;color:#0f2047;font-family:Inter,Segoe UI,Arial,sans-serif;line-height:1.55;}",
+    ".shell{max-width:760px;margin:0 auto;padding:20px 14px;}",
+    ".card{background:#ffffff;border:1px solid #d6e2ff;border-radius:14px;padding:18px;}",
+    "h1,h2,h3,h4,h5,h6{margin:0 0 10px;line-height:1.25;color:#0f2047;}",
+    "p{margin:0 0 12px;}",
+    "ul,ol{margin:0 0 12px;padding-left:22px;}",
+    "li{margin:0 0 6px;}",
+    "blockquote{margin:0 0 12px;padding:10px 12px;border-left:4px solid #b7cdfd;background:#f7faff;border-radius:8px;}",
+    "pre{margin:0 0 12px;padding:12px;border:1px solid #d6e2ff;border-radius:8px;background:#f7faff;overflow:auto;}",
+    "code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;background:#eef4ff;padding:1px 4px;border-radius:4px;}",
+    "pre code{padding:0;background:transparent;}",
+    "a{color:#21488f;text-decoration:underline;}",
+    "</style></head><body>",
+    '<div class="shell"><div class="card">',
+    content || "<p>(No content)</p>",
+    "</div></div></body></html>",
+  ].join("");
 }
 
 function withLengthLimit(value, maxChars) {
@@ -3650,6 +3845,10 @@ async function sendEmailDelivery({
   const subjectSafe = withLengthLimit(asString(subject) || "", 240);
   const markdownSafe = withLengthLimit(asString(bodyMarkdown) || "", emailMaxBodyChars());
   const textSafe = withLengthLimit(asString(bodyText) || markdownToPlainText(markdownSafe), emailMaxBodyChars());
+  const htmlSafe = withLengthLimit(
+    markdownToHtmlEmailDocument(markdownSafe),
+    Math.max(emailMaxBodyChars() * 8, 20000)
+  );
   if (!subjectSafe || !markdownSafe || !textSafe) {
     return {
       ok: false,
@@ -3708,6 +3907,10 @@ async function sendEmailDelivery({
               Text: {
                 Charset: "UTF-8",
                 Data: textSafe,
+              },
+              Html: {
+                Charset: "UTF-8",
+                Data: htmlSafe,
               },
             },
           },
