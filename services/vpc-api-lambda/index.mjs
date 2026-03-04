@@ -87,6 +87,9 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "promoimpulse",
   "rmelian_ok",
   "xol1641557",
+  "mw_intern",
+  "desota",
+  "ma1973sk",
 ];
 
 let pool;
