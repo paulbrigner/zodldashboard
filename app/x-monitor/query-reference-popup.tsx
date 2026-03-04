@@ -8,7 +8,7 @@ const DISCOVERY_BASE_TERMS = "Zcash OR Zodl OR Zashi";
 const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
-    "jswihart",
+    "jwihart",
     "nuttycom",
     "paulbrigner",
     "peacemongerz",
@@ -28,7 +28,6 @@ const WATCHLIST_BY_TIER = {
     "dignitycipher",
     "dismad8",
     "ebfull",
-    "in4crypto",
     "ivydngg",
     "lucidzk",
     "maxdesalle",
@@ -40,7 +39,6 @@ const WATCHLIST_BY_TIER = {
     "neuralunlock",
     "rargulati",
     "roommatemusing",
-    "shieldedmark",    
     "shieldedmoney",
     "thecodebuffet",
     "thortorrens",
@@ -49,7 +47,7 @@ const WATCHLIST_BY_TIER = {
     "zooko",
     "zpartanll7",
   ],
-  ecosystem: ["genzcash", "shieldedlabs", "tachyonzcash", "zcashcommgrants", "zcashfoundation", "zechub", "zodl_app"],
+  ecosystem: ["genzcash", "shieldedlabs", "zcashcommgrants", "zcashfoundation", "zechub"],
 } as const;
 
 const WATCHLIST_TIER_LABELS: Record<keyof typeof WATCHLIST_BY_TIER, string> = {
@@ -94,9 +92,12 @@ export function QueryReferencePopup() {
           <section>
             <h3>Priority mode (watchlist-driven)</h3>
             <p>
-              Priority mode searches posts from all watchlist handles, combined with the base terms:
+              Priority mode uses two query families:
             </p>
-            <pre className="query-code">(from:handle1 OR from:handle2 OR ...) ({PRIORITY_BASE_TERMS})</pre>
+            <pre className="query-code">(from:teammate1 OR from:ecosystem1 OR ...) -is:retweet</pre>
+            <p className="subtle-text">Teammate and ecosystem handles are captured directly (no base-term requirement).</p>
+            <pre className="query-code">(from:influencer1 OR from:influencer2 OR ...) ({PRIORITY_BASE_TERMS}) -is:retweet</pre>
+            <p className="subtle-text">Influencer handles remain term-constrained by the base terms.</p>
             <p className="subtle-text">
               Current watchlist size: {totalWatchlistHandles} handles (
               {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.influencer.length} influencer,{" "}

@@ -315,6 +315,14 @@ function buildPriorityQuery(handles, baseTerms, options) {
   return clauses.join(" ");
 }
 
+function buildPriorityHandlesOnlyQuery(handles, options) {
+  const handlesExpr = handles.map((handle) => `from:${handle}`).join(" OR ");
+  const clauses = [`(${handlesExpr})`];
+  if (options.excludeRetweets) clauses.push("-is:retweet");
+  if (options.excludeQuotes) clauses.push("-is:quote");
+  return clauses.join(" ");
+}
+
 function buildDiscoveryQuery(baseTerms, options) {
   const clauses = [`(${baseTerms})`];
   if (options.excludeRetweets) clauses.push("-is:retweet");
@@ -367,15 +375,32 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
   }
 
   const handles = Object.keys(watchlistMap).sort();
-  const handleChunks = chunkHandles(handles, config.handleChunkSize);
   const queries = [];
 
-  for (const chunk of handleChunks) {
+  // Teammate + ecosystem captures should include all posts from those handles.
+  const directCaptureHandles = handles.filter((handle) => {
+    const tier = watchlistMap[handle];
+    return tier === "teammate" || tier === "ecosystem";
+  });
+  const directCaptureChunks = chunkHandles(directCaptureHandles, config.handleChunkSize);
+  for (const chunk of directCaptureChunks) {
+    queries.push({
+      sourceQuery: "priority",
+      query: buildPriorityHandlesOnlyQuery(chunk, config),
+      handles: chunk,
+      family: "priority_direct_watchlist",
+    });
+  }
+
+  // Influencer captures remain term-constrained to prioritize relevant topic coverage.
+  const influencerHandles = handles.filter((handle) => watchlistMap[handle] === "influencer");
+  const influencerChunks = chunkHandles(influencerHandles, config.handleChunkSize);
+  for (const chunk of influencerChunks) {
     queries.push({
       sourceQuery: "priority",
       query: buildPriorityQuery(chunk, config.baseTerms, config),
       handles: chunk,
-      family: "priority",
+      family: "priority_influencer_term",
     });
   }
 
