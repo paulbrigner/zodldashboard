@@ -9,6 +9,7 @@ type DashboardCard = {
   name: string;
   description: string;
   href?: string;
+  workspaceOnly?: boolean;
 };
 
 const dashboards: DashboardCard[] = [
@@ -23,6 +24,7 @@ const dashboards: DashboardCard[] = [
     name: "Regulatory Risk by Geography",
     description: "Tiered jurisdiction risk, recommendations, policy posture, and activity feed.",
     href: "/regulatory-risk",
+    workspaceOnly: true,
   },
   {
     id: "placeholder-2",
@@ -38,6 +40,7 @@ const dashboards: DashboardCard[] = [
 
 export default async function HomePage() {
   const viewer = await requireAuthenticatedViewer("/");
+  const isGuestViewer = viewer.accessLevel === "guest";
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
@@ -58,21 +61,26 @@ export default async function HomePage() {
         </header>
 
         <section className="dashboard-grid" aria-label="Dashboard list">
-          {dashboards.map((dashboard) => (
-            <article className="dashboard-tile" key={dashboard.id}>
-              <h2>{dashboard.name}</h2>
-              <p className="subtle-text">{dashboard.description}</p>
-              {dashboard.href ? (
-                <Link className="button dashboard-open-button" href={dashboard.href}>
-                  Open dashboard
-                </Link>
-              ) : (
-                <span className="button button-disabled dashboard-open-button" aria-disabled="true">
-                  Coming soon
-                </span>
-              )}
-            </article>
-          ))}
+          {dashboards.map((dashboard) => {
+            const restrictedForGuest = isGuestViewer && dashboard.workspaceOnly;
+            const isEnabled = Boolean(dashboard.href) && !restrictedForGuest;
+
+            return (
+              <article className="dashboard-tile" key={dashboard.id}>
+                <h2>{dashboard.name}</h2>
+                <p className="subtle-text">{dashboard.description}</p>
+                {isEnabled ? (
+                  <Link className="button dashboard-open-button" href={dashboard.href!}>
+                    Open dashboard
+                  </Link>
+                ) : (
+                  <span className="button button-disabled dashboard-open-button" aria-disabled="true">
+                    {restrictedForGuest ? "Access restricted" : "Coming soon"}
+                  </span>
+                )}
+              </article>
+            );
+          })}
         </section>
       </section>
     </main>

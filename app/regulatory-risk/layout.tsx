@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { SignOutButton } from "../sign-out-button";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { getRegulatoryRiskData } from "@/lib/regulatory-risk/data";
@@ -13,6 +14,10 @@ export default async function RegulatoryRiskLayout({
   children: React.ReactNode;
 }>) {
   const viewer = await requireAuthenticatedViewer("/regulatory-risk");
+  if (viewer.accessLevel === "guest") {
+    redirect("/");
+  }
+
   const { bundle, source, dataUrl, warning } = await getRegulatoryRiskData();
 
   const identityText =
