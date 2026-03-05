@@ -24,7 +24,7 @@ This document describes the query logic currently used by the AWS X API collecto
 
 Event schedules (default):
 - priority: `rate(15 minutes)`
-- discovery: `rate(60 minutes)`
+- discovery: `rate(30 minutes)`
 
 ## 2) Base terms and query families
 
@@ -45,7 +45,7 @@ Zcash OR Zodl OR Zashi
 For each handle chunk:
 
 ```text
-(from:<handle1> OR from:<handle2> OR ... ) (<base_terms>) -is:retweet
+(from:<handle1> OR from:<handle2> OR ... ) (<base_terms>) -is:reply -is:retweet
 ```
 
 (`-is:quote` is optional via env and defaults to off)
@@ -63,6 +63,10 @@ Controlled by:
 ```text
 (from:<handles...>) is:reply (<base_terms>) -is:retweet
 ```
+
+Note:
+- teammate/ecosystem handles are excluded from reply-specific lanes because they are already captured by direct watchlist queries (including replies)
+- this reduces overlap without reducing teammate/ecosystem reply coverage
 
 `selected_handles` (`source_query=priority_reply_selected`):
 
@@ -157,6 +161,7 @@ Key env controls:
 - `XMON_X_API_MAX_RESULTS_PER_QUERY` (default `100`)
 - `XMON_X_API_MAX_PAGES_PER_QUERY` (default `2`)
 - `XMON_X_API_HANDLE_CHUNK_SIZE` (default `16`)
+- `XMON_X_API_SINCE_ID_ENABLED` (default `true`)
 - `XMON_X_API_QUERY_TIMEOUT_MS` (default `15000`)
 - `XMON_X_API_REQUEST_PAUSE_MS` (default `200`)
 

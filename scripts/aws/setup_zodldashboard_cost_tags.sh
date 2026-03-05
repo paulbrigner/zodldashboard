@@ -33,7 +33,7 @@ LAMBDA_FUNCTIONS=(
 
 EVENT_RULES=(
   "xmonitor-xapi-priority-collector-15m"
-  "xmonitor-xapi-discovery-collector-60m"
+  "xmonitor-xapi-discovery-collector-30m"
   "xmonitor-email-schedule-dispatch"
 )
 

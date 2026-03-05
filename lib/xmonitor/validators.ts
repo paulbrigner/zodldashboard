@@ -3,6 +3,7 @@ import {
   COMPOSE_DRAFT_FORMATS,
   type ComposeQueryRequest,
   type EmbeddingUpsert,
+  type IngestQueryCheckpointUpsert,
   RUN_MODES,
   SNAPSHOT_TYPES,
   WATCH_TIERS,
@@ -237,6 +238,75 @@ export function parsePipelineRunUpsert(
       reported_count: asInteger(value.reported_count) ?? 0,
       note: asNullableString(value.note),
       source: asNullableString(value.source) ?? "local-dispatcher",
+    },
+  };
+}
+
+export function parseIngestQueryCheckpointLookup(
+  value: unknown
+): { ok: true; query_keys: string[] } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "payload must be an object" };
+
+  const queryKeys = asStringArray(value.query_keys);
+  if (!queryKeys) {
+    return { ok: false, error: "query_keys must be an array of strings" };
+  }
+  if (queryKeys.length === 0) {
+    return { ok: false, error: "query_keys must not be empty" };
+  }
+
+  const normalized = queryKeys
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (normalized.length === 0) {
+    return { ok: false, error: "query_keys must contain at least one non-empty key" };
+  }
+
+  return { ok: true, query_keys: [...new Set(normalized)] };
+}
+
+export function parseIngestQueryCheckpointUpsert(
+  value: unknown
+): { ok: true; data: IngestQueryCheckpointUpsert } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const queryKey = asString(value.query_key);
+  const collectorMode = asString(value.collector_mode)?.toLowerCase();
+  const queryFamily = asString(value.query_family);
+  const queryTextHash = asString(value.query_text_hash);
+  const queryHandlesHash = asNullableString(value.query_handles_hash);
+  const sinceId = asNullableString(value.since_id);
+  const lastNewestId = asNullableString(value.last_newest_id);
+  const lastSeenAt = asIsoTimestamp(value.last_seen_at) ?? null;
+  const lastRunAt = asIsoTimestamp(value.last_run_at) ?? null;
+  const lastRunStatusRaw = asNullableString(value.last_run_status)?.toLowerCase() ?? null;
+
+  if (!queryKey || !collectorMode || !queryFamily || !queryTextHash) {
+    return {
+      ok: false,
+      error: "query_key, collector_mode, query_family, and query_text_hash are required",
+    };
+  }
+  if (collectorMode !== "priority" && collectorMode !== "discovery") {
+    return { ok: false, error: "collector_mode must be one of priority, discovery" };
+  }
+  if (lastRunStatusRaw && lastRunStatusRaw !== "ok" && lastRunStatusRaw !== "error") {
+    return { ok: false, error: "last_run_status must be one of ok, error" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      query_key: queryKey,
+      collector_mode: collectorMode,
+      query_family: queryFamily,
+      query_text_hash: queryTextHash,
+      query_handles_hash: queryHandlesHash ?? null,
+      since_id: sinceId ?? null,
+      last_newest_id: lastNewestId ?? null,
+      last_seen_at: lastSeenAt,
+      last_run_at: lastRunAt,
+      last_run_status: (lastRunStatusRaw as "ok" | "error" | null) ?? null,
     },
   };
 }

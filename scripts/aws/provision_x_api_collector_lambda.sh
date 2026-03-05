@@ -33,6 +33,7 @@ set -euo pipefail
 #   X_API_LANG_ALLOWLIST=en
 #   X_API_EXCLUDE_RETWEETS=true
 #   X_API_EXCLUDE_QUOTES=false
+#   X_API_SINCE_ID_ENABLED=true
 #   EMBEDDING_ENABLED=true
 #   EMBEDDING_BASE_URL=https://api.venice.ai/api/v1
 #   EMBEDDING_MODEL=text-embedding-bge-m3
@@ -97,6 +98,7 @@ X_API_ENFORCE_LANG_ALLOWLIST="${X_API_ENFORCE_LANG_ALLOWLIST:-true}"
 X_API_LANG_ALLOWLIST="${X_API_LANG_ALLOWLIST:-en}"
 X_API_EXCLUDE_RETWEETS="${X_API_EXCLUDE_RETWEETS:-true}"
 X_API_EXCLUDE_QUOTES="${X_API_EXCLUDE_QUOTES:-false}"
+X_API_SINCE_ID_ENABLED="${X_API_SINCE_ID_ENABLED:-true}"
 X_API_QUERY_TIMEOUT_MS="${X_API_QUERY_TIMEOUT_MS:-15000}"
 X_API_REQUEST_PAUSE_MS="${X_API_REQUEST_PAUSE_MS:-200}"
 EMBEDDING_ENABLED="${EMBEDDING_ENABLED:-true}"
@@ -115,7 +117,7 @@ COLLECTOR_WRITE_ENABLED="${COLLECTOR_WRITE_ENABLED:-true}"
 COLLECTOR_DRY_RUN="${COLLECTOR_DRY_RUN:-false}"
 COLLECTOR_SOURCE="${COLLECTOR_SOURCE:-aws-lambda-x-api}"
 COLLECTOR_MODE="${COLLECTOR_MODE:-priority}"
-XMONITOR_INGEST_OMIT_HANDLES="${XMONITOR_INGEST_OMIT_HANDLES:-zec_88,zec__2,spaljeni_zec,juan_sanchez13,zeki82086538826,sucveceza_35,windymint1,usa_trader06,roger_welch1,cmscanner_bb,cmscanner_rsi,dexportal_,luckyvinod16,zecigr,disruqtion,zec8,cmscanner_sma,zeczinka,cryptodiane,sureblessing36,pafoslive1,sachin22049721,lovegds1lady,micheal_crypto0,ruth13900929210,michell82710798,kimberl97730856,fx220000,exnesst80805,sfurures_expart,felix__steven,vectorthehunter,forex47kin51201,bullbearcrypt,blacker6636,devendr34011988,dannym4u,scapenerhurst,duncannbaldwin,robertethan_,jamesharri45923,jxttreasury,dannnym4u,rinshad31142287,sumitso40959179,_zonecrypto_,promoimpulse,rmelian_ok,xol1641557,mw_intern,desota,ma1973sk,hari14q,cryptociampa,nvnguyen9999,nesleyfilsaime1,coinminerss,aicryptopattern,lucas_zec,iamjoeqpublic,mo30487903,obinnaumeh1,grok,ozonenkembu,richard66110384,semaaybat,imm71114749,geo_bush1,lite_saylor,web3wildwatch}"
+XMONITOR_INGEST_OMIT_HANDLES="${XMONITOR_INGEST_OMIT_HANDLES:-zec_88,zec__2,spaljeni_zec,juan_sanchez13,zeki82086538826,sucveceza_35,windymint1,usa_trader06,roger_welch1,cmscanner_bb,cmscanner_rsi,dexportal_,luckyvinod16,zecigr,disruqtion,zec8,cmscanner_sma,zeczinka,cryptodiane,sureblessing36,pafoslive1,sachin22049721,lovegds1lady,micheal_crypto0,ruth13900929210,michell82710798,kimberl97730856,fx220000,exnesst80805,sfurures_expart,felix__steven,vectorthehunter,forex47kin51201,bullbearcrypt,blacker6636,devendr34011988,dannym4u,scapenerhurst,duncannbaldwin,robertethan_,jamesharri45923,jxttreasury,dannnym4u,rinshad31142287,sumitso40959179,_zonecrypto_,promoimpulse,rmelian_ok,xol1641557,mw_intern,desota,ma1973sk,hari14q,cryptociampa,nvnguyen9999,nesleyfilsaime1,coinminerss,aicryptopattern,lucas_zec,iamjoeqpublic,mo30487903,obinnaumeh1,grok,ozonenkembu,richard66110384,semaaybat,imm71114749,geo_bush1,lite_saylor,web3wildwatch,voltage_ixr}"
 SUMMARY_ENABLED="${SUMMARY_ENABLED:-true}"
 SUMMARY_ALIGN_HOURS="${SUMMARY_ALIGN_HOURS:-2}"
 SUMMARY_TOP_POSTS_2H="${SUMMARY_TOP_POSTS_2H:-8}"
@@ -289,6 +291,7 @@ ENV_JSON="$(
   X_API_LANG_ALLOWLIST="$X_API_LANG_ALLOWLIST" \
   X_API_EXCLUDE_RETWEETS="$X_API_EXCLUDE_RETWEETS" \
   X_API_EXCLUDE_QUOTES="$X_API_EXCLUDE_QUOTES" \
+  X_API_SINCE_ID_ENABLED="$X_API_SINCE_ID_ENABLED" \
   X_API_QUERY_TIMEOUT_MS="$X_API_QUERY_TIMEOUT_MS" \
   X_API_REQUEST_PAUSE_MS="$X_API_REQUEST_PAUSE_MS" \
   EMBEDDING_ENABLED="$EMBEDDING_ENABLED" \
@@ -346,6 +349,7 @@ print(json.dumps({
     "XMON_X_API_LANG_ALLOWLIST": os.environ["X_API_LANG_ALLOWLIST"],
     "XMON_X_API_EXCLUDE_RETWEETS": os.environ["X_API_EXCLUDE_RETWEETS"],
     "XMON_X_API_EXCLUDE_QUOTES": os.environ["X_API_EXCLUDE_QUOTES"],
+    "XMON_X_API_SINCE_ID_ENABLED": os.environ["X_API_SINCE_ID_ENABLED"],
     "XMON_X_API_QUERY_TIMEOUT_MS": os.environ["X_API_QUERY_TIMEOUT_MS"],
     "XMON_X_API_REQUEST_PAUSE_MS": os.environ["X_API_REQUEST_PAUSE_MS"],
     "XMON_EMBEDDING_ENABLED": os.environ["EMBEDDING_ENABLED"],

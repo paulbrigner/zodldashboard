@@ -86,6 +86,33 @@ export type PipelineRunUpsert = {
   source?: string | null;
 };
 
+export type IngestQueryCheckpointUpsert = {
+  query_key: string;
+  collector_mode: "priority" | "discovery";
+  query_family: string;
+  query_text_hash: string;
+  query_handles_hash?: string | null;
+  since_id?: string | null;
+  last_newest_id?: string | null;
+  last_seen_at?: string | null;
+  last_run_at?: string | null;
+  last_run_status?: "ok" | "error" | null;
+};
+
+export type IngestQueryCheckpoint = {
+  query_key: string;
+  collector_mode: "priority" | "discovery";
+  query_family: string;
+  query_text_hash: string;
+  query_handles_hash: string | null;
+  since_id: string | null;
+  last_newest_id: string | null;
+  last_seen_at: string | null;
+  last_run_at: string | null;
+  last_run_status: "ok" | "error" | null;
+  updated_at: string | null;
+};
+
 export type WindowSummaryUpsert = {
   summary_key: string;
   window_type: string;

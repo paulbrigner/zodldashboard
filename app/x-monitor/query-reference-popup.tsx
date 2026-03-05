@@ -92,12 +92,18 @@ export function QueryReferencePopup() {
           <section>
             <h3>Priority mode (watchlist-driven)</h3>
             <p>
-              Priority mode uses two query families:
+              Priority mode uses three query families:
             </p>
             <pre className="query-code">(from:teammate1 OR from:ecosystem1 OR ...) -is:retweet</pre>
-            <p className="subtle-text">Teammate and ecosystem handles are captured directly (no base-term requirement).</p>
-            <pre className="query-code">(from:influencer1 OR from:influencer2 OR ...) ({PRIORITY_BASE_TERMS}) -is:retweet</pre>
-            <p className="subtle-text">Influencer handles remain term-constrained by the base terms.</p>
+            <p className="subtle-text">
+              Teammate and ecosystem handles are captured directly (no base-term requirement, includes replies).
+            </p>
+            <pre className="query-code">(from:influencer1 OR from:influencer2 OR ...) ({PRIORITY_BASE_TERMS}) -is:reply -is:retweet</pre>
+            <p className="subtle-text">Influencer top-level posts remain term-constrained by the base terms.</p>
+            <pre className="query-code">(from:influencer1 OR from:influencer2 OR ...) is:reply ({PRIORITY_BASE_TERMS}) -is:retweet</pre>
+            <p className="subtle-text">
+              Influencer replies are captured in a dedicated reply lane to avoid duplicate reads against top-level influencer queries.
+            </p>
             <p className="subtle-text">
               Current watchlist size: {totalWatchlistHandles} handles (
               {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.influencer.length} influencer,{" "}
@@ -109,6 +115,16 @@ export function QueryReferencePopup() {
             <h3>Discovery mode (keyword-driven)</h3>
             <p>Discovery mode does not use handles. It runs only the discovery base terms query.</p>
             <pre className="query-code">({DISCOVERY_BASE_TERMS})</pre>
+            <p className="subtle-text">
+              Discovery runs every 30 minutes. Priority runs every 15 minutes.
+            </p>
+          </section>
+
+          <section>
+            <h3>Incremental polling</h3>
+            <p>
+              Collector queries use per-query <code>since_id</code> checkpoints so each run fetches only newer matching posts where possible.
+            </p>
           </section>
 
           <section>

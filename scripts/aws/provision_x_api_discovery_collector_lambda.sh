@@ -7,13 +7,23 @@ set -euo pipefail
 # Override any value by exporting env vars before invoking this script.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+AWS_REGION="${AWS_REGION:-us-east-1}"
 
 export LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-xmonitor-xapi-discovery-collector}"
 export LAMBDA_ROLE_NAME="${LAMBDA_ROLE_NAME:-xmonitor-xapi-discovery-collector-role}"
-export EVENT_RULE_NAME="${EVENT_RULE_NAME:-xmonitor-xapi-discovery-collector-60m}"
-export SCHEDULE_EXPRESSION="${SCHEDULE_EXPRESSION:-rate(60 minutes)}"
+export EVENT_RULE_NAME="${EVENT_RULE_NAME:-xmonitor-xapi-discovery-collector-30m}"
+export SCHEDULE_EXPRESSION="${SCHEDULE_EXPRESSION:-rate(30 minutes)}"
 export COLLECTOR_MODE="${COLLECTOR_MODE:-discovery}"
 export COLLECTOR_SOURCE="${COLLECTOR_SOURCE:-aws-lambda-x-api-discovery}"
 export X_API_REPLY_CAPTURE_ENABLED="${X_API_REPLY_CAPTURE_ENABLED:-false}"
+export LEGACY_EVENT_RULE_NAME="${LEGACY_EVENT_RULE_NAME:-xmonitor-xapi-discovery-collector-60m}"
 
-exec "$ROOT_DIR/scripts/aws/provision_x_api_collector_lambda.sh"
+"$ROOT_DIR/scripts/aws/provision_x_api_collector_lambda.sh"
+
+if [[ "$LEGACY_EVENT_RULE_NAME" != "$EVENT_RULE_NAME" ]]; then
+  if aws --region "$AWS_REGION" events describe-rule --name "$LEGACY_EVENT_RULE_NAME" >/dev/null 2>&1; then
+    echo "==> Disabling legacy EventBridge rule: $LEGACY_EVENT_RULE_NAME"
+    aws --region "$AWS_REGION" events disable-rule --name "$LEGACY_EVENT_RULE_NAME" >/dev/null
+    aws --region "$AWS_REGION" events remove-targets --rule "$LEGACY_EVENT_RULE_NAME" --ids 1 >/dev/null 2>&1 || true
+  fi
+fi

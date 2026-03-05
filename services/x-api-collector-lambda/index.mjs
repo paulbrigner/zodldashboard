@@ -307,9 +307,27 @@ function chunkHandles(handles, chunkSize) {
   return chunks;
 }
 
-function buildPriorityQuery(handles, baseTerms, options) {
+function buildQueryPlanEntry(collectorMode, sourceQuery, family, handles, query) {
+  const sortedHandles = [...handles].map((item) => normalizeHandle(item)).filter(Boolean).sort();
+  const handlesHash = sortedHandles.length > 0 ? sha256Hex(sortedHandles.join(",")) : null;
+  const queryHash = sha256Hex(query);
+  const queryKey = sha256Hex(`${collectorMode}|${family}|${handlesHash || "-"}|${queryHash}`);
+
+  return {
+    sourceQuery,
+    family,
+    handles: sortedHandles,
+    query,
+    queryKey,
+    queryTextHash: queryHash,
+    queryHandlesHash: handlesHash,
+  };
+}
+
+function buildPriorityQuery(handles, baseTerms, options, overrides = {}) {
   const handlesExpr = handles.map((handle) => `from:${handle}`).join(" OR ");
   const clauses = [`(${handlesExpr})`, `(${baseTerms})`];
+  if (overrides.excludeReplies) clauses.push("-is:reply");
   if (options.excludeRetweets) clauses.push("-is:retweet");
   if (options.excludeQuotes) clauses.push("-is:quote");
   return clauses.join(" ");
@@ -365,12 +383,13 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
   if (collectorMode === "discovery") {
     const baseTerms = discoveryBaseTerms(config.baseTerms);
     return [
-      {
-        sourceQuery: "discovery",
-        query: buildDiscoveryQuery(baseTerms, config),
-        handles: [],
-        family: "discovery",
-      },
+      buildQueryPlanEntry(
+        collectorMode,
+        "discovery",
+        "discovery",
+        [],
+        buildDiscoveryQuery(baseTerms, config)
+      ),
     ];
   }
 
@@ -383,25 +402,35 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
     return tier === "teammate" || tier === "ecosystem";
   });
   const directCaptureChunks = chunkHandles(directCaptureHandles, config.handleChunkSize);
+  const directCaptureHandleSet = new Set(directCaptureHandles);
   for (const chunk of directCaptureChunks) {
-    queries.push({
-      sourceQuery: "priority",
-      query: buildPriorityHandlesOnlyQuery(chunk, config),
-      handles: chunk,
-      family: "priority_direct_watchlist",
-    });
+    queries.push(
+      buildQueryPlanEntry(
+        collectorMode,
+        "priority",
+        "priority_direct_watchlist",
+        chunk,
+        buildPriorityHandlesOnlyQuery(chunk, config)
+      )
+    );
   }
 
   // Influencer captures remain term-constrained to prioritize relevant topic coverage.
   const influencerHandles = handles.filter((handle) => watchlistMap[handle] === "influencer");
   const influencerChunks = chunkHandles(influencerHandles, config.handleChunkSize);
+  const shouldSplitInfluencerReplies = config.replyCaptureEnabled && config.replyMode === "term_constrained";
   for (const chunk of influencerChunks) {
-    queries.push({
-      sourceQuery: "priority",
-      query: buildPriorityQuery(chunk, config.baseTerms, config),
-      handles: chunk,
-      family: "priority_influencer_term",
-    });
+    queries.push(
+      buildQueryPlanEntry(
+        collectorMode,
+        "priority",
+        "priority_influencer_term",
+        chunk,
+        buildPriorityQuery(chunk, config.baseTerms, config, {
+          excludeReplies: shouldSplitInfluencerReplies,
+        })
+      )
+    );
   }
 
   if (!config.replyCaptureEnabled) {
@@ -416,9 +445,13 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
   if (replyMode === "selected_handles") {
     const selected = new Set(parseHandleList(process.env.XMON_X_API_REPLY_SELECTED_HANDLES));
     replyHandles = replyHandlesByTier.filter((handle) => selected.has(handle));
-    if (replyHandles.length === 0) {
-      replyMode = "off";
-    }
+  }
+
+  // Teammate/ecosystem are already captured with direct watchlist queries (including replies).
+  // Excluding them from reply-specific lanes reduces duplicate reads without dropping coverage.
+  replyHandles = replyHandles.filter((handle) => !directCaptureHandleSet.has(handle));
+  if (replyHandles.length === 0) {
+    replyMode = "off";
   }
 
   if (replyMode === "off") {
@@ -429,21 +462,27 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
   for (const chunk of replyChunks) {
     if (chunk.length === 0) continue;
     if (replyMode === "selected_handles") {
-      queries.push({
-        sourceQuery: "priority_reply_selected",
-        query: buildReplySelectedHandlesQuery(chunk, config),
-        handles: chunk,
-        family: "priority_reply_selected",
-      });
+      queries.push(
+        buildQueryPlanEntry(
+          collectorMode,
+          "priority_reply_selected",
+          "priority_reply_selected",
+          chunk,
+          buildReplySelectedHandlesQuery(chunk, config)
+        )
+      );
       continue;
     }
 
-    queries.push({
-      sourceQuery: "priority_reply_term",
-      query: buildReplyTermConstrainedQuery(chunk, config.baseTerms, config),
-      handles: chunk,
-      family: "priority_reply_term",
-    });
+    queries.push(
+      buildQueryPlanEntry(
+        collectorMode,
+        "priority_reply_term",
+        "priority_reply_term",
+        chunk,
+        buildReplyTermConstrainedQuery(chunk, config.baseTerms, config)
+      )
+    );
   }
 
   return queries;
@@ -480,6 +519,7 @@ function getConfig() {
     langAllowlist: new Set(parseHandleList(process.env.XMON_X_API_LANG_ALLOWLIST || "en")),
     ingestBatchSize: asPositiveInt(process.env.XMON_INGEST_BATCH_SIZE, 200),
     requestPauseMs: asPositiveInt(process.env.XMON_X_API_REQUEST_PAUSE_MS, 200),
+    sinceIdEnabled: asBool(process.env.XMON_X_API_SINCE_ID_ENABLED, true),
     embeddingEnabled: asBool(process.env.XMON_EMBEDDING_ENABLED, true),
     embeddingBaseUrl: (asString(process.env.XMONITOR_EMBEDDING_BASE_URL) || DEFAULT_EMBEDDING_BASE_URL).replace(/\/+$/, ""),
     embeddingModel: asString(process.env.XMONITOR_EMBEDDING_MODEL) || DEFAULT_EMBEDDING_MODEL,
@@ -1479,13 +1519,114 @@ async function fetchJsonWithTimeout(url, options, timeoutMs) {
   }
 }
 
-function buildSearchUrl(config, query, nextToken) {
+function compareStatusIds(a, b) {
+  const left = asString(a);
+  const right = asString(b);
+  if (!left && !right) return 0;
+  if (!left) return -1;
+  if (!right) return 1;
+
+  if (/^\d+$/.test(left) && /^\d+$/.test(right)) {
+    try {
+      const l = BigInt(left);
+      const r = BigInt(right);
+      if (l === r) return 0;
+      return l > r ? 1 : -1;
+    } catch {
+      // fall through to lexicographic compare
+    }
+  }
+
+  if (left === right) return 0;
+  return left > right ? 1 : -1;
+}
+
+function maxStatusId(a, b) {
+  return compareStatusIds(a, b) >= 0 ? asString(a) || null : asString(b) || null;
+}
+
+async function lookupQueryCheckpointState(config, queryPlan, collectorMode) {
+  if (!config.sinceIdEnabled || queryPlan.length === 0) {
+    return { skipped: true, reason: "since_id_disabled", byQueryKey: new Map(), known_count: 0 };
+  }
+
+  const queryKeys = [...new Set(queryPlan.map((item) => asString(item.queryKey)).filter(Boolean))];
+  if (queryKeys.length === 0) {
+    return { skipped: true, reason: "no_query_keys", byQueryKey: new Map(), known_count: 0 };
+  }
+
+  const response = await postJsonWithTimeout(
+    `${config.ingestApiBaseUrl}/ingest/query-state/lookup`,
+    config.ingestApiKey,
+    { collector_mode: collectorMode, query_keys: queryKeys },
+    config.ingestTimeoutMs
+  );
+  const items = Array.isArray(response?.items) ? response.items : [];
+  const byQueryKey = new Map();
+  for (const item of items) {
+    const queryKey = asString(item?.query_key);
+    if (!queryKey) continue;
+    byQueryKey.set(queryKey, {
+      query_key: queryKey,
+      collector_mode: asString(item?.collector_mode) || collectorMode,
+      query_family: asString(item?.query_family) || "",
+      query_text_hash: asString(item?.query_text_hash) || "",
+      query_handles_hash: asString(item?.query_handles_hash) || null,
+      since_id: asString(item?.since_id) || null,
+      last_newest_id: asString(item?.last_newest_id) || null,
+      last_seen_at: asString(item?.last_seen_at) || null,
+      last_run_at: asString(item?.last_run_at) || null,
+      last_run_status: asString(item?.last_run_status) || null,
+    });
+  }
+
+  return {
+    skipped: false,
+    reason: null,
+    byQueryKey,
+    known_count: byQueryKey.size,
+  };
+}
+
+async function upsertQueryCheckpointState(config, items) {
+  if (!config.sinceIdEnabled || items.length === 0) {
+    return {
+      skipped: true,
+      reason: config.sinceIdEnabled ? "no_items" : "since_id_disabled",
+      inserted: 0,
+      updated: 0,
+      skipped_items: 0,
+      errors: [],
+    };
+  }
+
+  const response = await postJsonWithTimeout(
+    `${config.ingestApiBaseUrl}/ingest/query-state/batch`,
+    config.ingestApiKey,
+    { items },
+    config.ingestTimeoutMs
+  );
+
+  return {
+    skipped: false,
+    reason: null,
+    inserted: coerceInt(response?.inserted),
+    updated: coerceInt(response?.updated),
+    skipped_items: coerceInt(response?.skipped),
+    errors: Array.isArray(response?.errors) ? response.errors : [],
+  };
+}
+
+function buildSearchUrl(config, query, sinceId, nextToken) {
   const url = new URL(`${config.xApiBaseUrl}/tweets/search/recent`);
   url.searchParams.set("query", query);
   url.searchParams.set("max_results", String(config.maxResultsPerPage));
   url.searchParams.set("tweet.fields", "author_id,created_at,lang,public_metrics,referenced_tweets");
   url.searchParams.set("user.fields", "id,name,username");
   url.searchParams.set("expansions", "author_id");
+  if (sinceId) {
+    url.searchParams.set("since_id", sinceId);
+  }
   if (nextToken) {
     url.searchParams.set("next_token", nextToken);
   }
@@ -1570,9 +1711,10 @@ function shouldKeepTweet(tweet, user, watchlistMap, config, counters, collectorM
   return true;
 }
 
-async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
+async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, checkpointByKey = new Map()) {
   const seenAtIso = nowIso();
   const aggregated = new Map();
+  const queryStateItems = [];
 
   const counters = {
     queryCount: queryPlan.length,
@@ -1588,16 +1730,24 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
     skippedMissingDiscoveryBaseTerm: 0,
     skippedMissingPriorityBaseTerm: 0,
     skippedDiscoveryNoise: 0,
+    querySinceIdApplied: 0,
+    querySinceIdMissing: 0,
     familyCounts: {},
     sourceCounts: {},
   };
 
   for (const entry of queryPlan) {
+    const existingCheckpoint = checkpointByKey.get(entry.queryKey);
+    const querySinceId = config.sinceIdEnabled ? (asString(existingCheckpoint?.since_id) || null) : null;
+    let queryNewestId = querySinceId;
+    if (querySinceId) counters.querySinceIdApplied += 1;
+    else counters.querySinceIdMissing += 1;
+
     let nextToken = null;
     let page = 0;
 
     do {
-      const url = buildSearchUrl(config, entry.query, nextToken);
+      const url = buildSearchUrl(config, entry.query, querySinceId, nextToken);
       const payload = await fetchJsonWithTimeout(
         url,
         {
@@ -1613,12 +1763,14 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
 
       counters.pageCount += 1;
       page += 1;
+      queryNewestId = maxStatusId(queryNewestId, asString(payload?.meta?.newest_id) || null);
 
       const userMap = getUserMap(payload);
       const tweets = Array.isArray(payload?.data) ? payload.data : [];
       counters.rawTweets += tweets.length;
 
       for (const tweet of tweets) {
+        queryNewestId = maxStatusId(queryNewestId, asString(tweet?.id) || null);
         const user = userMap.get(String(tweet.author_id));
         if (!shouldKeepTweet(tweet, user, watchlistMap, config, counters, collectorMode)) continue;
 
@@ -1679,12 +1831,26 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
         await sleep(config.requestPauseMs);
       }
     } while (nextToken);
+
+    queryStateItems.push({
+      query_key: entry.queryKey,
+      collector_mode: collectorMode,
+      query_family: entry.family,
+      query_text_hash: entry.queryTextHash,
+      query_handles_hash: entry.queryHandlesHash,
+      since_id: queryNewestId || querySinceId || null,
+      last_newest_id: queryNewestId || null,
+      last_seen_at: seenAtIso,
+      last_run_at: seenAtIso,
+      last_run_status: "ok",
+    });
   }
 
   counters.uniqueTweets = aggregated.size;
   return {
     seenAtIso,
     posts: Array.from(aggregated.values()),
+    queryStateItems,
     counters,
   };
 }
@@ -1938,6 +2104,9 @@ function buildRunNote(config, counters, posts, collectorMode) {
     `significant=${significantCount}`,
     `reply_enabled=${replyEnabledForRun ? 1 : 0}`,
     `reply_mode=${replyEnabledForRun ? config.replyMode : "off"}`,
+    `since_id_enabled=${config.sinceIdEnabled ? 1 : 0}`,
+    `since_id_applied=${counters.querySinceIdApplied}`,
+    `since_id_missing=${counters.querySinceIdMissing}`,
     `skipped_lang=${counters.skippedLang}`,
     `skipped_non_watchlist=${counters.skippedNonWatchlist}`,
     `skipped_keyword_omit=${counters.skippedKeywordOmit}`,
@@ -1982,7 +2151,20 @@ async function ingestRun(config, counters, posts, dryRun, collectorMode) {
   return { skipped: false, response, payload: runPayload };
 }
 
-function summarizeResult(config, queryPlan, counters, posts, ingestResult, embeddingResult, runResult, summaryResult, dryRun, collectorMode) {
+function summarizeResult(
+  config,
+  queryPlan,
+  counters,
+  posts,
+  ingestResult,
+  embeddingResult,
+  queryStateLookupResult,
+  queryStateIngestResult,
+  runResult,
+  summaryResult,
+  dryRun,
+  collectorMode
+) {
   return {
     ok: true,
     collector_enabled: config.collectorEnabled,
@@ -2003,6 +2185,11 @@ function summarizeResult(config, queryPlan, counters, posts, ingestResult, embed
     },
     ingest: ingestResult,
     embeddings: embeddingResult,
+    query_state: {
+      since_id_enabled: config.sinceIdEnabled,
+      lookup: queryStateLookupResult,
+      ingest: queryStateIngestResult,
+    },
     run: runResult,
     summaries: summaryResult,
   };
@@ -2037,7 +2224,30 @@ export async function handler(event = {}) {
     throw new Error("query plan is empty");
   }
 
-  const { posts, counters } = await runSearchPlan(config, watchlistMap, queryPlan, collectorMode);
+  let queryStateLookupResult = {
+    skipped: true,
+    reason: config.sinceIdEnabled ? "not_attempted" : "since_id_disabled",
+    known_count: 0,
+  };
+
+  let checkpointByKey = new Map();
+  if (config.sinceIdEnabled && config.writeEnabled && config.ingestApiKey) {
+    const lookup = await lookupQueryCheckpointState(config, queryPlan, collectorMode);
+    queryStateLookupResult = {
+      skipped: lookup.skipped,
+      reason: lookup.reason,
+      known_count: lookup.known_count,
+    };
+    checkpointByKey = lookup.byQueryKey;
+  }
+
+  const { posts, counters, queryStateItems } = await runSearchPlan(
+    config,
+    watchlistMap,
+    queryPlan,
+    collectorMode,
+    checkpointByKey
+  );
 
   let ingestResult = {
     skipped: true,
@@ -2150,6 +2360,18 @@ export async function handler(event = {}) {
     };
   }
 
+  let queryStateIngestResult = {
+    skipped: true,
+    reason: dryRun ? "dry_run" : "writes_disabled",
+    inserted: 0,
+    updated: 0,
+    skipped_items: 0,
+    errors: [],
+  };
+  if (!dryRun && config.writeEnabled && config.sinceIdEnabled) {
+    queryStateIngestResult = await upsertQueryCheckpointState(config, queryStateItems);
+  }
+
   const runResult = await ingestRun(config, counters, posts, dryRun, collectorMode);
   let summaryResult = { skipped: true, reason: "not_attempted", windows: [] };
   try {
@@ -2170,6 +2392,8 @@ export async function handler(event = {}) {
     posts,
     ingestResult,
     embeddingResult,
+    queryStateLookupResult,
+    queryStateIngestResult,
     runResult,
     summaryResult,
     dryRun,

@@ -15,6 +15,8 @@ import type {
   FeedItem,
   FeedQuery,
   FeedResponse,
+  IngestQueryCheckpoint,
+  IngestQueryCheckpointUpsert,
   MetricsSnapshotUpsert,
   NarrativeShiftUpsert,
   PipelineRunUpsert,
@@ -122,6 +124,22 @@ function rowToWindowSummary(row: QueryResultRow): WindowSummary {
     post_count: Number(row.post_count || 0),
     significant_count: Number(row.significant_count || 0),
     summary_text: String(row.summary_text || ""),
+  };
+}
+
+function rowToIngestQueryCheckpoint(row: QueryResultRow): IngestQueryCheckpoint {
+  return {
+    query_key: String(row.query_key),
+    collector_mode: String(row.collector_mode) as "priority" | "discovery",
+    query_family: String(row.query_family),
+    query_text_hash: String(row.query_text_hash),
+    query_handles_hash: row.query_handles_hash ? String(row.query_handles_hash) : null,
+    since_id: row.since_id ? String(row.since_id) : null,
+    last_newest_id: row.last_newest_id ? String(row.last_newest_id) : null,
+    last_seen_at: toIso(row.last_seen_at),
+    last_run_at: toIso(row.last_run_at),
+    last_run_status: row.last_run_status ? String(row.last_run_status) as "ok" | "error" : null,
+    updated_at: toIso(row.updated_at),
   };
 }
 
@@ -425,6 +443,92 @@ export async function upsertPipelineRun(item: PipelineRunUpsert): Promise<BatchU
   } catch (error) {
     result.errors.push({ index: 0, message: errorMessage(error) });
     result.skipped = 1;
+  }
+
+  return result;
+}
+
+export async function getIngestQueryCheckpoints(queryKeys: string[]): Promise<IngestQueryCheckpoint[]> {
+  const normalizedKeys = [...new Set(queryKeys.map((item) => String(item || "").trim()).filter(Boolean))];
+  if (normalizedKeys.length === 0) return [];
+
+  const pool = getDbPool();
+  const result = await pool.query(
+    `
+      SELECT
+        query_key,
+        collector_mode,
+        query_family,
+        query_text_hash,
+        query_handles_hash,
+        since_id,
+        last_newest_id,
+        last_seen_at,
+        last_run_at,
+        last_run_status,
+        updated_at
+      FROM ingest_query_checkpoints
+      WHERE query_key = ANY($1::text[])
+    `,
+    [normalizedKeys]
+  );
+
+  return result.rows.map(rowToIngestQueryCheckpoint);
+}
+
+export async function upsertIngestQueryCheckpoints(items: IngestQueryCheckpointUpsert[]): Promise<BatchUpsertResult> {
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO ingest_query_checkpoints(
+      query_key,
+      collector_mode,
+      query_family,
+      query_text_hash,
+      query_handles_hash,
+      since_id,
+      last_newest_id,
+      last_seen_at,
+      last_run_at,
+      last_run_status
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (query_key) DO UPDATE SET
+      collector_mode = EXCLUDED.collector_mode,
+      query_family = EXCLUDED.query_family,
+      query_text_hash = EXCLUDED.query_text_hash,
+      query_handles_hash = EXCLUDED.query_handles_hash,
+      since_id = EXCLUDED.since_id,
+      last_newest_id = EXCLUDED.last_newest_id,
+      last_seen_at = EXCLUDED.last_seen_at,
+      last_run_at = EXCLUDED.last_run_at,
+      last_run_status = EXCLUDED.last_run_status,
+      updated_at = now()
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.query_key,
+        item.collector_mode,
+        item.query_family,
+        item.query_text_hash,
+        item.query_handles_hash ?? null,
+        item.since_id ?? null,
+        item.last_newest_id ?? null,
+        item.last_seen_at ?? null,
+        item.last_run_at ?? null,
+        item.last_run_status ?? null,
+      ]);
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
   }
 
   return result;

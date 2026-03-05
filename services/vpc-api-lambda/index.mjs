@@ -128,6 +128,7 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "geo_bush1",
   "lite_saylor",
   "web3wildwatch",
+  "voltage_ixr",
 ];
 
 let pool;
@@ -485,7 +486,11 @@ function normalizePath(path) {
 }
 
 function isIngestPath(path) {
-  return path === "/v1/ingest/runs" || /^\/v1\/ingest\/[^/]+\/batch$/.test(path);
+  return (
+    path === "/v1/ingest/runs" ||
+    path === "/v1/ingest/query-state/lookup" ||
+    /^\/v1\/ingest\/[^/]+\/batch$/.test(path)
+  );
 }
 
 function isOpsPath(path) {
@@ -1301,6 +1306,64 @@ function parsePipelineRunUpsert(value) {
       reported_count: asInteger(value.reported_count) ?? 0,
       note: asNullableString(value.note),
       source: asNullableString(value.source) ?? "local-dispatcher",
+    },
+  };
+}
+
+function parseIngestQueryCheckpointLookup(value) {
+  if (!isRecord(value)) return { ok: false, error: "payload must be an object" };
+  const queryKeys = asStringArray(value.query_keys);
+  if (!queryKeys) {
+    return { ok: false, error: "query_keys must be an array of strings" };
+  }
+  if (queryKeys.length === 0) {
+    return { ok: false, error: "query_keys must not be empty" };
+  }
+
+  const normalized = [...new Set(queryKeys.map((item) => item.trim()).filter(Boolean))];
+  if (normalized.length === 0) {
+    return { ok: false, error: "query_keys must contain at least one non-empty key" };
+  }
+  return { ok: true, query_keys: normalized };
+}
+
+function parseIngestQueryCheckpointUpsert(value) {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const queryKey = asString(value.query_key);
+  const collectorMode = asString(value.collector_mode)?.toLowerCase();
+  const queryFamily = asString(value.query_family);
+  const queryTextHash = asString(value.query_text_hash);
+  const queryHandlesHash = asNullableString(value.query_handles_hash);
+  const sinceId = asNullableString(value.since_id);
+  const lastNewestId = asNullableString(value.last_newest_id);
+  const lastSeenAt = asIsoTimestamp(value.last_seen_at) ?? null;
+  const lastRunAt = asIsoTimestamp(value.last_run_at) ?? null;
+  const lastRunStatusRaw = asNullableString(value.last_run_status)?.toLowerCase() ?? null;
+
+  if (!queryKey || !collectorMode || !queryFamily || !queryTextHash) {
+    return { ok: false, error: "query_key, collector_mode, query_family, and query_text_hash are required" };
+  }
+  if (collectorMode !== "priority" && collectorMode !== "discovery") {
+    return { ok: false, error: "collector_mode must be one of priority, discovery" };
+  }
+  if (lastRunStatusRaw && lastRunStatusRaw !== "ok" && lastRunStatusRaw !== "error") {
+    return { ok: false, error: "last_run_status must be one of ok, error" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      query_key: queryKey,
+      collector_mode: collectorMode,
+      query_family: queryFamily,
+      query_text_hash: queryTextHash,
+      query_handles_hash: queryHandlesHash ?? null,
+      since_id: sinceId ?? null,
+      last_newest_id: lastNewestId ?? null,
+      last_seen_at: lastSeenAt,
+      last_run_at: lastRunAt,
+      last_run_status: lastRunStatusRaw ?? null,
     },
   };
 }
@@ -2244,6 +2307,105 @@ async function upsertPipelineRun(item) {
   } catch (error) {
     result.errors.push({ index: 0, message: errorMessage(error) });
     result.skipped = 1;
+  }
+
+  return result;
+}
+
+async function getIngestQueryCheckpoints(queryKeys) {
+  const normalizedKeys = [...new Set((Array.isArray(queryKeys) ? queryKeys : [])
+    .map((item) => asString(item))
+    .filter(Boolean))];
+  if (normalizedKeys.length === 0) return [];
+
+  const db = getPool();
+  const result = await db.query(
+    `
+      SELECT
+        query_key,
+        collector_mode,
+        query_family,
+        query_text_hash,
+        query_handles_hash,
+        since_id,
+        last_newest_id,
+        last_seen_at,
+        last_run_at,
+        last_run_status,
+        updated_at
+      FROM ingest_query_checkpoints
+      WHERE query_key = ANY($1::text[])
+    `,
+    [normalizedKeys]
+  );
+  return result.rows.map((row) => ({
+    query_key: String(row.query_key),
+    collector_mode: String(row.collector_mode),
+    query_family: String(row.query_family),
+    query_text_hash: String(row.query_text_hash),
+    query_handles_hash: row.query_handles_hash ? String(row.query_handles_hash) : null,
+    since_id: row.since_id ? String(row.since_id) : null,
+    last_newest_id: row.last_newest_id ? String(row.last_newest_id) : null,
+    last_seen_at: toIso(row.last_seen_at),
+    last_run_at: toIso(row.last_run_at),
+    last_run_status: row.last_run_status ? String(row.last_run_status) : null,
+    updated_at: toIso(row.updated_at),
+  }));
+}
+
+async function upsertIngestQueryCheckpoints(items) {
+  const result = buildBatchResult(items.length);
+  const sql = `
+    INSERT INTO ingest_query_checkpoints(
+      query_key,
+      collector_mode,
+      query_family,
+      query_text_hash,
+      query_handles_hash,
+      since_id,
+      last_newest_id,
+      last_seen_at,
+      last_run_at,
+      last_run_status
+    )
+    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+    ON CONFLICT (query_key) DO UPDATE SET
+      collector_mode = EXCLUDED.collector_mode,
+      query_family = EXCLUDED.query_family,
+      query_text_hash = EXCLUDED.query_text_hash,
+      query_handles_hash = EXCLUDED.query_handles_hash,
+      since_id = EXCLUDED.since_id,
+      last_newest_id = EXCLUDED.last_newest_id,
+      last_seen_at = EXCLUDED.last_seen_at,
+      last_run_at = EXCLUDED.last_run_at,
+      last_run_status = EXCLUDED.last_run_status,
+      updated_at = now()
+    RETURNING (xmax = 0) AS inserted
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const inserted = await runUpsert(sql, [
+        item.query_key,
+        item.collector_mode,
+        item.query_family,
+        item.query_text_hash,
+        item.query_handles_hash ?? null,
+        item.since_id ?? null,
+        item.last_newest_id ?? null,
+        item.last_seen_at ?? null,
+        item.last_run_at ?? null,
+        item.last_run_status ?? null,
+      ]);
+      if (inserted.inserted) {
+        result.inserted += 1;
+      } else {
+        result.updated += 1;
+      }
+    } catch (error) {
+      result.errors.push({ index, message: errorMessage(error) });
+      result.skipped += 1;
+    }
   }
 
   return result;
@@ -5660,6 +5822,29 @@ async function handleIngestRuns(event) {
   }
 }
 
+async function handleIngestQueryStateLookup(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsed = parseIngestQueryCheckpointLookup(parsedBody.body);
+  if (!parsed.ok) {
+    return jsonError(parsed.error, 400);
+  }
+
+  try {
+    const items = await getIngestQueryCheckpoints(parsed.query_keys);
+    return jsonOk({ items });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to lookup query checkpoints", 503);
+  }
+}
+
 export async function sqsHandler(event) {
   const records = Array.isArray(event?.Records) ? event.Records : [];
   const failures = [];
@@ -5888,6 +6073,19 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/ingest/runs") {
     return handleIngestRuns(event);
+  }
+
+  if (method === "POST" && path === "/v1/ingest/query-state/lookup") {
+    return handleIngestQueryStateLookup(event);
+  }
+
+  if (method === "POST" && path === "/v1/ingest/query-state/batch") {
+    return handleIngestBatch(
+      event,
+      parseIngestQueryCheckpointUpsert,
+      upsertIngestQueryCheckpoints,
+      "failed to upsert query checkpoints"
+    );
   }
 
   return jsonError("not found", 404);

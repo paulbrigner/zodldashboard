@@ -9,7 +9,7 @@ This runbook describes the active production architecture and operational contro
 Primary write path (AWS-only):
 1. EventBridge triggers scheduled collector Lambdas:
    - `xmonitor-xapi-priority-collector` (`rate(15 minutes)`)
-   - `xmonitor-xapi-discovery-collector` (`rate(60 minutes)`)
+   - `xmonitor-xapi-discovery-collector` (`rate(30 minutes)`)
 2. Collector Lambda fetches X posts from X API.
 3. Collector applies normalization, language/noise gates, omit-handle rules, and significance scoring.
 4. Collector ingests to hosted API (`/api/v1/ingest/*`) using shared-secret auth.
@@ -39,7 +39,7 @@ Region: `us-east-1`
 - Priority collector Lambda: `xmonitor-xapi-priority-collector`
 - Discovery collector Lambda: `xmonitor-xapi-discovery-collector`
 - Priority EventBridge rule: `xmonitor-xapi-priority-collector-15m`
-- Discovery EventBridge rule: `xmonitor-xapi-discovery-collector-60m`
+- Discovery EventBridge rule: `xmonitor-xapi-discovery-collector-30m`
 - Lambda SG: `sg-0f09791e38a9f68d3`
 - RDS SG: `sg-081e2d8e12101d117`
 - DB/app secret: `xmonitor/rds/app`
@@ -120,7 +120,7 @@ aws --profile zodldashboard --region us-east-1 events describe-rule \
   --query '{Name:Name,State:State,ScheduleExpression:ScheduleExpression}'
 
 aws --profile zodldashboard --region us-east-1 events describe-rule \
-  --name xmonitor-xapi-discovery-collector-60m \
+  --name xmonitor-xapi-discovery-collector-30m \
   --query '{Name:Name,State:State,ScheduleExpression:ScheduleExpression}'
 ```
 
@@ -130,7 +130,7 @@ aws --profile zodldashboard --region us-east-1 events describe-rule \
 aws --profile zodldashboard --region us-east-1 events disable-rule \
   --name xmonitor-xapi-priority-collector-15m
 aws --profile zodldashboard --region us-east-1 events disable-rule \
-  --name xmonitor-xapi-discovery-collector-60m
+  --name xmonitor-xapi-discovery-collector-30m
 ```
 
 ### Re-enable collectors
@@ -139,7 +139,7 @@ aws --profile zodldashboard --region us-east-1 events disable-rule \
 aws --profile zodldashboard --region us-east-1 events enable-rule \
   --name xmonitor-xapi-priority-collector-15m
 aws --profile zodldashboard --region us-east-1 events enable-rule \
-  --name xmonitor-xapi-discovery-collector-60m
+  --name xmonitor-xapi-discovery-collector-30m
 ```
 
 ### One-shot collector invoke

@@ -55,6 +55,7 @@ Primary controls:
 - `XMON_X_API_MAX_RESULTS_PER_QUERY` (default `100`)
 - `XMON_X_API_MAX_PAGES_PER_QUERY` (default `2`)
 - `XMON_X_API_HANDLE_CHUNK_SIZE` (default `16`)
+- `XMON_X_API_SINCE_ID_ENABLED` (default `true`)
 - `XMON_X_API_QUERY_TIMEOUT_MS` (default `15000`)
 - `XMON_X_API_REQUEST_PAUSE_MS` (default `200`)
 
@@ -127,7 +128,7 @@ aws --profile zodldashboard --region us-east-1 events describe-rule \
   --name xmonitor-xapi-priority-collector-15m \
   --query '{State:State,ScheduleExpression:ScheduleExpression}'
 aws --profile zodldashboard --region us-east-1 events describe-rule \
-  --name xmonitor-xapi-discovery-collector-60m \
+  --name xmonitor-xapi-discovery-collector-30m \
   --query '{State:State,ScheduleExpression:ScheduleExpression}'
 ```
 
