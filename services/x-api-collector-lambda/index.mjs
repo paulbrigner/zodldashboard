@@ -1583,6 +1583,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
     skippedRetweet: 0,
     skippedNonWatchlist: 0,
     skippedLang: 0,
+    skippedDiscoveryWatchlist: 0,
     skippedKeywordOmit: 0,
     skippedMissingDiscoveryBaseTerm: 0,
     skippedMissingPriorityBaseTerm: 0,
@@ -1630,6 +1631,10 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
           !hasConfiguredBaseTerm(record.body_text || "", config.baseTermRegex)
         ) {
           counters.skippedMissingPriorityBaseTerm += 1;
+          continue;
+        }
+        if (collectorMode === "discovery" && watchTier) {
+          counters.skippedDiscoveryWatchlist += 1;
           continue;
         }
         if (collectorMode === "discovery" && !watchTier) {
