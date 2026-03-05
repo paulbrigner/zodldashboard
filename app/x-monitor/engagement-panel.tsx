@@ -15,6 +15,7 @@ type EngagementPanelProps = {
 };
 
 const numberFormatter = new Intl.NumberFormat("en-US");
+const MAX_TREND_BUCKETS = 48;
 
 function formatNumber(value: number): string {
   return numberFormatter.format(Math.round(value));
@@ -36,24 +37,41 @@ function truncate(text: string | null | undefined, maxChars = 130): string {
   return `${source.slice(0, maxChars - 1)}…`;
 }
 
+function compressTrendBuckets(buckets: EngagementResponse["buckets"], maxBuckets: number): EngagementResponse["buckets"] {
+  if (buckets.length <= maxBuckets) return buckets;
+  const groupSize = Math.ceil(buckets.length / maxBuckets);
+  const compressed: EngagementResponse["buckets"] = [];
+  for (let start = 0; start < buckets.length; start += groupSize) {
+    const slice = buckets.slice(start, start + groupSize);
+    if (slice.length === 0) continue;
+    const first = slice[0];
+    const last = slice[slice.length - 1];
+    compressed.push({
+      bucket_start: first.bucket_start,
+      bucket_end: last.bucket_end,
+      post_count: slice.reduce((sum, item) => sum + item.post_count, 0),
+      significant_count: slice.reduce((sum, item) => sum + item.significant_count, 0),
+      likes: slice.reduce((sum, item) => sum + item.likes, 0),
+      reposts: slice.reduce((sum, item) => sum + item.reposts, 0),
+      replies: slice.reduce((sum, item) => sum + item.replies, 0),
+      views: slice.reduce((sum, item) => sum + item.views, 0),
+      engagement_score: slice.reduce((sum, item) => sum + item.engagement_score, 0),
+    });
+  }
+  return compressed;
+}
+
 export function EngagementPanel({ payload, error, rangeOptions }: EngagementPanelProps) {
   const totals = payload?.totals || null;
-  const buckets = payload?.buckets || [];
+  const buckets = compressTrendBuckets(payload?.buckets || [], MAX_TREND_BUCKETS);
   const topHandles = payload?.top_handles || [];
   const topPosts = payload?.top_posts || [];
   const maxBucketScore = Math.max(1, ...buckets.map((item) => item.engagement_score || 0));
   const labelStep = Math.max(1, Math.ceil(buckets.length / 6));
   const trendCount = Math.max(1, buckets.length);
-  const trendScrollable = buckets.length > 36;
-  const trendBarsStyle = trendScrollable
-    ? ({
-        gridTemplateColumns: `repeat(${trendCount}, 24px)`,
-        width: `${trendCount * 24}px`,
-      } as CSSProperties)
-    : ({
-        gridTemplateColumns: `repeat(${trendCount}, minmax(0, 1fr))`,
-        width: "100%",
-      } as CSSProperties);
+  const trendBarsStyle = {
+    gridTemplateColumns: `repeat(${trendCount}, minmax(0, 1fr))`,
+  } as CSSProperties;
 
   return (
     <details className="engagement-panel">

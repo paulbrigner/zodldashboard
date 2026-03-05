@@ -396,7 +396,7 @@ p {
   border-radius: 0.75rem;
   background: #ffffff;
   padding: 0.7rem 0.7rem 0.4rem;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   max-width: 100%;
   min-width: 0;
