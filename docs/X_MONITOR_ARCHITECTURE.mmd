@@ -1,0 +1,57 @@
+flowchart LR
+  U["User (browser)"] --> W["Amplify-hosted Next.js app (zodldashboard.com)"]
+
+  subgraph Auth["Authentication"]
+    NA["NextAuth gate"]
+    G1["Google OAuth (zodl.com internal)"]
+    G2["Google OAuth (guest provider + email allowlist)"]
+    LB["Local bypass gate (IP allowlist + kill switch)"]
+  end
+
+  W --> NA
+  NA --> G1
+  NA --> G2
+  NA --> LB
+
+  W --> P["Next.js API proxy (/api/v1/*)"]
+  P --> V["VPC API Lambda (xmonitor-vpc-api, /v1/*)"]
+  V --> D["RDS PostgreSQL (system of record)"]
+
+  subgraph Ingest["Server-side ingestion"]
+    EB1["EventBridge rule (15m)"]
+    EB2["EventBridge rule (60m)"]
+    C1["Priority collector Lambda (xmonitor-xapi-priority-collector)"]
+    C2["Discovery collector Lambda (xmonitor-xapi-discovery-collector)"]
+    X["X API v2"]
+    E["Embedding API (Venice, bge-m3)"]
+    S["Summary LLM (rolling 2h/12h)"]
+  end
+
+  EB1 --> C1
+  EB2 --> C2
+  C1 --> X
+  C2 --> X
+  C1 --> E
+  C2 --> E
+  C2 --> S
+  C1 --> P
+  C2 --> P
+
+  subgraph Answer["Async grounded answer mode"]
+    CJ["POST /query/compose/jobs"]
+    Q["SQS queue (xmonitor-compose-jobs)"]
+    WKR["Compose worker Lambda (xmonitor-vpc-compose-worker)"]
+    CM["Compose model API"]
+    PG["GET /query/compose/jobs/{jobId} (poll)"]
+  end
+
+  W --> CJ
+  CJ --> V
+  V --> D
+  V --> Q
+  Q --> WKR
+  WKR --> D
+  WKR --> CM
+  W --> PG
+  PG --> V
+  V --> D

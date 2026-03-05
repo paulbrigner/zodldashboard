@@ -1,0 +1,37 @@
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant UI as X Monitor UI
+  participant PX as Next.js API proxy (/api/v1)
+  participant API as VPC API Lambda (/v1)
+  participant DB as RDS PostgreSQL
+  participant Q as SQS queue
+  participant W as Compose worker Lambda
+  participant CM as Compose model API
+
+  U->>UI: Open X Monitor
+  UI->>PX: GET /feed or POST /query/semantic
+  PX->>API: Forward request
+  API->>DB: Read feed/semantic candidates
+  API-->>PX: Results
+  PX-->>UI: Posts + filters + summaries
+
+  U->>UI: Generate answer (Answer Mode)
+  UI->>PX: POST /query/compose/jobs
+  PX->>API: Create async compose job
+  API->>DB: Insert compose_jobs(status=queued)
+  API->>Q: Enqueue job_id
+  API-->>UI: 202 + job_id
+
+  loop Polling
+    UI->>PX: GET /query/compose/jobs/{jobId}
+    PX->>API: Read job status
+    API->>DB: Fetch job row
+    API-->>UI: queued/running/completed/failed
+  end
+
+  Q->>W: Deliver job
+  W->>DB: Load job + retrieval context
+  W->>CM: Generate grounded answer/draft
+  CM-->>W: Structured response
+  W->>DB: Update compose_jobs(result/status)

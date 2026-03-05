@@ -1,0 +1,30 @@
+sequenceDiagram
+  autonumber
+  participant EB as EventBridge
+  participant CL as Collector Lambda (priority/discovery)
+  participant X as X API
+  participant EMB as Embedding API
+  participant API as VPC API Lambda (/v1)
+  participant DB as RDS PostgreSQL
+  participant SLM as Summary LLM
+
+  EB->>CL: Invoke scheduled run (15m/60m)
+  CL->>X: Search tweets by query plan
+  X-->>CL: Tweets + users + metrics
+  CL->>CL: Normalize, dedupe, apply gates (omit/lang/noise), score significance
+  CL->>API: POST /ingest/posts/batch (x-api-key)
+  API->>DB: Upsert posts
+  CL->>EMB: Embed selected posts
+  EMB-->>CL: Vectors
+  CL->>API: POST /ingest/embeddings/batch
+  API->>DB: Upsert embeddings
+  CL->>API: POST /ingest/runs
+  API->>DB: Upsert pipeline_runs
+
+  alt Discovery mode
+    CL->>API: GET /feed for aligned windows
+    API->>DB: Read window corpus
+    CL->>SLM: Generate rolling_2h and rolling_12h narrative summaries
+    CL->>API: POST /ingest/window-summaries/batch
+    API->>DB: Upsert window_summaries
+  end
