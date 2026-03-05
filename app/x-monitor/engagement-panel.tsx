@@ -30,6 +30,35 @@ function formatBucketLabel(iso: string): string {
   return `${month}/${day} ${hour}:00`;
 }
 
+function formatBucketLabelForRange(iso: string, rangeKey: string | undefined): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso;
+
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hour = String(date.getUTCHours()).padStart(2, "0");
+
+  if (rangeKey === "24h") {
+    return `${hour}:00`;
+  }
+  if (rangeKey === "7d" || rangeKey === "30d") {
+    return `${month}/${day}`;
+  }
+  return `${month}/${day} ${hour}:00`;
+}
+
+function buildLabelIndexSet(total: number, maxLabels = 6): Set<number> {
+  if (total <= 0) return new Set();
+  if (total <= maxLabels) return new Set(Array.from({ length: total }, (_, index) => index));
+
+  const indexes = new Set<number>([0, total - 1]);
+  for (let i = 1; i < maxLabels - 1; i += 1) {
+    const index = Math.round((i * (total - 1)) / (maxLabels - 1));
+    indexes.add(index);
+  }
+  return indexes;
+}
+
 function truncate(text: string | null | undefined, maxChars = 130): string {
   const source = (text || "").replace(/\s+/g, " ").trim();
   if (!source) return "(no text captured)";
@@ -67,7 +96,7 @@ export function EngagementPanel({ payload, error, rangeOptions }: EngagementPane
   const topHandles = payload?.top_handles || [];
   const topPosts = payload?.top_posts || [];
   const maxBucketScore = Math.max(1, ...buckets.map((item) => item.engagement_score || 0));
-  const labelStep = Math.max(1, Math.ceil(buckets.length / 6));
+  const labelIndexes = buildLabelIndexSet(buckets.length, 6);
   const trendCount = Math.max(1, buckets.length);
   const trendBarsStyle = {
     gridTemplateColumns: `repeat(${trendCount}, minmax(0, 1fr))`,
@@ -122,7 +151,7 @@ export function EngagementPanel({ payload, error, rangeOptions }: EngagementPane
               >
                 {buckets.map((bucket, index) => {
                   const heightPct = Math.max(6, Math.round((bucket.engagement_score / maxBucketScore) * 100));
-                  const showLabel = index % labelStep === 0 || index === buckets.length - 1;
+                  const showLabel = labelIndexes.has(index);
                   return (
                     <div className="engagement-trend-col" key={`${bucket.bucket_start}:${index}`}>
                       <span className="engagement-trend-bar-wrap">
@@ -134,7 +163,9 @@ export function EngagementPanel({ payload, error, rangeOptions }: EngagementPane
                           )} | posts ${bucket.post_count}`}
                         />
                       </span>
-                      <span className="engagement-trend-label">{showLabel ? formatBucketLabel(bucket.bucket_start) : ""}</span>
+                      <span className="engagement-trend-label">
+                        {showLabel ? formatBucketLabelForRange(bucket.bucket_start, payload?.scope?.range_key) : ""}
+                      </span>
                     </div>
                   );
                 })}
