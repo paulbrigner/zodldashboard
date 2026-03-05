@@ -22,3 +22,7 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 pnpm-debug.log*
+
+# local Lambda packaging artifacts
+services/vpc-api-lambda/function*.zip
+services/x-api-collector-lambda/function*.zip

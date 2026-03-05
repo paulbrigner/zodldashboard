@@ -117,6 +117,17 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "coinminerss",
   "aicryptopattern",
   "lucas_zec",
+  "iamjoeqpublic",
+  "mo30487903",
+  "obinnaumeh1",
+  "grok",
+  "ozonenkembu",
+  "richard66110384",
+  "semaaybat",
+  "imm71114749",
+  "geo_bush1",
+  "lite_saylor",
+  "web3wildwatch",
 ];
 
 let pool;
