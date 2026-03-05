@@ -34,15 +34,11 @@ const dashboards: DashboardCard[] = [
     workspaceOnly: true,
   },
   {
-    id: "placeholder-2",
-    name: "Dashboard Placeholder 2",
+    id: "placeholder",
+    name: "Dashboard Placeholder",
     description: "Reserved for a future dashboard.",
   },
-  {
-    id: "placeholder-3",
-    name: "Dashboard Placeholder 3",
-    description: "Reserved for a future dashboard.",
-  },
+
 ];
 
 export default async function HomePage() {
