@@ -29,6 +29,21 @@ import type {
 const DEFAULT_ENGAGEMENT_LOOKBACK_HOURS = 24 * 7;
 const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 30;
 const MAX_ENGAGEMENT_TOP_ITEMS = 12;
+const ENGAGEMENT_RANGE_HOURS = {
+  "24h": 24,
+  "7d": 24 * 7,
+  "30d": 24 * 30,
+} as const;
+
+type EngagementRangeKey = keyof typeof ENGAGEMENT_RANGE_HOURS;
+
+function parseEngagementRangeKey(value: string | undefined): EngagementRangeKey | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
+    return normalized;
+  }
+  return null;
+}
 
 function toIso(value: unknown): string | null {
   if (!value) return null;
@@ -756,23 +771,35 @@ function parseDateOrNull(value: string | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function normalizeEngagementRange(query: FeedQuery): { since: string; until: string; bucketHours: number } {
+function normalizeEngagementRange(
+  query: FeedQuery,
+  options: { rangeKey?: string | null } = {}
+): { since: string; until: string; bucketHours: number; rangeKey: "24h" | "7d" | "30d" | "custom" } {
   const now = new Date();
   const requestedUntil = parseDateOrNull(query.until);
   const requestedSince = parseDateOrNull(query.since);
 
   let until = requestedUntil || now;
-  let since = requestedSince || new Date(until.getTime() - DEFAULT_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000);
+  const explicitRangeKey = parseEngagementRangeKey(options.rangeKey || undefined);
+  const explicitRangeHours = explicitRangeKey ? ENGAGEMENT_RANGE_HOURS[explicitRangeKey] : null;
+  let since = requestedSince || new Date(until.getTime() - (explicitRangeHours || DEFAULT_ENGAGEMENT_LOOKBACK_HOURS) * 60 * 60 * 1000);
+  let resolvedRangeKey: "24h" | "7d" | "30d" | "custom" = explicitRangeKey || "7d";
 
   if (since > until) {
     const originalSince = since;
     since = until;
     until = originalSince;
+    resolvedRangeKey = "custom";
   }
 
   const maxLookbackMs = MAX_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000;
   if (until.getTime() - since.getTime() > maxLookbackMs) {
     since = new Date(until.getTime() - maxLookbackMs);
+    resolvedRangeKey = "custom";
+  }
+
+  if (requestedSince || requestedUntil) {
+    resolvedRangeKey = "custom";
   }
 
   const durationHours = Math.max((until.getTime() - since.getTime()) / (60 * 60 * 1000), 1);
@@ -786,6 +813,7 @@ function normalizeEngagementRange(query: FeedQuery): { since: string; until: str
     since: since.toISOString(),
     until: until.toISOString(),
     bucketHours,
+    rangeKey: resolvedRangeKey,
   };
 }
 
@@ -834,10 +862,10 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
 
 export async function getEngagement(
   query: FeedQuery,
-  options: { applyTextQuery?: boolean } = {}
+  options: { applyTextQuery?: boolean; rangeKey?: string | null } = {}
 ): Promise<EngagementResponse> {
   const pool = getDbPool();
-  const range = normalizeEngagementRange(query);
+  const range = normalizeEngagementRange(query, { rangeKey: options.rangeKey });
   const scopedQuery: FeedQuery = {
     ...query,
     since: range.since,
@@ -1038,6 +1066,7 @@ export async function getEngagement(
       since: range.since,
       until: range.until,
       bucket_hours: range.bucketHours,
+      range_key: range.rangeKey,
       text_filter_applied: options.applyTextQuery !== false,
     },
     totals,

@@ -258,6 +258,7 @@ export type EngagementResponse = {
     since: string;
     until: string;
     bucket_hours: number;
+    range_key: "24h" | "7d" | "30d" | "custom";
     text_filter_applied: boolean;
   };
   totals: EngagementTotals;

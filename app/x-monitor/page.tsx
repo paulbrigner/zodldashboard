@@ -29,6 +29,7 @@ type HomePageProps = {
 
 const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
 type SearchMode = "keyword" | "semantic";
+type EngagementRangeKey = "24h" | "7d" | "30d";
 
 const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
   rolling_2h: "2-hour rolling summary",
@@ -64,12 +65,28 @@ function parseSearchMode(value: string | string[] | undefined): SearchMode {
   return text === "keyword" ? "keyword" : "semantic";
 }
 
+function parseEngagementRange(value: string | string[] | undefined): EngagementRangeKey {
+  const text = asString(value);
+  if (text === "24h" || text === "30d") return text;
+  return "7d";
+}
+
 function buildQuery(
   params: Record<string, string | string[] | undefined>,
   nextCursor: string
 ): string {
   const query = new URLSearchParams();
-  const keys: Array<keyof typeof params> = ["search_mode", "since", "until", "tier", "handle", "significant", "q", "limit"];
+  const keys: Array<keyof typeof params> = [
+    "search_mode",
+    "since",
+    "until",
+    "tier",
+    "handle",
+    "significant",
+    "q",
+    "limit",
+    "engagement_range",
+  ];
 
   keys.forEach((key) => {
     const value = asString(params[key]);
@@ -137,7 +154,8 @@ function buildWindowSummariesApiUrl(baseUrl: string): string {
 function buildEngagementApiUrl(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
-  searchMode: SearchMode
+  searchMode: SearchMode,
+  engagementRange: EngagementRangeKey
 ): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
   const url = new URL(`${normalizedBase}/engagement`);
@@ -149,8 +167,26 @@ function buildEngagementApiUrl(
   if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
   if (query.q) url.searchParams.set("q", query.q);
   if (searchMode === "semantic") url.searchParams.set("search_mode", "semantic");
+  url.searchParams.set("engagement_range", engagementRange);
 
   return url.toString();
+}
+
+function buildEngagementRangeUrl(
+  params: Record<string, string | string[] | undefined>,
+  targetRange: EngagementRangeKey
+): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key === "cursor") continue;
+    const text = asString(value);
+    if (text) {
+      query.set(key, text);
+    }
+  }
+  query.set("engagement_range", targetRange);
+  const serialized = query.toString();
+  return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -246,9 +282,10 @@ async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummar
 async function fetchEngagementViaApi(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
-  searchMode: SearchMode
+  searchMode: SearchMode,
+  engagementRange: EngagementRangeKey
 ): Promise<EngagementResponse> {
-  const response = await fetch(buildEngagementApiUrl(baseUrl, query, searchMode), {
+  const response = await fetch(buildEngagementApiUrl(baseUrl, query, searchMode, engagementRange), {
     cache: "no-store",
   });
 
@@ -293,6 +330,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         ? "Compose mode requires XMONITOR_BACKEND_API_BASE_URL."
         : null;
   const searchMode = parseSearchMode(params.search_mode);
+  const engagementRange = parseEngagementRange(params.engagement_range);
   const useSemanticRetrieval = searchMode === "semantic" && Boolean(query.q);
   const apiBaseUrl = readApiBaseUrl();
   const refreshUrl = buildRefreshUrl(query, searchMode);
@@ -327,7 +365,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
 
     try {
-      engagement = await fetchEngagementViaApi(apiBaseUrl, query, searchMode);
+      engagement = await fetchEngagementViaApi(apiBaseUrl, query, searchMode, engagementRange);
     } catch (error) {
       engagementError = error instanceof Error ? error.message : "Failed to load engagement";
     }
@@ -349,7 +387,10 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
 
     try {
-      engagement = await getEngagement(query, { applyTextQuery: searchMode !== "semantic" });
+      engagement = await getEngagement(query, {
+        applyTextQuery: searchMode !== "semantic",
+        rangeKey: engagementRange,
+      });
     } catch (error) {
       engagementError = error instanceof Error ? error.message : "Failed to load engagement";
     }
@@ -372,6 +413,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       (query.limit && query.limit !== 50)
   );
   const hasActiveFilters = searchMode === "semantic" ? Boolean(query.q) : keywordHasActiveFilters;
+  const engagementRangeOptions = (["24h", "7d", "30d"] as const).map((range) => ({
+    key: range,
+    label: range.toUpperCase(),
+    href: buildEngagementRangeUrl(params, range),
+    active: range === engagementRange,
+  }));
 
   return (
     <main className="page feed-page">
@@ -439,7 +486,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           {summariesError ? <p className="error-text summary-error">{summariesError}</p> : null}
         </details>
 
-        <EngagementPanel error={engagementError} payload={engagement} />
+        <EngagementPanel error={engagementError} payload={engagement} rangeOptions={engagementRangeOptions} />
 
         <ComposePanel
           enabled={composePanelEnabled}

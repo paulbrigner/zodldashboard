@@ -16,6 +16,11 @@ const DEFAULT_MAX_FEED_LIMIT = 200;
 const DEFAULT_ENGAGEMENT_LOOKBACK_HOURS = 24 * 7;
 const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 30;
 const MAX_ENGAGEMENT_TOP_ITEMS = 12;
+const ENGAGEMENT_RANGE_HOURS = {
+  "24h": 24,
+  "7d": 24 * 7,
+  "30d": 24 * 30,
+};
 const DEFAULT_SEMANTIC_DEFAULT_LIMIT = 25;
 const DEFAULT_SEMANTIC_MAX_LIMIT = 100;
 const DEFAULT_SEMANTIC_MIN_SCORE = 0;
@@ -110,6 +115,7 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "nesleyfilsaime1",
   "coinminerss",
   "aicryptopattern",
+  "lucas_zec",
 ];
 
 let pool;
@@ -1456,23 +1462,40 @@ function parseDateOrNull(value) {
   return parsed;
 }
 
-function normalizeEngagementRange(query) {
+function parseEngagementRangeKey(value) {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
+    return normalized;
+  }
+  return null;
+}
+
+function normalizeEngagementRange(query, options = {}) {
   const now = new Date();
   const requestedUntil = parseDateOrNull(query.until);
   const requestedSince = parseDateOrNull(query.since);
 
   let until = requestedUntil || now;
-  let since = requestedSince || new Date(until.getTime() - DEFAULT_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000);
+  const explicitRangeKey = parseEngagementRangeKey(options.rangeKey);
+  const explicitRangeHours = explicitRangeKey ? ENGAGEMENT_RANGE_HOURS[explicitRangeKey] : null;
+  let since = requestedSince || new Date(until.getTime() - (explicitRangeHours || DEFAULT_ENGAGEMENT_LOOKBACK_HOURS) * 60 * 60 * 1000);
+  let resolvedRangeKey = explicitRangeKey || "7d";
 
   if (since > until) {
     const originalSince = since;
     since = until;
     until = originalSince;
+    resolvedRangeKey = "custom";
   }
 
   const maxLookbackMs = MAX_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000;
   if (until.getTime() - since.getTime() > maxLookbackMs) {
     since = new Date(until.getTime() - maxLookbackMs);
+    resolvedRangeKey = "custom";
+  }
+
+  if (requestedSince || requestedUntil) {
+    resolvedRangeKey = "custom";
   }
 
   const durationHours = Math.max((until.getTime() - since.getTime()) / (60 * 60 * 1000), 1);
@@ -1486,6 +1509,7 @@ function normalizeEngagementRange(query) {
     since: since.toISOString(),
     until: until.toISOString(),
     bucket_hours: bucketHours,
+    range_key: resolvedRangeKey,
   };
 }
 
@@ -4596,7 +4620,7 @@ async function getFeed(query) {
 
 async function getEngagement(query, options = {}) {
   const db = getPool();
-  const range = normalizeEngagementRange(query);
+  const range = normalizeEngagementRange(query, { rangeKey: options.rangeKey });
   const scopedQuery = {
     ...query,
     since: range.since,
@@ -4797,6 +4821,7 @@ async function getEngagement(query, options = {}) {
       since: range.since,
       until: range.until,
       bucket_hours: range.bucket_hours,
+      range_key: range.range_key,
       text_filter_applied: options.applyTextQuery !== false,
     },
     totals,
@@ -5009,10 +5034,11 @@ async function handleEngagement(event) {
 
   const query = parseFeedQuery(input);
   const searchMode = asString(firstValue(input.search_mode));
+  const engagementRange = parseEngagementRangeKey(asString(firstValue(input.engagement_range)));
   const applyTextQuery = searchMode !== "semantic";
 
   try {
-    const payload = await getEngagement(query, { applyTextQuery });
+    const payload = await getEngagement(query, { applyTextQuery, rangeKey: engagementRange });
     return jsonOk(payload);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to query engagement", 503);

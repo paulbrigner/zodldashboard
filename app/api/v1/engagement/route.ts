@@ -13,6 +13,14 @@ function firstString(value: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+function parseEngagementRange(value: string | undefined): "24h" | "7d" | "30d" | null {
+  const normalized = String(value || "").trim().toLowerCase();
+  if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
+    return normalized;
+  }
+  return null;
+}
+
 export async function GET(request: Request) {
   const proxied = await maybeProxyApiRequest(request);
   if (proxied) {
@@ -31,10 +39,14 @@ export async function GET(request: Request) {
   const query = parseFeedQuery(queryInput);
   const searchMode = firstString(queryInput.search_mode);
   const applyTextQuery = searchMode !== "semantic";
+  const engagementRange = parseEngagementRange(firstString(queryInput.engagement_range));
 
   try {
     ensureDatabaseConfigured();
-    const payload: EngagementResponse = await getEngagement(query, { applyTextQuery });
+    const payload: EngagementResponse = await getEngagement(query, {
+      applyTextQuery,
+      rangeKey: engagementRange,
+    });
     return jsonOk(payload);
   } catch (error) {
     return jsonError(error instanceof Error ? error.message : "failed to query engagement", 503);
