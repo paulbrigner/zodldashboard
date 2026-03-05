@@ -135,6 +135,7 @@ let pool;
 let summarySchemaEnsured = false;
 let composeJobsSchemaEnsured = false;
 let emailSchemaEnsured = false;
+let queryCheckpointSchemaEnsured = false;
 let sqsClient;
 let sesClient;
 
@@ -400,6 +401,14 @@ function shouldBootstrapComposeJobsSchema() {
 
 function shouldBootstrapEmailSchema() {
   const value = asString(process.env.XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP);
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function shouldBootstrapQueryStateSchema() {
+  const value = asString(process.env.XMONITOR_ENABLE_QUERY_STATE_SCHEMA_BOOTSTRAP);
   if (!value) return false;
   const normalized = value.toLowerCase();
   if (normalized === "0" || normalized === "false" || normalized === "no") return false;
@@ -1993,6 +2002,43 @@ async function ensureEmailSchema() {
   emailSchemaEnsured = true;
 }
 
+async function ensureIngestQueryCheckpointSchema() {
+  if (queryCheckpointSchemaEnsured || !shouldBootstrapQueryStateSchema()) {
+    return;
+  }
+
+  const db = getPool();
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS ingest_query_checkpoints (
+      query_key TEXT PRIMARY KEY,
+      collector_mode TEXT NOT NULL CHECK (collector_mode IN ('priority', 'discovery')),
+      query_family TEXT NOT NULL,
+      query_text_hash TEXT NOT NULL,
+      query_handles_hash TEXT,
+      since_id TEXT,
+      last_newest_id TEXT,
+      last_seen_at TIMESTAMPTZ,
+      last_run_at TIMESTAMPTZ,
+      last_run_status TEXT CHECK (last_run_status IN ('ok', 'error')),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ingest_query_checkpoints_mode_family
+      ON ingest_query_checkpoints (collector_mode, query_family);
+  `);
+
+  const grantRole = asString(process.env.XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE);
+  if (grantRole) {
+    const role = quoteIdent(grantRole);
+    await db.query(`
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE ingest_query_checkpoints TO ${role};
+    `);
+  }
+
+  queryCheckpointSchemaEnsured = true;
+}
+
 async function upsertPosts(items) {
   const result = buildBatchResult(items.length);
   result.inserted_status_ids = [];
@@ -2318,6 +2364,7 @@ async function getIngestQueryCheckpoints(queryKeys) {
     .filter(Boolean))];
   if (normalizedKeys.length === 0) return [];
 
+  await ensureIngestQueryCheckpointSchema();
   const db = getPool();
   const result = await db.query(
     `
@@ -2354,6 +2401,7 @@ async function getIngestQueryCheckpoints(queryKeys) {
 }
 
 async function upsertIngestQueryCheckpoints(items) {
+  await ensureIngestQueryCheckpointSchema();
   const result = buildBatchResult(items.length);
   const sql = `
     INSERT INTO ingest_query_checkpoints(
