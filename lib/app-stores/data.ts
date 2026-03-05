@@ -12,7 +12,7 @@ import type {
 } from "@/lib/app-stores/types";
 
 export const APP_STORES_DATASET: AppStoresDataset = {
-  generatedAt: "2026-03-05T14:20:00Z",
+  generatedAt: "2026-03-05T16:10:00Z",
   releaseTrains: [
     {
       id: "train-ios-4.7.0",
@@ -128,7 +128,7 @@ export const APP_STORES_DATASET: AppStoresDataset = {
       releaseNotesUrl: "https://github.com/paulbrigner/zodldashboard/releases/tag/v4.7.0-ios",
       whatChanged:
         "Updated privacy wording and added governance entrypoint copy; no custody model change.",
-      declarationsTouched: ["decl-apple-payments-all", "decl-apple-restricted-all"],
+      declarationsTouched: ["decl-apple-payments-all", "decl-apple-restricted-all", "decl-apple-dsa-eu"],
       assetsUsed: ["iOS screenshots set v4.7.0", "App privacy text revision 2026-03-04"],
       reviewerCaseId: "case-apple-772",
       outcome: "Pending review.",
@@ -154,6 +154,12 @@ export const APP_STORES_DATASET: AppStoresDataset = {
           id: "apple-disclosure-review",
           label: "Apple disclosures reviewed",
           status: "done",
+        },
+        {
+          id: "apple-dsa-review",
+          label: "Apple DSA trader/non-trader declaration reviewed",
+          status: "done",
+          note: "Current response: non-trader / no EU trader distribution declaration.",
         },
         {
           id: "fees-iap-analysis",
@@ -320,6 +326,35 @@ export const APP_STORES_DATASET: AppStoresDataset = {
       answersSnapshot: "Prior response references old fee disclosure language.",
       rationale: "Store metadata and declaration wording must stay synchronized.",
       sourceLinks: ["Reviewer note case-apple-772"],
+    },
+    {
+      id: "decl-apple-dsa-eu",
+      store: "apple",
+      declarationType: "Digital Services Act (DSA) trader status",
+      scope: "per_region",
+      regionCode: "EU",
+      regionLabel: "European Union",
+      status: "completed",
+      effectiveDate: "2026-03-05",
+      updateByDate: "2026-06-01",
+      requiresDocs: "no",
+      internalDetermination: "not_required",
+      signOffBy: "Priya S.",
+      signOffDate: "2026-03-05",
+      notes: "Current posture captured from App Store Connect DSA form.",
+      answersSnapshot:
+        "Selected: \"I'm not a trader under the DSA or I don't plan to distribute in the EU.\"",
+      rationale: "Current app distribution plan does not represent trader distribution in the EU.",
+      sourceLinks: ["ASC DSA screenshot capture 2026-03-05", "Internal policy note DSA-2026-03-05"],
+      questionPrompt:
+        "Specify if you'll distribute any content in the EU in the capacity of a trader or non-trader.",
+      selectedResponse: "I'm not a trader under the DSA or I don't plan to distribute in the EU",
+      responseOptions: [
+        "I'm a trader under the DSA",
+        "I'm not a trader under the DSA or I don't plan to distribute in the EU",
+      ],
+      responseImpact:
+        "No trader contact details are displayed on the App Store product page under current selection.",
     },
   ],
   featureMatrix: [
@@ -554,6 +589,19 @@ export const APP_STORES_DATASET: AppStoresDataset = {
       storageRef: "s3://zodl-evidence/console/google-financial-features-2026-03-05.zip",
     },
     {
+      id: "evidence-console-apple-dsa-01",
+      title: "App Store Connect DSA trader status screenshot",
+      evidenceType: "console_screenshot",
+      jurisdictions: ["European Union"],
+      features: ["App store compliance metadata"],
+      stores: ["apple"],
+      effectiveFrom: "2026-03-05",
+      owner: "Policy Ops",
+      approver: "Legal",
+      confidentiality: "internal",
+      storageRef: "s3://zodl-evidence/console/apple-dsa-trader-status-2026-03-05.png",
+    },
+    {
       id: "evidence-policy-03",
       title: "Financial advice avoidance language policy",
       evidenceType: "policy_analysis",
@@ -583,7 +631,7 @@ export const APP_STORES_DATASET: AppStoresDataset = {
       submissionId: "sub-apple-4.7.0-523",
       createdAt: "2026-03-04T10:00:00Z",
       createdBy: "Release Manager",
-      evidenceItemIds: ["evidence-arch-01", "evidence-policy-03"],
+      evidenceItemIds: ["evidence-arch-01", "evidence-policy-03", "evidence-console-apple-dsa-01"],
       notes: "Used for non-custodial and disclosures consistency backup.",
     },
     {

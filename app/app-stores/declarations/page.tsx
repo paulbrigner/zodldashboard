@@ -27,6 +27,7 @@ function statusClass(status: string): string {
 export default async function AppStoresDeclarationsPage({ searchParams }: DeclarationsPageProps) {
   const data = getAppStoresDataset();
   const declarations = [...data.declarations].sort((a, b) => a.regionLabel.localeCompare(b.regionLabel));
+  const dsaDeclaration = declarations.find((row) => row.id === "decl-apple-dsa-eu") || null;
   const params = (await searchParams) || {};
   const declarationId = asString(params.declaration);
   const selected = declarationId
@@ -35,6 +36,42 @@ export default async function AppStoresDeclarationsPage({ searchParams }: Declar
 
   return (
     <div className="appstores-page-body">
+      {dsaDeclaration ? (
+        <section className="appstores-section">
+          <header className="appstores-section-header">
+            <h2>DSA Trader Status Tracker</h2>
+            <span className={statusClass(dsaDeclaration.status)}>
+              {DECLARATION_STATUS_LABELS[dsaDeclaration.status]}
+            </span>
+          </header>
+
+          <div className="appstores-two-column">
+            <article className="appstores-detail-card">
+              <h3>Question prompt</h3>
+              <p>{dsaDeclaration.questionPrompt || dsaDeclaration.declarationType}</p>
+              <p className="subtle-text">Region: {dsaDeclaration.regionLabel}</p>
+              <p className="subtle-text">Selected response:</p>
+              <p>
+                <strong>{dsaDeclaration.selectedResponse || "Not recorded"}</strong>
+              </p>
+            </article>
+
+            <article className="appstores-detail-card">
+              <h3>Impact and review</h3>
+              <p>{dsaDeclaration.responseImpact || "No impact note recorded."}</p>
+              <p className="subtle-text">Effective: {formatDate(dsaDeclaration.effectiveDate)}</p>
+              <p className="subtle-text">Next review: {formatDate(dsaDeclaration.updateByDate)}</p>
+              <p className="subtle-text">
+                Sign-off:{" "}
+                {dsaDeclaration.signOffBy
+                  ? `${dsaDeclaration.signOffBy} (${formatDate(dsaDeclaration.signOffDate || dsaDeclaration.updateByDate)})`
+                  : "Pending"}
+              </p>
+            </article>
+          </div>
+        </section>
+      ) : null}
+
       <section className="appstores-section">
         <header className="appstores-section-header">
           <h2>Declaration Coverage</h2>
@@ -98,6 +135,11 @@ export default async function AppStoresDeclarationsPage({ searchParams }: Declar
             <article className="appstores-detail-card">
               <h3>Declaration answers snapshot</h3>
               <p>{selected.answersSnapshot}</p>
+              {selected.selectedResponse ? (
+                <p className="subtle-text">
+                  Selected response: <strong>{selected.selectedResponse}</strong>
+                </p>
+              ) : null}
               <p className="subtle-text">Effective: {formatDate(selected.effectiveDate)}</p>
               <p className="subtle-text">Update by: {formatDate(selected.updateByDate)}</p>
             </article>

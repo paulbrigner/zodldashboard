@@ -103,6 +103,10 @@ export type DeclarationCoverage = {
   answersSnapshot: string;
   rationale: string;
   sourceLinks: string[];
+  questionPrompt?: string;
+  selectedResponse?: string;
+  responseOptions?: string[];
+  responseImpact?: string;
 };
 
 export type FeatureClaimMatrixRow = {

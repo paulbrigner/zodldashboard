@@ -25,7 +25,7 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
 - App Stores dashboard pages with alpha/MVP workflows:
   - overview (`/app-stores`),
   - submissions (`/app-stores/submissions`),
-  - declarations & licensing (`/app-stores/declarations`),
+  - declarations & licensing (`/app-stores/declarations`, includes Apple DSA trader-status tracking),
   - feature-to-claim matrix (`/app-stores/matrix`),
   - reviewer comms/cases (`/app-stores/reviewer-comms`),
   - evidence vault (`/app-stores/evidence-vault`),

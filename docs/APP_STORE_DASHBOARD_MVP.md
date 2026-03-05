@@ -48,6 +48,11 @@ Data model (MVP):
 
 - Declaration coverage table:
   - scope, region, status, deadlines, docs requirement, decision, sign-off.
+- Explicit **Apple DSA trader-status tracking**:
+  - question prompt,
+  - selected option,
+  - impact note,
+  - sign-off and review date.
 - Region detail view:
   - answer snapshot,
   - decision/rationale,
