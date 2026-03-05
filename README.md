@@ -1,7 +1,8 @@
-# ZODL Dashboard (X Monitor + Regulatory Risk)
+# ZODL Dashboard (X Monitor + Regulatory Risk + App Stores)
 
 ## Executive Summary
 ZODL Dashboard is an authenticated web app and API for monitoring selected X posts, storing them in PostgreSQL, and presenting a filtered feed with detail views and rolling AI summaries.
+It also includes additional operations dashboards for Regulatory Risk by Geography and App Store Compliance/Submissions workflow management.
 Production ingestion now runs server-side on AWS using scheduled X API collector Lambdas (priority + discovery), with PostgreSQL as the only system of record.
 
 ## Functional Summary
@@ -10,6 +11,7 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
 - Dashboard hub (`/`) with:
   - X Monitor (`/x-monitor`)
   - Regulatory Risk by Geography (`/regulatory-risk`)
+  - App Store Compliance & Submissions (`/app-stores`)
 - X Monitor page (`/x-monitor`) with:
   - semantic search mode as the default filter mode for natural-language retrieval,
   - keyword filter mode (tier, handle, significant flag, date range, text search, limit),
@@ -20,6 +22,14 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
   - freshness indicator with manual refresh,
   - rolling summary panel (2h + 12h).
 - Post detail page (`/posts/{statusId}`) with metrics snapshots and report state.
+- App Stores dashboard pages with alpha/MVP workflows:
+  - overview (`/app-stores`),
+  - submissions (`/app-stores/submissions`),
+  - declarations & licensing (`/app-stores/declarations`),
+  - feature-to-claim matrix (`/app-stores/matrix`),
+  - reviewer comms/cases (`/app-stores/reviewer-comms`),
+  - evidence vault (`/app-stores/evidence-vault`),
+  - settings (`/app-stores/settings`).
 - Ingest APIs for:
   - posts,
   - metric snapshots,
@@ -95,6 +105,7 @@ Local OpenClaw/launchd collection is now fallback-only and not part of the norma
 
 - `app/`: Next.js pages and API routes.
 - `lib/`: auth, DB wiring, validators, repository logic, API proxy helpers.
+- `lib/app-stores/`: typed alpha/MVP data model + dashboard insight helpers for App Stores workflow.
 - `db/migrations/`: Postgres schema SQL.
 - `scripts/db/`: migration runner.
 - `scripts/migrate/`: SQLite export/import/validation utilities.
@@ -103,6 +114,7 @@ Local OpenClaw/launchd collection is now fallback-only and not part of the norma
 - `services/vpc-api-lambda/`: Lambda API implementation (`/v1/*`).
 - `services/x-api-collector-lambda/`: scheduled X API collector implementation (`priority`/`discovery`).
 - `docs/`: runbooks, OpenAPI, schema notes, ADRs, migration plans.
+  - includes `docs/APP_STORE_DASHBOARD_MVP.md` for App Stores MVP scope and next steps.
 
 ---
 

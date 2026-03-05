@@ -27,6 +27,13 @@ const dashboards: DashboardCard[] = [
     workspaceOnly: true,
   },
   {
+    id: "app-store-compliance",
+    name: "App Store Dashboard",
+    description: "Compliance posture, declarations, submissions, reviewer cases, and evidence bundles.",
+    href: "/app-stores",
+    workspaceOnly: true,
+  },
+  {
     id: "placeholder-2",
     name: "Dashboard Placeholder 2",
     description: "Reserved for a future dashboard.",

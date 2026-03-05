@@ -1624,6 +1624,275 @@ p {
   margin: 0;
 }
 
+.pill-status-good {
+  border-color: #9ed6ba;
+  background: #e9f8ef;
+  color: #0e6540;
+}
+
+.pill-status-warn {
+  border-color: #e5ca94;
+  background: #fff7e9;
+  color: #7e5715;
+}
+
+.pill-status-bad {
+  border-color: #e7afb6;
+  background: #fff1f3;
+  color: #9e1835;
+}
+
+.pill-alert-critical {
+  border-color: #e7afb6;
+  background: #fff1f3;
+  color: #9e1835;
+}
+
+.pill-alert-high {
+  border-color: #e5ca94;
+  background: #fff7e9;
+  color: #8c5e0f;
+}
+
+.pill-alert-medium {
+  border-color: var(--border);
+  background: #edf3ff;
+  color: #274f9c;
+}
+
+.appstores-shell {
+  width: min(1200px, 100%);
+}
+
+.appstores-source-text {
+  margin-top: 0.35rem;
+}
+
+.appstores-nav {
+  margin-top: 1.05rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.appstores-nav-link {
+  min-width: 148px;
+}
+
+.appstores-nav-link-active {
+  border-color: #274f9c;
+  background: #dbe9ff;
+  color: #143a80;
+}
+
+.appstores-content {
+  margin-top: 1.15rem;
+}
+
+.appstores-page-body {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.appstores-section {
+  border: 1px solid var(--border);
+  border-radius: 0.95rem;
+  background: #ffffff;
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.88rem;
+}
+
+.appstores-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.appstores-section-header h2,
+.appstores-section h3 {
+  margin: 0;
+}
+
+.appstores-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+}
+
+.appstores-kpi-card {
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--surface-alt);
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.appstores-kpi-card p {
+  margin: 0;
+}
+
+.appstores-kpi-value {
+  font-size: 1.32rem;
+  font-weight: 700;
+}
+
+.appstores-alert-list,
+.appstores-submission-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.appstores-alert-item {
+  border: 1px solid var(--border);
+  border-radius: 0.82rem;
+  background: var(--surface-alt);
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.appstores-alert-item p {
+  margin: 0;
+}
+
+.appstores-table-wrap {
+  overflow-x: auto;
+}
+
+.appstores-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.appstores-table th,
+.appstores-table td {
+  border-bottom: 1px solid #d8e4fb;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.58rem;
+}
+
+.appstores-table th {
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #335ba8;
+}
+
+.appstores-table-dense td {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.appstores-table-dense td p {
+  margin: 0.3rem 0 0;
+}
+
+.appstores-list-tight {
+  margin: 0;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.appstores-submission-item {
+  border: 1px solid var(--border);
+  border-radius: 0.82rem;
+  background: var(--surface-alt);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.44rem;
+}
+
+.appstores-submission-item p {
+  margin: 0;
+}
+
+.appstores-submission-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.appstores-inline-links {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.appstores-two-column {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 0.85rem;
+  align-items: start;
+}
+
+.appstores-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 0.82rem;
+  background: var(--surface-alt);
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.appstores-detail-card p,
+.appstores-detail-card h3 {
+  margin: 0;
+}
+
+.appstores-readiness-list,
+.appstores-timeline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.appstores-readiness-item,
+.appstores-timeline-item {
+  border: 1px solid var(--border);
+  border-radius: 0.72rem;
+  background: #ffffff;
+  padding: 0.62rem;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.appstores-readiness-item p,
+.appstores-timeline-item p {
+  margin: 0;
+}
+
+.appstores-timeline-item {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.appstores-timeline-meta {
+  color: #2b487d;
+}
+
+.appstores-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 0.8rem;
+}
+
 @media (max-width: 720px) {
   .page {
     padding: 1rem;
@@ -1673,13 +1942,21 @@ p {
     min-width: 0;
   }
 
+  .appstores-nav-link {
+    width: calc(50% - 0.3rem);
+    min-width: 0;
+  }
+
   .regulatory-two-column,
-  .regulatory-kanban {
+  .regulatory-kanban,
+  .appstores-two-column {
     grid-template-columns: 1fr;
   }
 
   .regulatory-table th,
-  .regulatory-table td {
+  .regulatory-table td,
+  .appstores-table th,
+  .appstores-table td {
     padding: 0.48rem;
     font-size: 0.84rem;
   }
