@@ -334,6 +334,7 @@ p {
   display: flex;
   flex-direction: column;
   gap: 0.95rem;
+  min-width: 0;
 }
 
 .engagement-range-row {
@@ -380,6 +381,10 @@ p {
   background: #294f9c;
 }
 
+.engagement-block {
+  min-width: 0;
+}
+
 .engagement-block h3 {
   margin: 0 0 0.45rem;
 }
@@ -390,20 +395,24 @@ p {
   background: #ffffff;
   padding: 0.7rem 0.7rem 0.4rem;
   overflow-x: auto;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .engagement-trend-bars {
-  display: inline-grid;
+  display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(20px, 1fr);
+  grid-auto-columns: 24px;
   align-items: end;
   gap: 0.35rem;
+  width: max-content;
   min-width: 100%;
 }
 
 .engagement-trend-col {
   display: grid;
   grid-template-rows: 1fr auto;
+  width: 24px;
   height: 170px;
   gap: 0.3rem;
 }
@@ -412,6 +421,7 @@ p {
   display: flex;
   align-items: flex-end;
   height: 100%;
+  width: 100%;
 }
 
 .engagement-trend-bar {
@@ -423,6 +433,10 @@ p {
 }
 
 .engagement-trend-label {
+  display: block;
+  width: 56px;
+  margin-left: 50%;
+  transform: translateX(-50%);
   min-height: 2.1rem;
   font-size: 0.64rem;
   line-height: 1.15;

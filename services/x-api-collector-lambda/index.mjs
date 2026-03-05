@@ -453,6 +453,7 @@ function getConfig() {
   const replyMode = asString(process.env.XMON_X_API_REPLY_MODE || "term_constrained").toLowerCase();
   const normalizedReplyMode = QUERY_REPLY_MODES.has(replyMode) ? replyMode : "term_constrained";
   const collectorMode = normalizeCollectorMode(process.env.XMON_COLLECTOR_MODE, "priority");
+  const baseTerms = asString(process.env.XMON_X_API_BASE_TERMS) || DEFAULT_BASE_TERMS;
 
   return {
     collectorEnabled: asBool(process.env.XMON_COLLECTOR_ENABLED, true),
@@ -464,7 +465,8 @@ function getConfig() {
     ingestApiBaseUrl: (asString(process.env.XMONITOR_API_BASE_URL) || DEFAULT_INGEST_API_BASE_URL).replace(/\/+$/, ""),
     ingestApiKey: asString(process.env.XMONITOR_API_KEY),
     keywordOmitHandles: new Set(parseHandleList(process.env.XMONITOR_INGEST_OMIT_HANDLES || "")),
-    baseTerms: asString(process.env.XMON_X_API_BASE_TERMS) || DEFAULT_BASE_TERMS,
+    baseTerms,
+    baseTermRegex: compileBaseTermRegex(baseTerms),
     maxResultsPerPage: asPositiveInt(process.env.XMON_X_API_MAX_RESULTS_PER_QUERY, 100),
     maxPagesPerQuery: asPositiveInt(process.env.XMON_X_API_MAX_PAGES_PER_QUERY, 2),
     queryTimeoutMs: asPositiveInt(process.env.XMON_X_API_QUERY_TIMEOUT_MS, 15000),
@@ -551,6 +553,41 @@ function cleanupText(text) {
   return normalized || null;
 }
 
+function escapeRegExpLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compileBaseTermRegex(baseTerms) {
+  const tokens = String(baseTerms || "")
+    .split(/\s+OR\s+/i)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => token.replace(/^\(+|\)+$/g, "").trim())
+    .map((token) => token.replace(/^["']|["']$/g, "").trim())
+    .map((token) => token.replace(/^[$#]+/, "").trim())
+    .filter(Boolean);
+
+  const patterns = [];
+  for (const token of tokens) {
+    const collapsed = token.replace(/\s+/g, " ").trim();
+    if (!collapsed) continue;
+    const escaped = collapsed
+      .split(" ")
+      .map((part) => escapeRegExpLiteral(part))
+      .join("\\s+");
+    if (/^[A-Za-z0-9_ ]+$/.test(collapsed)) {
+      patterns.push(`\\b${escaped}\\b`);
+    } else {
+      patterns.push(escaped);
+    }
+  }
+
+  if (patterns.length === 0) {
+    return DISCOVERY_BASE_TERM_REGEX;
+  }
+  return new RegExp(`(?:${patterns.join("|")})`, "i");
+}
+
 function normalizeSubstanceText(text) {
   return String(text || "")
     .replace(/\u00a0/g, " ")
@@ -566,6 +603,12 @@ function hasDiscoveryBaseTerm(text) {
   const normalized = normalizeSubstanceText(text);
   if (!normalized) return false;
   return DISCOVERY_BASE_TERM_REGEX.test(normalized);
+}
+
+function hasConfiguredBaseTerm(text, baseTermRegex) {
+  const normalized = normalizeSubstanceText(text);
+  if (!normalized) return false;
+  return baseTermRegex.test(normalized);
 }
 
 function isSpamText(text) {
@@ -1542,6 +1585,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
     skippedLang: 0,
     skippedKeywordOmit: 0,
     skippedMissingDiscoveryBaseTerm: 0,
+    skippedMissingPriorityBaseTerm: 0,
     skippedDiscoveryNoise: 0,
     familyCounts: {},
     sourceCounts: {},
@@ -1580,6 +1624,14 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode) {
         const authorHandle = normalizeHandle(user.username);
         const watchTier = watchlistMap[authorHandle] || null;
         const record = buildPostRecord(tweet, user, entry.sourceQuery, watchTier, seenAtIso);
+        if (
+          collectorMode === "priority" &&
+          (entry.family === "priority_influencer_term" || entry.family === "priority_reply_term") &&
+          !hasConfiguredBaseTerm(record.body_text || "", config.baseTermRegex)
+        ) {
+          counters.skippedMissingPriorityBaseTerm += 1;
+          continue;
+        }
         if (collectorMode === "discovery" && !watchTier) {
           if (config.keywordOmitHandles.has(authorHandle)) {
             counters.skippedKeywordOmit += 1;

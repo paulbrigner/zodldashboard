@@ -53,6 +53,7 @@ const DEFAULT_EMAIL_MAX_RECIPIENTS = 10;
 const DEFAULT_EMAIL_MAX_JOBS_PER_USER = 25;
 const DEFAULT_EMAIL_MAX_BODY_CHARS = 20000;
 const DEFAULT_EMAIL_SCHEDULE_DISPATCH_LIMIT = 25;
+const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
 const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
 const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
 const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
@@ -480,6 +481,7 @@ function isOpsPath(path) {
   return (
     path === "/v1/ops/reconcile-counts" ||
     path === "/v1/ops/purge-handle" ||
+    path === "/v1/ops/purge-handle-missing-base-terms" ||
     path === "/v1/email/schedules/dispatch-due"
   );
 }
@@ -683,15 +685,60 @@ function isKeywordSourceQuery(sourceQuery) {
 
 const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
 
-function hasDiscoveryBaseTerm(text) {
-  const normalized = String(asString(text) || "")
+function normalizeSubstanceText(text) {
+  return String(asString(text) || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, " ")
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/[$#]([A-Za-z0-9_]+)/g, " $1 ")
     .replace(/@[A-Za-z0-9_][A-Za-z0-9_.]*/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function hasDiscoveryBaseTerm(text) {
+  const normalized = normalizeSubstanceText(text);
   if (!normalized) return false;
   return DISCOVERY_BASE_TERM_REGEX.test(normalized);
+}
+
+function escapeRegExpLiteral(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function compileBaseTermRegex(baseTerms) {
+  const tokens = String(baseTerms || "")
+    .split(/\s+OR\s+/i)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .map((token) => token.replace(/^\(+|\)+$/g, "").trim())
+    .map((token) => token.replace(/^["']|["']$/g, "").trim())
+    .map((token) => token.replace(/^[$#]+/, "").trim())
+    .filter(Boolean);
+
+  const patterns = [];
+  for (const token of tokens) {
+    const collapsed = token.replace(/\s+/g, " ").trim();
+    if (!collapsed) continue;
+    const escaped = collapsed
+      .split(" ")
+      .map((part) => escapeRegExpLiteral(part))
+      .join("\\s+");
+    if (/^[A-Za-z0-9_ ]+$/.test(collapsed)) {
+      patterns.push(`\\b${escaped}\\b`);
+    } else {
+      patterns.push(escaped);
+    }
+  }
+
+  if (patterns.length === 0) return DISCOVERY_BASE_TERM_REGEX;
+  return new RegExp(`(?:${patterns.join("|")})`, "i");
+}
+
+function hasConfiguredBaseTerm(text, baseTermRegex) {
+  const normalized = normalizeSubstanceText(text);
+  if (!normalized) return false;
+  return baseTermRegex.test(normalized);
 }
 
 function shouldOmitKeywordOriginPost(item, authorHandle, omitHandles) {
@@ -2032,6 +2079,47 @@ async function purgePostsByAuthorHandle(authorHandle) {
   return {
     author_handle: normalizedHandle,
     deleted: result.rowCount ?? 0,
+  };
+}
+
+async function purgePostsByAuthorHandleMissingBaseTerms(authorHandle, baseTerms) {
+  const normalizedHandle = normalizeHandle(authorHandle);
+  const db = getPool();
+  const baseTermRegex = compileBaseTermRegex(baseTerms);
+
+  const rows = await db.query(
+    `
+      SELECT status_id, body_text
+      FROM posts
+      WHERE lower(author_handle) = $1
+    `,
+    [normalizedHandle]
+  );
+
+  const dropIds = [];
+  for (const row of rows.rows) {
+    if (!hasConfiguredBaseTerm(row.body_text, baseTermRegex)) {
+      dropIds.push(String(row.status_id));
+    }
+  }
+
+  let deleted = 0;
+  if (dropIds.length > 0) {
+    const result = await db.query(
+      `
+        DELETE FROM posts
+        WHERE status_id = ANY($1::text[])
+      `,
+      [dropIds]
+    );
+    deleted = result.rowCount ?? 0;
+  }
+
+  return {
+    author_handle: normalizedHandle,
+    analyzed: rows.rows.length,
+    deleted,
+    kept: Math.max(rows.rows.length - deleted, 0),
   };
 }
 
@@ -5449,6 +5537,38 @@ async function handleOpsPurgeHandle(event) {
   }
 }
 
+async function handleOpsPurgeHandleMissingBaseTerms(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const payload = asObject(parsedBody.body);
+  const handle = asString(payload?.author_handle ?? payload?.handle);
+  if (!handle) {
+    return jsonError("author_handle is required", 400);
+  }
+  const baseTerms = asString(payload?.base_terms) || asString(process.env.XMON_X_API_BASE_TERMS) || DEFAULT_BASE_TERMS;
+
+  try {
+    const result = await purgePostsByAuthorHandleMissingBaseTerms(handle, baseTerms);
+    return jsonOk({
+      author_handle: result.author_handle,
+      analyzed: result.analyzed,
+      deleted: result.deleted,
+      kept: result.kept,
+      base_terms: baseTerms,
+      purged_at: new Date().toISOString(),
+    });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to purge posts", 503);
+  }
+}
+
 async function handleIngestBatch(event, parser, upsertFn, dbErrorMessage) {
   if (!hasDatabaseConfig()) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
@@ -5695,6 +5815,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/ops/purge-handle") {
     return handleOpsPurgeHandle(event);
+  }
+
+  if (method === "POST" && path === "/v1/ops/purge-handle-missing-base-terms") {
+    return handleOpsPurgeHandleMissingBaseTerms(event);
   }
 
   if (method === "POST" && path === "/v1/ingest/posts/batch") {
