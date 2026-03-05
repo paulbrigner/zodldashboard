@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { CSSProperties } from "react";
 import { LocalDateTime } from "@/app/components/local-date-time";
 import type { EngagementResponse } from "@/lib/xmonitor/types";
 
@@ -42,6 +43,9 @@ export function EngagementPanel({ payload, error, rangeOptions }: EngagementPane
   const topPosts = payload?.top_posts || [];
   const maxBucketScore = Math.max(1, ...buckets.map((item) => item.engagement_score || 0));
   const labelStep = Math.max(1, Math.ceil(buckets.length / 6));
+  const trendBarsStyle = {
+    "--trend-count": String(Math.max(1, buckets.length)),
+  } as CSSProperties;
 
   return (
     <details className="engagement-panel">
@@ -84,7 +88,12 @@ export function EngagementPanel({ payload, error, rangeOptions }: EngagementPane
           <h3>Engagement trend</h3>
           {buckets.length > 0 ? (
             <div className="engagement-trend-wrap">
-              <div className="engagement-trend-bars" role="img" aria-label="Engagement score over time">
+              <div
+                className="engagement-trend-bars"
+                role="img"
+                aria-label="Engagement score over time"
+                style={trendBarsStyle}
+              >
                 {buckets.map((bucket, index) => {
                   const heightPct = Math.max(6, Math.round((bucket.engagement_score / maxBucketScore) * 100));
                   const showLabel = index % labelStep === 0 || index === buckets.length - 1;

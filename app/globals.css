@@ -323,6 +323,7 @@ p {
   border: 1px solid var(--border);
   border-radius: 0.95rem;
   background: var(--surface-alt);
+  min-width: 0;
 }
 
 .engagement-panel[open] .summary-panel-header {
@@ -395,24 +396,26 @@ p {
   background: #ffffff;
   padding: 0.7rem 0.7rem 0.4rem;
   overflow-x: auto;
+  overflow-y: hidden;
   max-width: 100%;
   min-width: 0;
 }
 
 .engagement-trend-bars {
+  --trend-count: 1;
+  --trend-col-min: 22px;
   display: grid;
-  grid-auto-flow: column;
-  grid-auto-columns: 24px;
+  grid-template-columns: repeat(var(--trend-count), minmax(var(--trend-col-min), 1fr));
   align-items: end;
   gap: 0.35rem;
-  width: max-content;
+  width: max(100%, calc(var(--trend-count) * var(--trend-col-min)));
   min-width: 100%;
 }
 
 .engagement-trend-col {
   display: grid;
   grid-template-rows: 1fr auto;
-  width: 24px;
+  min-width: 0;
   height: 170px;
   gap: 0.3rem;
 }
@@ -434,14 +437,18 @@ p {
 
 .engagement-trend-label {
   display: block;
-  width: 56px;
-  margin-left: 50%;
-  transform: translateX(-50%);
+  width: 100%;
+  margin: 0;
+  transform: none;
+  min-width: 0;
   min-height: 2.1rem;
   font-size: 0.64rem;
   line-height: 1.15;
   color: #5d6f97;
   text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .engagement-handle-list,
