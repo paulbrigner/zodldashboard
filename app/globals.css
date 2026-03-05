@@ -336,6 +336,7 @@ p {
   flex-direction: column;
   gap: 0.95rem;
   min-width: 0;
+  overflow-x: hidden;
 }
 
 .engagement-range-row {
@@ -402,13 +403,9 @@ p {
 }
 
 .engagement-trend-bars {
-  --trend-count: 1;
-  --trend-col-min: 22px;
   display: grid;
-  grid-template-columns: repeat(var(--trend-count), minmax(var(--trend-col-min), 1fr));
   align-items: end;
   gap: 0.35rem;
-  width: max(100%, calc(var(--trend-count) * var(--trend-col-min)));
   min-width: 100%;
 }
 

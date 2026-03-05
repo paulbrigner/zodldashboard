@@ -43,9 +43,17 @@ export function EngagementPanel({ payload, error, rangeOptions }: EngagementPane
   const topPosts = payload?.top_posts || [];
   const maxBucketScore = Math.max(1, ...buckets.map((item) => item.engagement_score || 0));
   const labelStep = Math.max(1, Math.ceil(buckets.length / 6));
-  const trendBarsStyle = {
-    "--trend-count": String(Math.max(1, buckets.length)),
-  } as CSSProperties;
+  const trendCount = Math.max(1, buckets.length);
+  const trendScrollable = buckets.length > 36;
+  const trendBarsStyle = trendScrollable
+    ? ({
+        gridTemplateColumns: `repeat(${trendCount}, 24px)`,
+        width: `${trendCount * 24}px`,
+      } as CSSProperties)
+    : ({
+        gridTemplateColumns: `repeat(${trendCount}, minmax(0, 1fr))`,
+        width: "100%",
+      } as CSSProperties);
 
   return (
     <details className="engagement-panel">
