@@ -129,6 +129,8 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "lite_saylor",
   "web3wildwatch",
   "voltage_ixr",
+  "zbitusd",
+  "shielded_zec",
 ];
 
 let pool;
@@ -3609,15 +3611,7 @@ function enforceEmailDraftGuardrails(emailDraft, requestedFormat, taskText) {
       body_text: withLengthLimit(draft.body_text || markdownToPlainText(draft.body_markdown), emailMaxBodyChars()),
     };
   }
-
-  const trimmedTask = String(taskText || "").trim();
-  const fallbackSubject = withLengthLimit(trimmedTask ? `X Monitor: ${trimmedTask}` : "X Monitor update", 240);
-  const fallbackBody = "No structured email draft was returned by AI. See the grounded Answer section for details.";
-  return {
-    subject: fallbackSubject,
-    body_markdown: fallbackBody,
-    body_text: fallbackBody,
-  };
+  return null;
 }
 
 function selectComposeCitations(evidence, citationStatusIds) {
@@ -4810,6 +4804,42 @@ async function processScheduledEmailRun(runId, requestId) {
     const evidencePayload = await queryComposeEvidence(parsedCompose.data, queryEmbedding);
     const composed = await synthesizeComposeAnswer(parsedCompose.data, evidencePayload, requestId || runId);
     const emailDraft = enforceEmailDraftGuardrails(composed.email_draft, "email", parsedCompose.data.task_text);
+    if (!emailDraft) {
+      console.log(
+        JSON.stringify({
+          event: "scheduled_email_run_no_structured_draft",
+          run_id: runId,
+          scheduled_job_id: runRow.scheduled_job_id,
+          owner_email: runRow.owner_email,
+        })
+      );
+      await db.query(
+        `
+          UPDATE scheduled_email_runs
+          SET status = 'succeeded',
+              completed_at = now(),
+              delivery_id = NULL,
+              error_code = NULL,
+              error_message = NULL
+          WHERE run_id = $1::uuid
+        `,
+        [runId]
+      );
+      await db.query(
+        `
+          UPDATE scheduled_email_jobs
+          SET last_run_at = now(),
+              last_status = 'succeeded',
+              last_error = NULL,
+              run_count = run_count + 1,
+              updated_at = now()
+          WHERE job_id = $1::uuid
+        `,
+        [runRow.scheduled_job_id]
+      );
+      return { ok: true, skipped_send: true, reason: "no_structured_email_draft" };
+    }
+
     const subject = withLengthLimit(asString(runRow.subject_override) || emailDraft.subject, 240);
     const bodyMarkdown = withLengthLimit(emailDraft.body_markdown || composed.answer_text, emailMaxBodyChars());
     const bodyText = withLengthLimit(emailDraft.body_text || markdownToPlainText(bodyMarkdown), emailMaxBodyChars());

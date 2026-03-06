@@ -114,7 +114,7 @@ SERVICE_NAME="${SERVICE_NAME:-xmonitor-api}"
 API_VERSION="${API_VERSION:-v1}"
 DEFAULT_FEED_LIMIT="${DEFAULT_FEED_LIMIT:-50}"
 MAX_FEED_LIMIT="${MAX_FEED_LIMIT:-200}"
-INGEST_OMIT_HANDLES="${INGEST_OMIT_HANDLES:-zec_88,zec__2,spaljeni_zec,juan_sanchez13,zeki82086538826,sucveceza_35,windymint1,usa_trader06,roger_welch1,cmscanner_bb,cmscanner_rsi,dexportal_,luckyvinod16,zecigr,disruqtion,zec8,cmscanner_sma,zeczinka,cryptodiane,sureblessing36,pafoslive1,sachin22049721,lovegds1lady,micheal_crypto0,ruth13900929210,michell82710798,kimberl97730856,fx220000,exnesst80805,sfurures_expart,felix__steven,vectorthehunter,forex47kin51201,bullbearcrypt,blacker6636,devendr34011988,dannym4u,scapenerhurst,duncannbaldwin,robertethan_,jamesharri45923,jxttreasury,dannnym4u,rinshad31142287,sumitso40959179,_zonecrypto_,promoimpulse,rmelian_ok,xol1641557,mw_intern,desota,ma1973sk,hari14q,cryptociampa,nvnguyen9999,nesleyfilsaime1,coinminerss,aicryptopattern,lucas_zec,iamjoeqpublic,mo30487903,obinnaumeh1,grok,ozonenkembu,richard66110384,semaaybat,imm71114749,geo_bush1,lite_saylor,web3wildwatch,voltage_ixr}"
+INGEST_OMIT_HANDLES="${INGEST_OMIT_HANDLES:-zec_88,zec__2,spaljeni_zec,juan_sanchez13,zeki82086538826,sucveceza_35,windymint1,usa_trader06,roger_welch1,cmscanner_bb,cmscanner_rsi,dexportal_,luckyvinod16,zecigr,disruqtion,zec8,cmscanner_sma,zeczinka,cryptodiane,sureblessing36,pafoslive1,sachin22049721,lovegds1lady,micheal_crypto0,ruth13900929210,michell82710798,kimberl97730856,fx220000,exnesst80805,sfurures_expart,felix__steven,vectorthehunter,forex47kin51201,bullbearcrypt,blacker6636,devendr34011988,dannym4u,scapenerhurst,duncannbaldwin,robertethan_,jamesharri45923,jxttreasury,dannnym4u,rinshad31142287,sumitso40959179,_zonecrypto_,promoimpulse,rmelian_ok,xol1641557,mw_intern,desota,ma1973sk,hari14q,cryptociampa,nvnguyen9999,nesleyfilsaime1,coinminerss,aicryptopattern,lucas_zec,iamjoeqpublic,mo30487903,obinnaumeh1,grok,ozonenkembu,richard66110384,semaaybat,imm71114749,geo_bush1,lite_saylor,web3wildwatch,voltage_ixr,zbitusd,shielded_zec}"
 SEMANTIC_ENABLED="${SEMANTIC_ENABLED:-true}"
 SEMANTIC_DEFAULT_LIMIT="${SEMANTIC_DEFAULT_LIMIT:-25}"
 SEMANTIC_MAX_LIMIT="${SEMANTIC_MAX_LIMIT:-100}"
@@ -145,8 +145,8 @@ COMPOSE_USE_JSON_MODE="${COMPOSE_USE_JSON_MODE:-true}"
 COMPOSE_DISABLE_THINKING="${COMPOSE_DISABLE_THINKING:-true}"
 COMPOSE_STRIP_THINKING_RESPONSE="${COMPOSE_STRIP_THINKING_RESPONSE:-true}"
 COMPOSE_API_KEY="${COMPOSE_API_KEY:-}"
-EMAIL_ENABLED="${EMAIL_ENABLED:-false}"
-EMAIL_SCHEDULES_ENABLED="${EMAIL_SCHEDULES_ENABLED:-false}"
+EMAIL_ENABLED="${EMAIL_ENABLED:-}"
+EMAIL_SCHEDULES_ENABLED="${EMAIL_SCHEDULES_ENABLED:-}"
 EMAIL_REQUIRE_OAUTH="${EMAIL_REQUIRE_OAUTH:-true}"
 EMAIL_FROM_ADDRESS="${EMAIL_FROM_ADDRESS:-}"
 EMAIL_FROM_NAME="${EMAIL_FROM_NAME:-ZodlDashboard X Monitor}"
@@ -480,11 +480,23 @@ fi
 if [[ -z "$COMPOSE_API_KEY" ]]; then
   COMPOSE_API_KEY="$(existing_lambda_var "XMONITOR_COMPOSE_API_KEY")"
 fi
+if [[ -z "$EMAIL_ENABLED" ]]; then
+  EMAIL_ENABLED="$(existing_lambda_var "XMONITOR_EMAIL_ENABLED")"
+fi
+if [[ -z "$EMAIL_SCHEDULES_ENABLED" ]]; then
+  EMAIL_SCHEDULES_ENABLED="$(existing_lambda_var "XMONITOR_EMAIL_SCHEDULES_ENABLED")"
+fi
 if [[ -z "$EMAIL_FROM_ADDRESS" ]]; then
   EMAIL_FROM_ADDRESS="$(existing_lambda_var "XMONITOR_EMAIL_FROM_ADDRESS")"
 fi
 if [[ -z "$USER_PROXY_SECRET" ]]; then
   USER_PROXY_SECRET="$(existing_lambda_var "XMONITOR_USER_PROXY_SECRET")"
+fi
+if [[ -z "$EMAIL_ENABLED" ]]; then
+  EMAIL_ENABLED="false"
+fi
+if [[ -z "$EMAIL_SCHEDULES_ENABLED" ]]; then
+  EMAIL_SCHEDULES_ENABLED="false"
 fi
 
 if [[ -z "$DB_HOST" || -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASS" ]]; then
