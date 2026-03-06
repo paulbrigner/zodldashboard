@@ -69,18 +69,29 @@ export default async function HomePage() {
             const isEnabled = Boolean(dashboard.href) && !restrictedForGuest;
 
             return (
-              <article className="dashboard-tile" key={dashboard.id}>
-                <h2>{dashboard.name}</h2>
-                <p className="subtle-text">{dashboard.description}</p>
-                {isEnabled ? (
-                  <Link className="button dashboard-open-button" href={dashboard.href!}>
-                    Open dashboard
-                  </Link>
-                ) : (
-                  <span className="button button-disabled dashboard-open-button" aria-disabled="true">
-                    {restrictedForGuest ? "Access restricted" : "Coming soon"}
-                  </span>
-                )}
+              <article
+                aria-label={restrictedForGuest ? `${dashboard.name} (access restricted)` : dashboard.name}
+                className={`dashboard-tile${restrictedForGuest ? " dashboard-tile-restricted" : ""}`}
+                key={dashboard.id}
+              >
+                <div className="dashboard-tile-content" aria-hidden={restrictedForGuest ? "true" : undefined}>
+                  <h2>{dashboard.name}</h2>
+                  <p className="subtle-text">{dashboard.description}</p>
+                  {isEnabled ? (
+                    <Link className="button dashboard-open-button" href={dashboard.href!}>
+                      Open dashboard
+                    </Link>
+                  ) : (
+                    <span className="button button-disabled dashboard-open-button" aria-disabled="true">
+                      {restrictedForGuest ? "Access restricted" : "Coming soon"}
+                    </span>
+                  )}
+                </div>
+                {restrictedForGuest ? (
+                  <div className="dashboard-restricted-overlay" aria-hidden="true">
+                    <span className="dashboard-restricted-lock">{"\uD83D\uDD12"}</span>
+                  </div>
+                ) : null}
               </article>
             );
           })}
