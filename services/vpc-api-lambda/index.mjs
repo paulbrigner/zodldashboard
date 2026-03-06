@@ -131,6 +131,9 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "voltage_ixr",
   "zbitusd",
   "shielded_zec",
+  "tradingchannels",
+  "the_newscrypto",
+  "news_cryptocafe",
 ];
 
 let pool;
