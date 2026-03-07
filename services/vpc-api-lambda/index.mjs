@@ -134,6 +134,9 @@ const DEFAULT_INGEST_OMIT_HANDLES = [
   "tradingchannels",
   "the_newscrypto",
   "news_cryptocafe",
+  "gingerbyoudymag",
+  "alex_perish_dac",
+  "poly_mag_24",
 ];
 
 let pool;
