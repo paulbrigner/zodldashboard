@@ -267,7 +267,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT` | Optional | Max due jobs scanned per scheduler tick (default `25`). |
 | `XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP` | Optional | Auto-creates scheduled-email schema objects in backend Lambda (default `false`; set `true` when DB migrations cannot be run directly from ops host). |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
-| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved; defaults include `zec_88, zec__2, spaljeni_zec, juan_sanchez13, zeki82086538826, sucveceza_35, windymint1, usa_trader06, roger_welch1, cmscanner_bb, cmscanner_rsi, dexportal_, luckyvinod16, zecigr, disruqtion, zec8, cmscanner_sma, zeczinka, cryptodiane, sureblessing36, pafoslive1, sachin22049721, lovegds1lady, micheal_crypto0, ruth13900929210, michell82710798, kimberl97730856, fx220000, exnesst80805, sfurures_expart, felix__steven, vectorthehunter, forex47kin51201, bullbearcrypt, blacker6636, devendr34011988, dannym4u, scapenerhurst, duncannbaldwin, robertethan_, jamesharri45923, jxttreasury, dannnym4u, rinshad31142287, sumitso40959179, _zonecrypto_, promoimpulse, rmelian_ok, xol1641557, mw_intern, desota, ma1973sk, hari14q, cryptociampa, nvnguyen9999, nesleyfilsaime1, coinminerss, aicryptopattern, lucas_zec, iamjoeqpublic, mo30487903, obinnaumeh1, grok, ozonenkembu, richard66110384, semaaybat, imm71114749, geo_bush1, lite_saylor, web3wildwatch, voltage_ixr, zbitusd, shielded_zec, tradingchannels, the_newscrypto, news_cryptocafe, gingerbyoudymag, alex_perish_dac, poly_mag_24`). |
+| `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved). Repo defaults live in `config/xmonitor/omit-handles.json`; set this env var only to extend/override at deploy time. |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
 | `DATABASE_URL` | Optional* | Postgres DSN. |
 | `PGHOST` `PGPORT` `PGDATABASE` `PGUSER` `PGPASSWORD` `PGSSLMODE` | Optional* | Split Postgres settings when `DATABASE_URL` is unset. |
@@ -655,11 +655,11 @@ python3 scripts/ops/omit_and_purge_handles.py @handle_one @handle_two
 
 Notes:
 - Handles can be space-separated or comma-separated, with or without `@`.
-- Script updates omit defaults in server-side repo files (and legacy local files when present).
+- Script updates the canonical repo omit config (`config/xmonitor/omit-handles.json`).
 - Script purges matching rows from remote API (`/v1/ops/purge-handle`) and local SQLite when available.
 - Script only pauses/resumes local launchd jobs if those plists/runtime paths exist.
 - For remote purge auth it uses `--api-key`, then `XMONITOR_API_KEY`, then `launchctl getenv XMONITOR_API_KEY`.
-- Add `--update-lambda-env --aws-profile zodldashboard --aws-region us-east-1` to also update live Lambda env var `XMONITOR_INGEST_OMIT_HANDLES`.
+- Add `--update-lambda-env --aws-profile zodldashboard --aws-region us-east-1` to also update live Lambda env var `XMONITOR_INGEST_OMIT_HANDLES` on the backend and both collector functions.
 
 Ingest auth check (expected `401` without key):
 

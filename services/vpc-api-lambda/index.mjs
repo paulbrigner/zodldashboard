@@ -1,5 +1,8 @@
 import { Pool } from "pg";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
@@ -57,87 +60,46 @@ const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
 const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
 const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
 const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
-const DEFAULT_INGEST_OMIT_HANDLES = [
-  "zec_88",
-  "zec__2",
-  "spaljeni_zec",
-  "juan_sanchez13",
-  "zeki82086538826",
-  "sucveceza_35",
-  "windymint1",
-  "usa_trader06",
-  "roger_welch1",
-  "cmscanner_bb",
-  "cmscanner_rsi",
-  "dexportal_",
-  "luckyvinod16",
-  "zecigr",
-  "disruqtion",
-  "zec8",
-  "cmscanner_sma",
-  "zeczinka",
-  "cryptodiane",
-  "sureblessing36",
-  "pafoslive1",
-  "sachin22049721",
-  "lovegds1lady",
-  "micheal_crypto0",
-  "ruth13900929210",
-  "michell82710798",
-  "kimberl97730856",
-  "fx220000",
-  "exnesst80805",
-  "sfurures_expart",
-  "felix__steven",
-  "vectorthehunter",
-  "forex47kin51201",
-  "bullbearcrypt",
-  "blacker6636",
-  "devendr34011988",
-  "dannym4u",
-  "scapenerhurst",
-  "duncannbaldwin",
-  "robertethan_",
-  "jamesharri45923",
-  "jxttreasury",
-  "dannnym4u",
-  "rinshad31142287",
-  "sumitso40959179",
-  "_zonecrypto_",
-  "promoimpulse",
-  "rmelian_ok",
-  "xol1641557",
-  "mw_intern",
-  "desota",
-  "ma1973sk",
-  "hari14q",
-  "cryptociampa",
-  "nvnguyen9999",
-  "nesleyfilsaime1",
-  "coinminerss",
-  "aicryptopattern",
-  "lucas_zec",
-  "iamjoeqpublic",
-  "mo30487903",
-  "obinnaumeh1",
-  "grok",
-  "ozonenkembu",
-  "richard66110384",
-  "semaaybat",
-  "imm71114749",
-  "geo_bush1",
-  "lite_saylor",
-  "web3wildwatch",
-  "voltage_ixr",
-  "zbitusd",
-  "shielded_zec",
-  "tradingchannels",
-  "the_newscrypto",
-  "news_cryptocafe",
-  "gingerbyoudymag",
-  "alex_perish_dac",
-  "poly_mag_24",
-];
+const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
+
+function readCanonicalJson(relativeCandidates) {
+  for (const relativePath of relativeCandidates) {
+    const absolutePath = resolve(MODULE_DIR, relativePath);
+    if (!existsSync(absolutePath)) continue;
+    return JSON.parse(readFileSync(absolutePath, "utf8"));
+  }
+  throw new Error(`missing shared config file: ${relativeCandidates.join(" or ")}`);
+}
+
+async function importSharedModule(relativeCandidates) {
+  let lastError;
+  for (const relativePath of relativeCandidates) {
+    try {
+      return await import(new URL(relativePath, import.meta.url));
+    } catch (error) {
+      if (error?.code !== "ERR_MODULE_NOT_FOUND") {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(`missing shared module: ${relativeCandidates.join(" or ")}`);
+}
+
+const {
+  buildOmitHandleSet,
+  compileBaseTermRegex,
+  hasConfiguredBaseTerm,
+  normalizeHandle,
+  parseNormalizedHandleList,
+  shouldOmitKeywordOriginMissingBaseTerm,
+  shouldOmitKeywordOriginPost,
+} = await importSharedModule(["../../shared/xmonitor/ingest-policy.mjs", "./shared/xmonitor/ingest-policy.mjs"]);
+
+const DEFAULT_INGEST_OMIT_HANDLES = readCanonicalJson([
+  "../../config/xmonitor/omit-handles.json",
+  "./config/xmonitor/omit-handles.json",
+]);
 
 let pool;
 let summarySchemaEnsured = false;
@@ -687,104 +649,8 @@ function parseSinceIso(value) {
   return parsed.toISOString();
 }
 
-function normalizeHandle(value) {
-  return String(value || "").trim().replace(/^@+/, "").toLowerCase();
-}
-
-function parseNormalizedHandleList(value) {
-  if (!value) return [];
-
-  const handles = String(value)
-    .split(/[,\s]+/)
-    .map((item) => normalizeHandle(item))
-    .filter((item) => item.length > 0);
-
-  return [...new Set(handles)];
-}
-
 function ingestOmitHandleSet() {
-  return new Set([
-    ...DEFAULT_INGEST_OMIT_HANDLES,
-    ...parseNormalizedHandleList(process.env.XMONITOR_INGEST_OMIT_HANDLES),
-  ]);
-}
-
-function isKeywordSourceQuery(sourceQuery) {
-  const normalized = String(sourceQuery || "")
-    .trim()
-    .toLowerCase();
-  return normalized === "discovery" || normalized === "keyword" || normalized === "both" || normalized === "legacy";
-}
-
-const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
-
-function normalizeSubstanceText(text) {
-  return String(asString(text) || "")
-    .replace(/\u00a0/g, " ")
-    .replace(/[\u200B-\u200D\uFEFF]/g, " ")
-    .replace(/https?:\/\/\S+/gi, " ")
-    .replace(/[$#]([A-Za-z0-9_]+)/g, " $1 ")
-    .replace(/@[A-Za-z0-9_][A-Za-z0-9_.]*/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-function hasDiscoveryBaseTerm(text) {
-  const normalized = normalizeSubstanceText(text);
-  if (!normalized) return false;
-  return DISCOVERY_BASE_TERM_REGEX.test(normalized);
-}
-
-function escapeRegExpLiteral(value) {
-  return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function compileBaseTermRegex(baseTerms) {
-  const tokens = String(baseTerms || "")
-    .split(/\s+OR\s+/i)
-    .map((token) => token.trim())
-    .filter(Boolean)
-    .map((token) => token.replace(/^\(+|\)+$/g, "").trim())
-    .map((token) => token.replace(/^["']|["']$/g, "").trim())
-    .map((token) => token.replace(/^[$#]+/, "").trim())
-    .filter(Boolean);
-
-  const patterns = [];
-  for (const token of tokens) {
-    const collapsed = token.replace(/\s+/g, " ").trim();
-    if (!collapsed) continue;
-    const escaped = collapsed
-      .split(" ")
-      .map((part) => escapeRegExpLiteral(part))
-      .join("\\s+");
-    if (/^[A-Za-z0-9_ ]+$/.test(collapsed)) {
-      patterns.push(`\\b${escaped}\\b`);
-    } else {
-      patterns.push(escaped);
-    }
-  }
-
-  if (patterns.length === 0) return DISCOVERY_BASE_TERM_REGEX;
-  return new RegExp(`(?:${patterns.join("|")})`, "i");
-}
-
-function hasConfiguredBaseTerm(text, baseTermRegex) {
-  const normalized = normalizeSubstanceText(text);
-  if (!normalized) return false;
-  return baseTermRegex.test(normalized);
-}
-
-function shouldOmitKeywordOriginPost(item, authorHandle, omitHandles) {
-  if (!omitHandles.has(authorHandle)) return false;
-  if (!isKeywordSourceQuery(item.source_query)) return false;
-  if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
-  return true;
-}
-
-function shouldOmitKeywordOriginMissingBaseTerm(item) {
-  if (!isKeywordSourceQuery(item.source_query)) return false;
-  if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
-  return !hasDiscoveryBaseTerm(item.body_text);
+  return buildOmitHandleSet(DEFAULT_INGEST_OMIT_HANDLES, process.env.XMONITOR_INGEST_OMIT_HANDLES);
 }
 
 function parseHandleFilter(value) {

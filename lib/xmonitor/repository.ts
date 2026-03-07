@@ -1,7 +1,15 @@
 import type { QueryResultRow } from "pg";
+import defaultIngestOmitHandles from "@/config/xmonitor/omit-handles.json";
 import { decodeFeedCursor, encodeFeedCursor } from "@/lib/xmonitor/cursor";
 import { getDbPool } from "@/lib/xmonitor/db";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
+import {
+  buildOmitHandleSet,
+  normalizeHandle,
+  parseNormalizedHandleList,
+  shouldOmitKeywordOriginMissingBaseTerm,
+  shouldOmitKeywordOriginPost,
+} from "@/shared/xmonitor/ingest-policy.mjs";
 import type {
   BatchUpsertResult,
   DeletePostsByHandleResult,
@@ -54,42 +62,10 @@ function toIso(value: unknown): string | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
 }
 
-function normalizeHandle(value: string): string {
-  return value.trim().replace(/^@+/, "").toLowerCase();
-}
-
-const DEFAULT_INGEST_OMIT_HANDLES = ["zec_88", "zec__2"] as const;
-
-function parseNormalizedHandleList(value: string | undefined): string[] {
-  if (!value) return [];
-
-  const handles = value
-    .split(/[,\s]+/)
-    .map((item) => normalizeHandle(item))
-    .filter((item) => item.length > 0);
-
-  return [...new Set(handles)];
-}
+const DEFAULT_INGEST_OMIT_HANDLES = defaultIngestOmitHandles as string[];
 
 function ingestOmitHandleSet(): Set<string> {
-  return new Set([
-    ...DEFAULT_INGEST_OMIT_HANDLES,
-    ...parseNormalizedHandleList(process.env.XMONITOR_INGEST_OMIT_HANDLES),
-  ]);
-}
-
-function isKeywordSourceQuery(sourceQuery: string | null | undefined): boolean {
-  const normalized = String(sourceQuery || "")
-    .trim()
-    .toLowerCase();
-  return normalized === "discovery" || normalized === "keyword" || normalized === "both" || normalized === "legacy";
-}
-
-function shouldOmitKeywordOriginPost(item: PostUpsert, authorHandle: string, omitHandles: Set<string>): boolean {
-  if (!omitHandles.has(authorHandle)) return false;
-  if (!isKeywordSourceQuery(item.source_query)) return false;
-  if (item.watch_tier && String(item.watch_tier).trim().length > 0) return false;
-  return true;
+  return buildOmitHandleSet(DEFAULT_INGEST_OMIT_HANDLES, process.env.XMONITOR_INGEST_OMIT_HANDLES);
 }
 
 function parseHandleFilter(value: string | undefined): string[] {
@@ -261,6 +237,11 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
     const authorHandle = normalizeHandle(item.author_handle);
     if (shouldOmitKeywordOriginPost(item, authorHandle, omitHandles)) {
       result.errors.push({ index, message: `omitted keyword-origin author handle: ${authorHandle}` });
+      result.skipped += 1;
+      continue;
+    }
+    if (shouldOmitKeywordOriginMissingBaseTerm(item)) {
+      result.errors.push({ index, message: "omitted keyword-origin post missing discovery base term" });
       result.skipped += 1;
       continue;
     }

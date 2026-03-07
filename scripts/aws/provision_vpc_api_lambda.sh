@@ -19,7 +19,7 @@ set -euo pipefail
 #   API_VERSION=v1
 #   DEFAULT_FEED_LIMIT=50
 #   MAX_FEED_LIMIT=200
-#   INGEST_OMIT_HANDLES=zec_88,zec__2
+#   INGEST_OMIT_HANDLES=...                    # defaults from config/xmonitor/omit-handles.json
 #   SEMANTIC_ENABLED=true
 #   SEMANTIC_DEFAULT_LIMIT=25
 #   SEMANTIC_MAX_LIMIT=100
@@ -83,6 +83,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LAMBDA_DIR="$ROOT_DIR/services/vpc-api-lambda"
+OMIT_HANDLES_FILE="$ROOT_DIR/config/xmonitor/omit-handles.json"
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 VPC_ID="${VPC_ID:-vpc-1ee66a65}"
@@ -114,7 +115,26 @@ SERVICE_NAME="${SERVICE_NAME:-xmonitor-api}"
 API_VERSION="${API_VERSION:-v1}"
 DEFAULT_FEED_LIMIT="${DEFAULT_FEED_LIMIT:-50}"
 MAX_FEED_LIMIT="${MAX_FEED_LIMIT:-200}"
-INGEST_OMIT_HANDLES="${INGEST_OMIT_HANDLES:-zec_88,zec__2,spaljeni_zec,juan_sanchez13,zeki82086538826,sucveceza_35,windymint1,usa_trader06,roger_welch1,cmscanner_bb,cmscanner_rsi,dexportal_,luckyvinod16,zecigr,disruqtion,zec8,cmscanner_sma,zeczinka,cryptodiane,sureblessing36,pafoslive1,sachin22049721,lovegds1lady,micheal_crypto0,ruth13900929210,michell82710798,kimberl97730856,fx220000,exnesst80805,sfurures_expart,felix__steven,vectorthehunter,forex47kin51201,bullbearcrypt,blacker6636,devendr34011988,dannym4u,scapenerhurst,duncannbaldwin,robertethan_,jamesharri45923,jxttreasury,dannnym4u,rinshad31142287,sumitso40959179,_zonecrypto_,promoimpulse,rmelian_ok,xol1641557,mw_intern,desota,ma1973sk,hari14q,cryptociampa,nvnguyen9999,nesleyfilsaime1,coinminerss,aicryptopattern,lucas_zec,iamjoeqpublic,mo30487903,obinnaumeh1,grok,ozonenkembu,richard66110384,semaaybat,imm71114749,geo_bush1,lite_saylor,web3wildwatch,voltage_ixr,zbitusd,shielded_zec,tradingchannels,the_newscrypto,news_cryptocafe,gingerbyoudymag,alex_perish_dac,poly_mag_24}"
+DEFAULT_INGEST_OMIT_HANDLES="$(
+  OMIT_HANDLES_FILE="$OMIT_HANDLES_FILE" python3 - <<'PY'
+import json, os
+
+with open(os.environ["OMIT_HANDLES_FILE"], "r", encoding="utf-8") as fh:
+    handles = json.load(fh)
+
+normalized = []
+seen = set()
+for item in handles:
+    handle = str(item).strip().lstrip("@").lower()
+    if not handle or handle in seen:
+        continue
+    seen.add(handle)
+    normalized.append(handle)
+
+print(",".join(normalized))
+PY
+)"
+INGEST_OMIT_HANDLES="${INGEST_OMIT_HANDLES:-$DEFAULT_INGEST_OMIT_HANDLES}"
 SEMANTIC_ENABLED="${SEMANTIC_ENABLED:-true}"
 SEMANTIC_DEFAULT_LIMIT="${SEMANTIC_DEFAULT_LIMIT:-25}"
 SEMANTIC_MAX_LIMIT="${SEMANTIC_MAX_LIMIT:-100}"
@@ -510,10 +530,25 @@ if [[ -z "$INGEST_SHARED_SECRET" ]]; then
 fi
 
 echo "==> Packaging Lambda code"
+BUILD_DIR="$(mktemp -d)"
+cleanup_build_dir() {
+  rm -rf "$BUILD_DIR"
+}
+trap cleanup_build_dir EXIT
+
 pushd "$LAMBDA_DIR" >/dev/null
 npm install --omit=dev >/dev/null
-rm -f function.zip
-zip -rq function.zip index.mjs package.json package-lock.json node_modules
+cp index.mjs package.json package-lock.json "$BUILD_DIR"/
+cp -R node_modules "$BUILD_DIR"/
+popd >/dev/null
+
+mkdir -p "$BUILD_DIR/shared/xmonitor" "$BUILD_DIR/config/xmonitor"
+cp "$ROOT_DIR/shared/xmonitor/ingest-policy.mjs" "$BUILD_DIR/shared/xmonitor/ingest-policy.mjs"
+cp "$ROOT_DIR/config/xmonitor/omit-handles.json" "$BUILD_DIR/config/xmonitor/omit-handles.json"
+
+rm -f "$LAMBDA_DIR/function.zip"
+pushd "$BUILD_DIR" >/dev/null
+zip -rq "$LAMBDA_DIR/function.zip" index.mjs package.json package-lock.json node_modules shared config
 popd >/dev/null
 
 ENV_JSON="$(

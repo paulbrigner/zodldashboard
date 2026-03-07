@@ -230,7 +230,7 @@ python3 scripts/ops/omit_and_purge_handles.py @handle_one @handle_two \
   --aws-region us-east-1
 ```
 
-This updates omit defaults in repo files, purges rows through `/v1/ops/purge-handle`, and updates collector Lambda env (`XMONITOR_INGEST_OMIT_HANDLES`).
+This updates the canonical omit config in the repo, purges rows through `/v1/ops/purge-handle`, and updates backend + collector Lambda envs (`XMONITOR_INGEST_OMIT_HANDLES`).
 
 ## 10) Secret rotation
 

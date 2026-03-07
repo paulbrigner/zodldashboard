@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
 """
-Add one or more handles to omit lists and purge matching rows locally/remotely.
-
-This script updates:
-- Local OpenClaw collector omit defaults
-- Server lambda omit defaults (repo files)
-- README omit default example
+Add one or more handles to the canonical omit list and purge matching rows locally/remotely.
 
 And can purge:
 - Local SQLite rows for matching author handles
@@ -70,101 +65,16 @@ def merged_handles(existing: List[str], additions: List[str]) -> List[str]:
     return merged
 
 
-def update_local_omit_python(path: Path, additions: List[str]) -> dict:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(
-        r'(DEFAULT_INGEST_OMIT_HANDLES_RAW\s*=\s*os\.getenv\(\s*"XMONITOR_INGEST_OMIT_HANDLES"\s*,\s*")([^"]*)("\s*,?\s*\))',
-        re.S,
-    )
-    match = pattern.search(text)
-    if not match:
-        raise RuntimeError(f"could not find omit default in {path}")
+def update_canonical_omit_json(path: Path, additions: List[str]) -> dict:
+    existing_raw = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(existing_raw, list):
+        raise RuntimeError(f"omit config is not a list: {path}")
 
-    existing = parse_csv_handles(match.group(2))
+    existing = parse_handles(existing_raw)
     merged = merged_handles(existing, additions)
-    updated = pattern.sub(rf'\1{",".join(merged)}\3', text, count=1)
-
-    changed = updated != text
+    changed = merged != existing
     if changed:
-        path.write_text(updated, encoding="utf-8")
-
-    return {"file": str(path), "changed": changed, "handles": merged}
-
-
-def update_server_omit_array(path: Path, additions: List[str]) -> dict:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(r"const DEFAULT_INGEST_OMIT_HANDLES\s*=\s*\[(.*?)\];", re.S)
-    match = pattern.search(text)
-    if not match:
-        raise RuntimeError(f"could not find DEFAULT_INGEST_OMIT_HANDLES in {path}")
-
-    existing = re.findall(r'"([^"]+)"', match.group(1))
-    merged = merged_handles(existing, additions)
-    block = "const DEFAULT_INGEST_OMIT_HANDLES = [\n"
-    block += "".join(f'  "{handle}",\n' for handle in merged)
-    block += "];"
-
-    updated = pattern.sub(block, text, count=1)
-    changed = updated != text
-    if changed:
-        path.write_text(updated, encoding="utf-8")
-
-    return {"file": str(path), "changed": changed, "handles": merged}
-
-
-def update_provision_default(path: Path, additions: List[str]) -> dict:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(r'(INGEST_OMIT_HANDLES="\$\{INGEST_OMIT_HANDLES:-)([^}]*)(\}")')
-    match = pattern.search(text)
-    if not match:
-        raise RuntimeError(f"could not find INGEST_OMIT_HANDLES default in {path}")
-
-    existing = parse_csv_handles(match.group(2))
-    merged = merged_handles(existing, additions)
-    updated = pattern.sub(rf'\1{",".join(merged)}\3', text, count=1)
-
-    changed = updated != text
-    if changed:
-        path.write_text(updated, encoding="utf-8")
-
-    return {"file": str(path), "changed": changed, "handles": merged}
-
-
-def update_provision_xapi_default(path: Path, additions: List[str]) -> dict:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(r'(XMONITOR_INGEST_OMIT_HANDLES="\$\{XMONITOR_INGEST_OMIT_HANDLES:-)([^}]*)(\}")')
-    match = pattern.search(text)
-    if not match:
-        raise RuntimeError(f"could not find XMONITOR_INGEST_OMIT_HANDLES default in {path}")
-
-    existing = parse_csv_handles(match.group(2))
-    merged = merged_handles(existing, additions)
-    updated = pattern.sub(rf'\1{",".join(merged)}\3', text, count=1)
-
-    changed = updated != text
-    if changed:
-        path.write_text(updated, encoding="utf-8")
-
-    return {"file": str(path), "changed": changed, "handles": merged}
-
-
-def update_readme_default(path: Path, additions: List[str]) -> dict:
-    text = path.read_text(encoding="utf-8")
-    pattern = re.compile(
-        r"(\| `XMONITOR_INGEST_OMIT_HANDLES` .*defaults include `)([^`]+)(`\)\. \|)",
-        re.M,
-    )
-    match = pattern.search(text)
-    if not match:
-        raise RuntimeError(f"could not find README omit default row in {path}")
-
-    existing = parse_handles([match.group(2)])
-    merged = merged_handles(existing, additions)
-    updated = pattern.sub(rf'\1{", ".join(merged)}\3', text, count=1)
-
-    changed = updated != text
-    if changed:
-        path.write_text(updated, encoding="utf-8")
+        path.write_text(json.dumps(merged, indent=2) + "\n", encoding="utf-8")
 
     return {"file": str(path), "changed": changed, "handles": merged}
 
@@ -405,7 +315,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--api-base-url", default="https://www.zodldashboard.com/api/v1")
     parser.add_argument("--api-key", default="")
     parser.add_argument("--update-lambda-env", action="store_true")
-    parser.add_argument("--lambda-function-name", default="xmonitor-vpc-api")
+    parser.add_argument(
+        "--lambda-function-name",
+        action="append",
+        help="Lambda function name to update; repeatable. Defaults to backend + both collectors.",
+    )
     parser.add_argument("--aws-profile", default="")
     parser.add_argument("--aws-region", default="us-east-1")
     parser.add_argument("--skip-file-updates", action="store_true")
@@ -426,6 +340,7 @@ def main() -> int:
     repo_root = Path(args.repo_root).resolve()
     openclaw_root = Path(args.openclaw_root).resolve()
     local_db = Path(args.local_db).resolve()
+    omit_config_path = repo_root / "config" / "xmonitor" / "omit-handles.json"
 
     summary: dict = {"handles": handles, "files": [], "local_purge": None, "remote_purge": None, "lambda_env_update": None}
     paused = False
@@ -436,12 +351,7 @@ def main() -> int:
             paused = True
 
         if not args.skip_file_updates:
-            summary["files"].append(update_local_omit_python(openclaw_root / "scripts" / "x_monitor_kb.py", handles))
-            summary["files"].append(update_local_omit_python(openclaw_root / "scripts" / "x_monitor_ingest_api.py", handles))
-            summary["files"].append(update_server_omit_array(repo_root / "services" / "vpc-api-lambda" / "index.mjs", handles))
-            summary["files"].append(update_provision_default(repo_root / "scripts" / "aws" / "provision_vpc_api_lambda.sh", handles))
-            summary["files"].append(update_provision_xapi_default(repo_root / "scripts" / "aws" / "provision_x_api_collector_lambda.sh", handles))
-            summary["files"].append(update_readme_default(repo_root / "README.md", handles))
+            summary["files"].append(update_canonical_omit_json(omit_config_path, handles))
 
         if not args.skip_local_purge:
             summary["local_purge"] = purge_local_sqlite(local_db, handles)
@@ -453,12 +363,20 @@ def main() -> int:
             summary["remote_purge"] = purge_remote(args.api_base_url, api_key, handles)
 
         if args.update_lambda_env:
-            summary["lambda_env_update"] = update_lambda_omit_handles(
-                handles=handles,
-                function_name=args.lambda_function_name,
-                aws_profile=args.aws_profile.strip(),
-                aws_region=args.aws_region.strip(),
-            )
+            lambda_function_names = args.lambda_function_name or [
+                "xmonitor-vpc-api",
+                "xmonitor-xapi-priority-collector",
+                "xmonitor-xapi-discovery-collector",
+            ]
+            summary["lambda_env_update"] = [
+                update_lambda_omit_handles(
+                    handles=handles,
+                    function_name=function_name,
+                    aws_profile=args.aws_profile.strip(),
+                    aws_region=args.aws_region.strip(),
+                )
+                for function_name in lambda_function_names
+            ]
 
     finally:
         if paused:

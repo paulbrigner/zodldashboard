@@ -49,7 +49,7 @@ set -euo pipefail
 #   COLLECTOR_DRY_RUN=false
 #   COLLECTOR_SOURCE=aws-lambda-x-api
 #   COLLECTOR_MODE=priority                  # priority|discovery
-#   XMONITOR_INGEST_OMIT_HANDLES=...         # comma/space-separated handles (discovery omit gate)
+#   XMONITOR_INGEST_OMIT_HANDLES=...         # defaults from config/xmonitor/omit-handles.json
 #   SUMMARY_ENABLED=true                     # rolling 2h/12h summary generation (discovery mode)
 #   SUMMARY_ALIGN_HOURS=2
 #   SUMMARY_TOP_POSTS_2H=8
@@ -70,6 +70,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 LAMBDA_DIR="$ROOT_DIR/services/x-api-collector-lambda"
+OMIT_HANDLES_FILE="$ROOT_DIR/config/xmonitor/omit-handles.json"
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 LAMBDA_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-xmonitor-xapi-priority-collector}"
@@ -117,7 +118,26 @@ COLLECTOR_WRITE_ENABLED="${COLLECTOR_WRITE_ENABLED:-true}"
 COLLECTOR_DRY_RUN="${COLLECTOR_DRY_RUN:-false}"
 COLLECTOR_SOURCE="${COLLECTOR_SOURCE:-aws-lambda-x-api}"
 COLLECTOR_MODE="${COLLECTOR_MODE:-priority}"
-XMONITOR_INGEST_OMIT_HANDLES="${XMONITOR_INGEST_OMIT_HANDLES:-zec_88,zec__2,spaljeni_zec,juan_sanchez13,zeki82086538826,sucveceza_35,windymint1,usa_trader06,roger_welch1,cmscanner_bb,cmscanner_rsi,dexportal_,luckyvinod16,zecigr,disruqtion,zec8,cmscanner_sma,zeczinka,cryptodiane,sureblessing36,pafoslive1,sachin22049721,lovegds1lady,micheal_crypto0,ruth13900929210,michell82710798,kimberl97730856,fx220000,exnesst80805,sfurures_expart,felix__steven,vectorthehunter,forex47kin51201,bullbearcrypt,blacker6636,devendr34011988,dannym4u,scapenerhurst,duncannbaldwin,robertethan_,jamesharri45923,jxttreasury,dannnym4u,rinshad31142287,sumitso40959179,_zonecrypto_,promoimpulse,rmelian_ok,xol1641557,mw_intern,desota,ma1973sk,hari14q,cryptociampa,nvnguyen9999,nesleyfilsaime1,coinminerss,aicryptopattern,lucas_zec,iamjoeqpublic,mo30487903,obinnaumeh1,grok,ozonenkembu,richard66110384,semaaybat,imm71114749,geo_bush1,lite_saylor,web3wildwatch,voltage_ixr,zbitusd,shielded_zec,tradingchannels,the_newscrypto,news_cryptocafe,gingerbyoudymag,alex_perish_dac,poly_mag_24}"
+DEFAULT_INGEST_OMIT_HANDLES="$(
+  OMIT_HANDLES_FILE="$OMIT_HANDLES_FILE" python3 - <<'PY'
+import json, os
+
+with open(os.environ["OMIT_HANDLES_FILE"], "r", encoding="utf-8") as fh:
+    handles = json.load(fh)
+
+normalized = []
+seen = set()
+for item in handles:
+    handle = str(item).strip().lstrip("@").lower()
+    if not handle or handle in seen:
+        continue
+    seen.add(handle)
+    normalized.append(handle)
+
+print(",".join(normalized))
+PY
+)"
+XMONITOR_INGEST_OMIT_HANDLES="${XMONITOR_INGEST_OMIT_HANDLES:-$DEFAULT_INGEST_OMIT_HANDLES}"
 SUMMARY_ENABLED="${SUMMARY_ENABLED:-true}"
 SUMMARY_ALIGN_HOURS="${SUMMARY_ALIGN_HOURS:-2}"
 SUMMARY_TOP_POSTS_2H="${SUMMARY_TOP_POSTS_2H:-8}"
