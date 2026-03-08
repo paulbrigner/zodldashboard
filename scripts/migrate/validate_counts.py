@@ -191,7 +191,6 @@ def main() -> int:
 
     local_tables = {
         "tweets": "posts",
-        "reports": "reports",
         "watch_accounts": "watch_accounts",
         "runs": "pipeline_runs",
         "tweet_embeddings": "embeddings",
@@ -209,12 +208,6 @@ def main() -> int:
                     "postgres": remote_count,
                     "delta": remote_count - local_count,
                 }
-
-            report["counts"]["post_metrics_snapshots"] = {
-                "sqlite": None,
-                "postgres": count_postgres(cur, "post_metrics_snapshots"),
-                "delta": None,
-            }
 
             report["spot_check"] = compare_random_posts(sqlite_con, cur, args.sample_size)
 

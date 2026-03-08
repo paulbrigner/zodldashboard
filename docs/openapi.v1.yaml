@@ -413,10 +413,6 @@ components:
         reposts: { type: integer }
         replies: { type: integer }
         views: { type: integer }
-        initial_likes: { type: integer }
-        initial_reposts: { type: integer }
-        initial_replies: { type: integer }
-        initial_views: { type: integer }
         discovered_at: { type: string, format: date-time }
         last_seen_at: { type: string, format: date-time }
 

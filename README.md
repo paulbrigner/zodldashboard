@@ -264,6 +264,7 @@ Open [http://localhost:3000](http://localhost:3000).
 | `XMONITOR_EMAIL_MAX_BODY_CHARS` | Optional | Max stored/sent body length for markdown/text fields (default `20000`). |
 | `XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT` | Optional | Max due jobs scanned per scheduler tick (default `25`). |
 | `XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP` | Optional | Auto-creates scheduled-email schema objects in backend Lambda (default `false`; set `true` when DB migrations cannot be run directly from ops host). |
+| `XMONITOR_ENABLE_DB_MIGRATIONS_BOOTSTRAP` | Optional | Applies packaged SQL migrations from `db/migrations/` inside the backend Lambda (default `false`; use only for controlled ops/migration windows when direct `psql` access is unavailable). |
 | `XMONITOR_INGEST_SHARED_SECRET` | Required for ingest | Shared secret for ingest route auth. |
 | `XMONITOR_INGEST_OMIT_HANDLES` | Optional | Comma/space-separated author handles to skip for keyword-origin ingest only (watchlist-tier posts are preserved). Repo defaults live in `config/xmonitor/omit-handles.json`; set this env var only to extend/override at deploy time. |
 | `XMONITOR_API_KEY` | Optional | Compatibility fallback for ingest secret. |
@@ -516,8 +517,6 @@ Notes:
 Core tables from `001_init.sql`:
 
 - `posts`
-- `post_metrics_snapshots`
-- `reports`
 - `watch_accounts`
 - `pipeline_runs`
 - `embeddings`

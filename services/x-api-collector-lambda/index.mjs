@@ -2133,7 +2133,6 @@ async function ingestRun(config, counters, posts, dryRun, collectorMode) {
     mode: collectorMode,
     fetched_count: counters.uniqueTweets,
     significant_count: significantCount,
-    reported_count: 0,
     note: buildRunNote(config, counters, posts, collectorMode),
     source: config.collectorSource,
   };

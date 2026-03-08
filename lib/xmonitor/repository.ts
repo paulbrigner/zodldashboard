@@ -25,13 +25,11 @@ import type {
   FeedResponse,
   IngestQueryCheckpoint,
   IngestQueryCheckpointUpsert,
-  MetricsSnapshotUpsert,
   NarrativeShiftUpsert,
   PipelineRunUpsert,
   PostDetail,
   PostUpsert,
   ReconcileCounts,
-  ReportUpsert,
   WindowSummary,
   WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
@@ -172,30 +170,13 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
       reposts,
       replies,
       views,
-      initial_likes,
-      initial_reposts,
-      initial_replies,
-      initial_views,
-      likes_24h,
-      reposts_24h,
-      replies_24h,
-      views_24h,
-      refresh_24h_at,
-      refresh_24h_status,
-      refresh_24h_delta_likes,
-      refresh_24h_delta_reposts,
-      refresh_24h_delta_replies,
-      refresh_24h_delta_views,
       discovered_at,
       last_seen_at
     )
     VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18, $19,
-      $20, $21, $22, $23,
-      $24, $25, $26, $27, $28, $29,
-      $30, $31
+      $16, $17
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
@@ -212,20 +193,6 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
       reposts = EXCLUDED.reposts,
       replies = EXCLUDED.replies,
       views = EXCLUDED.views,
-      initial_likes = EXCLUDED.initial_likes,
-      initial_reposts = EXCLUDED.initial_reposts,
-      initial_replies = EXCLUDED.initial_replies,
-      initial_views = EXCLUDED.initial_views,
-      likes_24h = EXCLUDED.likes_24h,
-      reposts_24h = EXCLUDED.reposts_24h,
-      replies_24h = EXCLUDED.replies_24h,
-      views_24h = EXCLUDED.views_24h,
-      refresh_24h_at = EXCLUDED.refresh_24h_at,
-      refresh_24h_status = EXCLUDED.refresh_24h_status,
-      refresh_24h_delta_likes = EXCLUDED.refresh_24h_delta_likes,
-      refresh_24h_delta_reposts = EXCLUDED.refresh_24h_delta_reposts,
-      refresh_24h_delta_replies = EXCLUDED.refresh_24h_delta_replies,
-      refresh_24h_delta_views = EXCLUDED.refresh_24h_delta_views,
       discovered_at = EXCLUDED.discovered_at,
       last_seen_at = EXCLUDED.last_seen_at,
       updated_at = now()
@@ -262,20 +229,6 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
         item.reposts ?? 0,
         item.replies ?? 0,
         item.views ?? 0,
-        item.initial_likes ?? null,
-        item.initial_reposts ?? null,
-        item.initial_replies ?? null,
-        item.initial_views ?? null,
-        item.likes_24h ?? null,
-        item.reposts_24h ?? null,
-        item.replies_24h ?? null,
-        item.views_24h ?? null,
-        item.refresh_24h_at || null,
-        item.refresh_24h_status || null,
-        item.refresh_24h_delta_likes ?? null,
-        item.refresh_24h_delta_reposts ?? null,
-        item.refresh_24h_delta_replies ?? null,
-        item.refresh_24h_delta_views ?? null,
         item.discovered_at,
         item.last_seen_at,
       ]);
@@ -313,93 +266,14 @@ export async function purgePostsByAuthorHandle(authorHandle: string): Promise<De
   };
 }
 
-export async function upsertMetricSnapshots(items: MetricsSnapshotUpsert[]): Promise<BatchUpsertResult> {
-  const result = buildBatchResult(items.length);
-  const sql = `
-    INSERT INTO post_metrics_snapshots(status_id, snapshot_type, snapshot_at, likes, reposts, replies, views, source)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    ON CONFLICT (status_id, snapshot_type, snapshot_at) DO UPDATE SET
-      likes = EXCLUDED.likes,
-      reposts = EXCLUDED.reposts,
-      replies = EXCLUDED.replies,
-      views = EXCLUDED.views,
-      source = EXCLUDED.source
-    RETURNING (xmax = 0) AS inserted
-  `;
-
-  for (const [index, item] of items.entries()) {
-    try {
-      const inserted = await runUpsert(sql, [
-        item.status_id,
-        item.snapshot_type,
-        item.snapshot_at,
-        item.likes,
-        item.reposts,
-        item.replies,
-        item.views,
-        item.source || "ingest",
-      ]);
-
-      if (inserted.inserted) {
-        result.inserted += 1;
-      } else {
-        result.updated += 1;
-      }
-    } catch (error) {
-      result.errors.push({ index, message: errorMessage(error) });
-      result.skipped += 1;
-    }
-  }
-
-  return result;
-}
-
-export async function upsertReports(items: ReportUpsert[]): Promise<BatchUpsertResult> {
-  const result = buildBatchResult(items.length);
-  const sql = `
-    INSERT INTO reports(status_id, reported_at, channel, destination, summary)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (status_id) DO UPDATE SET
-      reported_at = EXCLUDED.reported_at,
-      channel = EXCLUDED.channel,
-      destination = EXCLUDED.destination,
-      summary = EXCLUDED.summary
-    RETURNING (xmax = 0) AS inserted
-  `;
-
-  for (const [index, item] of items.entries()) {
-    try {
-      const inserted = await runUpsert(sql, [
-        item.status_id,
-        item.reported_at,
-        item.channel || null,
-        item.destination || null,
-        item.summary || null,
-      ]);
-
-      if (inserted.inserted) {
-        result.inserted += 1;
-      } else {
-        result.updated += 1;
-      }
-    } catch (error) {
-      result.errors.push({ index, message: errorMessage(error) });
-      result.skipped += 1;
-    }
-  }
-
-  return result;
-}
-
 export async function upsertPipelineRun(item: PipelineRunUpsert): Promise<BatchUpsertResult> {
   const result = buildBatchResult(1);
   const sql = `
-    INSERT INTO pipeline_runs(run_at, mode, fetched_count, significant_count, reported_count, note, source)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    INSERT INTO pipeline_runs(run_at, mode, fetched_count, significant_count, note, source)
+    VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT (run_at, mode, source) DO UPDATE SET
       fetched_count = EXCLUDED.fetched_count,
       significant_count = EXCLUDED.significant_count,
-      reported_count = EXCLUDED.reported_count,
       note = EXCLUDED.note
     RETURNING (xmax = 0) AS inserted
   `;
@@ -410,7 +284,6 @@ export async function upsertPipelineRun(item: PipelineRunUpsert): Promise<BatchU
       item.mode,
       item.fetched_count ?? 0,
       item.significant_count ?? 0,
-      item.reported_count ?? 0,
       item.note || null,
       item.source || "local-dispatcher",
     ]);
@@ -1203,9 +1076,7 @@ export async function getReconcileCounts(since: string): Promise<ReconcileCounts
         (SELECT COUNT(*)
          FROM posts p
          WHERE p.discovered_at >= $1
-            OR p.last_seen_at >= $1
-            OR (p.refresh_24h_at IS NOT NULL AND p.refresh_24h_at >= $1)) AS posts,
-        (SELECT COUNT(*) FROM reports r WHERE r.reported_at >= $1) AS reports,
+            OR p.last_seen_at >= $1) AS posts,
         (SELECT COUNT(*) FROM pipeline_runs pr WHERE pr.run_at >= $1) AS pipeline_runs,
         (SELECT COUNT(*) FROM window_summaries ws WHERE ws.generated_at >= $1) AS window_summaries,
         (SELECT COUNT(*) FROM narrative_shifts ns WHERE ns.generated_at >= $1) AS narrative_shifts
@@ -1219,7 +1090,6 @@ export async function getReconcileCounts(since: string): Promise<ReconcileCounts
     generated_at: new Date().toISOString(),
     counts: {
       posts: Number(row.posts || 0),
-      reports: Number(row.reports || 0),
       pipeline_runs: Number(row.pipeline_runs || 0),
       window_summaries: Number(row.window_summaries || 0),
       narrative_shifts: Number(row.narrative_shifts || 0),

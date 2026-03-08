@@ -1,14 +1,13 @@
 import { Pool } from "pg";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
 const WATCH_TIERS = new Set(["teammate", "influencer", "ecosystem"]);
-const SNAPSHOT_TYPES = new Set(["initial_capture", "latest_observed", "refresh_24h"]);
-const RUN_MODES = new Set(["priority", "discovery", "both", "refresh24h", "manual"]);
+const RUN_MODES = new Set(["priority", "discovery", "both", "manual"]);
 const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
 const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread", "email"]);
 
@@ -102,6 +101,7 @@ const DEFAULT_INGEST_OMIT_HANDLES = readCanonicalJson([
 ]);
 
 let pool;
+let dbMigrationsEnsured = false;
 let summarySchemaEnsured = false;
 let composeJobsSchemaEnsured = false;
 let emailSchemaEnsured = false;
@@ -379,6 +379,14 @@ function shouldBootstrapEmailSchema() {
 
 function shouldBootstrapQueryStateSchema() {
   const value = asString(process.env.XMONITOR_ENABLE_QUERY_STATE_SCHEMA_BOOTSTRAP);
+  if (!value) return false;
+  const normalized = value.toLowerCase();
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return normalized === "1" || normalized === "true" || normalized === "yes";
+}
+
+function shouldBootstrapDbMigrations() {
+  const value = asString(process.env.XMONITOR_ENABLE_DB_MIGRATIONS_BOOTSTRAP);
   if (!value) return false;
   const normalized = value.toLowerCase();
   if (normalized === "0" || normalized === "false" || normalized === "no") return false;
@@ -1092,74 +1100,8 @@ function parsePostUpsert(value) {
       reposts: asInteger(value.reposts) ?? 0,
       replies: asInteger(value.replies) ?? 0,
       views: asInteger(value.views) ?? 0,
-      initial_likes: asInteger(value.initial_likes) ?? null,
-      initial_reposts: asInteger(value.initial_reposts) ?? null,
-      initial_replies: asInteger(value.initial_replies) ?? null,
-      initial_views: asInteger(value.initial_views) ?? null,
-      likes_24h: asInteger(value.likes_24h) ?? null,
-      reposts_24h: asInteger(value.reposts_24h) ?? null,
-      replies_24h: asInteger(value.replies_24h) ?? null,
-      views_24h: asInteger(value.views_24h) ?? null,
-      refresh_24h_at: asIsoTimestamp(value.refresh_24h_at) ?? null,
-      refresh_24h_status: asNullableString(value.refresh_24h_status),
-      refresh_24h_delta_likes: asInteger(value.refresh_24h_delta_likes) ?? null,
-      refresh_24h_delta_reposts: asInteger(value.refresh_24h_delta_reposts) ?? null,
-      refresh_24h_delta_replies: asInteger(value.refresh_24h_delta_replies) ?? null,
-      refresh_24h_delta_views: asInteger(value.refresh_24h_delta_views) ?? null,
       discovered_at: discoveredAt,
       last_seen_at: lastSeenAt,
-    },
-  };
-}
-
-function parseMetricsSnapshotUpsert(value) {
-  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
-
-  const statusId = asString(value.status_id);
-  const snapshotType = asString(value.snapshot_type)?.toLowerCase();
-  const snapshotAt = asIsoTimestamp(value.snapshot_at);
-
-  if (!statusId || !snapshotType || !snapshotAt) {
-    return { ok: false, error: "status_id, snapshot_type, and snapshot_at are required" };
-  }
-
-  if (!SNAPSHOT_TYPES.has(snapshotType)) {
-    return { ok: false, error: "snapshot_type must be one of initial_capture, latest_observed, refresh_24h" };
-  }
-
-  return {
-    ok: true,
-    data: {
-      status_id: statusId,
-      snapshot_type: snapshotType,
-      snapshot_at: snapshotAt,
-      likes: asInteger(value.likes) ?? 0,
-      reposts: asInteger(value.reposts) ?? 0,
-      replies: asInteger(value.replies) ?? 0,
-      views: asInteger(value.views) ?? 0,
-      source: asString(value.source) || "ingest",
-    },
-  };
-}
-
-function parseReportUpsert(value) {
-  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
-
-  const statusId = asString(value.status_id);
-  const reportedAt = asIsoTimestamp(value.reported_at);
-
-  if (!statusId || !reportedAt) {
-    return { ok: false, error: "status_id and reported_at are required" };
-  }
-
-  return {
-    ok: true,
-    data: {
-      status_id: statusId,
-      reported_at: reportedAt,
-      channel: asNullableString(value.channel),
-      destination: asNullableString(value.destination),
-      summary: asNullableString(value.summary),
     },
   };
 }
@@ -1175,7 +1117,7 @@ function parsePipelineRunUpsert(value) {
   }
 
   if (!RUN_MODES.has(mode)) {
-    return { ok: false, error: "mode must be one of priority, discovery, both, refresh24h, manual" };
+    return { ok: false, error: "mode must be one of priority, discovery, both, manual" };
   }
 
   return {
@@ -1185,7 +1127,6 @@ function parsePipelineRunUpsert(value) {
       mode,
       fetched_count: asInteger(value.fetched_count) ?? 0,
       significant_count: asInteger(value.significant_count) ?? 0,
-      reported_count: asInteger(value.reported_count) ?? 0,
       note: asNullableString(value.note),
       source: asNullableString(value.source) ?? "local-dispatcher",
     },
@@ -1636,6 +1577,33 @@ async function runUpsert(sql, values) {
   return { inserted: Boolean(result.rows[0]?.inserted) };
 }
 
+async function ensurePackagedDbMigrations() {
+  if (dbMigrationsEnsured || !shouldBootstrapDbMigrations()) {
+    return;
+  }
+
+  if (!hasDatabaseConfig()) {
+    throw new Error("Database is not configured. Set DATABASE_URL or PG* variables.");
+  }
+
+  const migrationsDir = resolve(MODULE_DIR, "db", "migrations");
+  if (!existsSync(migrationsDir)) {
+    throw new Error(`missing packaged migrations directory: ${migrationsDir}`);
+  }
+
+  const migrationFiles = readdirSync(migrationsDir)
+    .filter((name) => name.endsWith(".sql"))
+    .sort((left, right) => left.localeCompare(right));
+
+  const db = getPool();
+  for (const fileName of migrationFiles) {
+    const sql = readFileSync(resolve(migrationsDir, fileName), "utf8");
+    await db.query(sql);
+  }
+
+  dbMigrationsEnsured = true;
+}
+
 async function ensureSummaryAnalyticsSchema() {
   if (summarySchemaEnsured || !shouldBootstrapSummarySchema()) {
     return;
@@ -1934,30 +1902,13 @@ async function upsertPosts(items) {
       reposts,
       replies,
       views,
-      initial_likes,
-      initial_reposts,
-      initial_replies,
-      initial_views,
-      likes_24h,
-      reposts_24h,
-      replies_24h,
-      views_24h,
-      refresh_24h_at,
-      refresh_24h_status,
-      refresh_24h_delta_likes,
-      refresh_24h_delta_reposts,
-      refresh_24h_delta_replies,
-      refresh_24h_delta_views,
       discovered_at,
       last_seen_at
     )
     VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
       $12, $13, $14, $15,
-      $16, $17, $18, $19,
-      $20, $21, $22, $23,
-      $24, $25, $26, $27, $28, $29,
-      $30, $31
+      $16, $17
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
@@ -1974,20 +1925,6 @@ async function upsertPosts(items) {
       reposts = EXCLUDED.reposts,
       replies = EXCLUDED.replies,
       views = EXCLUDED.views,
-      initial_likes = EXCLUDED.initial_likes,
-      initial_reposts = EXCLUDED.initial_reposts,
-      initial_replies = EXCLUDED.initial_replies,
-      initial_views = EXCLUDED.initial_views,
-      likes_24h = EXCLUDED.likes_24h,
-      reposts_24h = EXCLUDED.reposts_24h,
-      replies_24h = EXCLUDED.replies_24h,
-      views_24h = EXCLUDED.views_24h,
-      refresh_24h_at = EXCLUDED.refresh_24h_at,
-      refresh_24h_status = EXCLUDED.refresh_24h_status,
-      refresh_24h_delta_likes = EXCLUDED.refresh_24h_delta_likes,
-      refresh_24h_delta_reposts = EXCLUDED.refresh_24h_delta_reposts,
-      refresh_24h_delta_replies = EXCLUDED.refresh_24h_delta_replies,
-      refresh_24h_delta_views = EXCLUDED.refresh_24h_delta_views,
       discovered_at = EXCLUDED.discovered_at,
       last_seen_at = EXCLUDED.last_seen_at,
       updated_at = now()
@@ -2024,20 +1961,6 @@ async function upsertPosts(items) {
         item.reposts ?? 0,
         item.replies ?? 0,
         item.views ?? 0,
-        item.initial_likes ?? null,
-        item.initial_reposts ?? null,
-        item.initial_replies ?? null,
-        item.initial_views ?? null,
-        item.likes_24h ?? null,
-        item.reposts_24h ?? null,
-        item.replies_24h ?? null,
-        item.views_24h ?? null,
-        item.refresh_24h_at || null,
-        item.refresh_24h_status || null,
-        item.refresh_24h_delta_likes ?? null,
-        item.refresh_24h_delta_reposts ?? null,
-        item.refresh_24h_delta_replies ?? null,
-        item.refresh_24h_delta_views ?? null,
         item.discovered_at,
         item.last_seen_at,
       ]);
@@ -2116,93 +2039,14 @@ async function purgePostsByAuthorHandleMissingBaseTerms(authorHandle, baseTerms)
   };
 }
 
-async function upsertMetricSnapshots(items) {
-  const result = buildBatchResult(items.length);
-  const sql = `
-    INSERT INTO post_metrics_snapshots(status_id, snapshot_type, snapshot_at, likes, reposts, replies, views, source)
-    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-    ON CONFLICT (status_id, snapshot_type, snapshot_at) DO UPDATE SET
-      likes = EXCLUDED.likes,
-      reposts = EXCLUDED.reposts,
-      replies = EXCLUDED.replies,
-      views = EXCLUDED.views,
-      source = EXCLUDED.source
-    RETURNING (xmax = 0) AS inserted
-  `;
-
-  for (const [index, item] of items.entries()) {
-    try {
-      const inserted = await runUpsert(sql, [
-        item.status_id,
-        item.snapshot_type,
-        item.snapshot_at,
-        item.likes,
-        item.reposts,
-        item.replies,
-        item.views,
-        item.source || "ingest",
-      ]);
-
-      if (inserted.inserted) {
-        result.inserted += 1;
-      } else {
-        result.updated += 1;
-      }
-    } catch (error) {
-      result.errors.push({ index, message: errorMessage(error) });
-      result.skipped += 1;
-    }
-  }
-
-  return result;
-}
-
-async function upsertReports(items) {
-  const result = buildBatchResult(items.length);
-  const sql = `
-    INSERT INTO reports(status_id, reported_at, channel, destination, summary)
-    VALUES ($1, $2, $3, $4, $5)
-    ON CONFLICT (status_id) DO UPDATE SET
-      reported_at = EXCLUDED.reported_at,
-      channel = EXCLUDED.channel,
-      destination = EXCLUDED.destination,
-      summary = EXCLUDED.summary
-    RETURNING (xmax = 0) AS inserted
-  `;
-
-  for (const [index, item] of items.entries()) {
-    try {
-      const inserted = await runUpsert(sql, [
-        item.status_id,
-        item.reported_at,
-        item.channel || null,
-        item.destination || null,
-        item.summary || null,
-      ]);
-
-      if (inserted.inserted) {
-        result.inserted += 1;
-      } else {
-        result.updated += 1;
-      }
-    } catch (error) {
-      result.errors.push({ index, message: errorMessage(error) });
-      result.skipped += 1;
-    }
-  }
-
-  return result;
-}
-
 async function upsertPipelineRun(item) {
   const result = buildBatchResult(1);
   const sql = `
-    INSERT INTO pipeline_runs(run_at, mode, fetched_count, significant_count, reported_count, note, source)
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    INSERT INTO pipeline_runs(run_at, mode, fetched_count, significant_count, note, source)
+    VALUES ($1, $2, $3, $4, $5, $6)
     ON CONFLICT (run_at, mode, source) DO UPDATE SET
       fetched_count = EXCLUDED.fetched_count,
       significant_count = EXCLUDED.significant_count,
-      reported_count = EXCLUDED.reported_count,
       note = EXCLUDED.note
     RETURNING (xmax = 0) AS inserted
   `;
@@ -2213,7 +2057,6 @@ async function upsertPipelineRun(item) {
       item.mode,
       item.fetched_count ?? 0,
       item.significant_count ?? 0,
-      item.reported_count ?? 0,
       item.note || null,
       item.source || "local-dispatcher",
     ]);
@@ -5117,9 +4960,7 @@ async function getReconcileCounts(since) {
         (SELECT COUNT(*)
          FROM posts p
          WHERE p.discovered_at >= $1
-            OR p.last_seen_at >= $1
-            OR (p.refresh_24h_at IS NOT NULL AND p.refresh_24h_at >= $1)) AS posts,
-        (SELECT COUNT(*) FROM reports r WHERE r.reported_at >= $1) AS reports,
+            OR p.last_seen_at >= $1) AS posts,
         (SELECT COUNT(*) FROM pipeline_runs pr WHERE pr.run_at >= $1) AS pipeline_runs,
         (SELECT COUNT(*) FROM window_summaries ws WHERE ws.generated_at >= $1) AS window_summaries,
         (SELECT COUNT(*) FROM narrative_shifts ns WHERE ns.generated_at >= $1) AS narrative_shifts
@@ -5133,7 +4974,6 @@ async function getReconcileCounts(since) {
     generated_at: new Date().toISOString(),
     counts: {
       posts: Number(row.posts || 0),
-      reports: Number(row.reports || 0),
       pipeline_runs: Number(row.pipeline_runs || 0),
       window_summaries: Number(row.window_summaries || 0),
       narrative_shifts: Number(row.narrative_shifts || 0),
@@ -5846,6 +5686,8 @@ export async function handler(event) {
     }
   }
 
+  await ensurePackagedDbMigrations();
+
   if (method === "GET" && path === "/v1/health") {
     return handleHealth();
   }
@@ -5928,24 +5770,6 @@ export async function handler(event) {
       parsePostUpsert,
       upsertPosts,
       "failed to upsert posts"
-    );
-  }
-
-  if (method === "POST" && path === "/v1/ingest/metrics/batch") {
-    return handleIngestBatch(
-      event,
-      parseMetricsSnapshotUpsert,
-      upsertMetricSnapshots,
-      "failed to upsert metric snapshots"
-    );
-  }
-
-  if (method === "POST" && path === "/v1/ingest/reports/batch") {
-    return handleIngestBatch(
-      event,
-      parseReportUpsert,
-      upsertReports,
-      "failed to upsert reports"
     );
   }
 

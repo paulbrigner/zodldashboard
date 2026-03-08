@@ -35,7 +35,6 @@ Primary source file:
 
 Source tables to migrate:
 - `tweets`
-- `reports`
 - `watch_accounts`
 - `runs`
 - `tweet_embeddings`
@@ -51,7 +50,7 @@ Ignore local-only internals:
 > Design notes:
 > - Keep schema practical and migration-safe.
 > - Use `TEXT + CHECK` instead of enums for beta agility.
-> - Keep both denormalized current metrics on `posts` and historical snapshots.
+> - Keep the live backend schema aligned with the active collector/runtime only.
 
 ## Extensions (recommended)
 
@@ -86,24 +85,6 @@ CREATE TABLE IF NOT EXISTS posts (
   replies INTEGER NOT NULL DEFAULT 0,
   views INTEGER NOT NULL DEFAULT 0,
 
-  -- first-capture metrics
-  initial_likes INTEGER,
-  initial_reposts INTEGER,
-  initial_replies INTEGER,
-  initial_views INTEGER,
-
-  -- 24h refresh metrics
-  likes_24h INTEGER,
-  reposts_24h INTEGER,
-  replies_24h INTEGER,
-  views_24h INTEGER,
-  refresh_24h_at TIMESTAMPTZ,
-  refresh_24h_status TEXT,
-  refresh_24h_delta_likes INTEGER,
-  refresh_24h_delta_reposts INTEGER,
-  refresh_24h_delta_replies INTEGER,
-  refresh_24h_delta_views INTEGER,
-
   discovered_at TIMESTAMPTZ NOT NULL,
   last_seen_at TIMESTAMPTZ NOT NULL,
 
@@ -115,35 +96,9 @@ CREATE INDEX IF NOT EXISTS idx_posts_discovered_at_desc ON posts (discovered_at 
 CREATE INDEX IF NOT EXISTS idx_posts_significant_discovered ON posts (is_significant, discovered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_watch_tier_discovered ON posts (watch_tier, discovered_at DESC);
 CREATE INDEX IF NOT EXISTS idx_posts_author_handle_discovered ON posts (author_handle, discovered_at DESC);
-CREATE INDEX IF NOT EXISTS idx_posts_refresh_24h_at ON posts (refresh_24h_at);
 ```
 
-## 3.2 `post_metrics_snapshots`
-
-```sql
-CREATE TABLE IF NOT EXISTS post_metrics_snapshots (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  status_id TEXT NOT NULL REFERENCES posts(status_id) ON DELETE CASCADE,
-
-  snapshot_type TEXT NOT NULL CHECK (snapshot_type IN ('initial_capture','latest_observed','refresh_24h')),
-  snapshot_at TIMESTAMPTZ NOT NULL,
-
-  likes INTEGER NOT NULL DEFAULT 0,
-  reposts INTEGER NOT NULL DEFAULT 0,
-  replies INTEGER NOT NULL DEFAULT 0,
-  views INTEGER NOT NULL DEFAULT 0,
-
-  source TEXT DEFAULT 'ingest',
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-
-  UNIQUE(status_id, snapshot_type, snapshot_at)
-);
-
-CREATE INDEX IF NOT EXISTS idx_snapshots_status_time ON post_metrics_snapshots (status_id, snapshot_at DESC);
-CREATE INDEX IF NOT EXISTS idx_snapshots_type_time ON post_metrics_snapshots (snapshot_type, snapshot_at DESC);
-```
-
-## 3.3 `watch_accounts`
+## 3.2 `watch_accounts`
 
 ```sql
 CREATE TABLE IF NOT EXISTS watch_accounts (
@@ -159,33 +114,16 @@ CREATE TABLE IF NOT EXISTS watch_accounts (
 CREATE INDEX IF NOT EXISTS idx_watch_accounts_tier ON watch_accounts (tier, handle);
 ```
 
-## 3.4 `reports`
-
-```sql
-CREATE TABLE IF NOT EXISTS reports (
-  status_id TEXT PRIMARY KEY REFERENCES posts(status_id) ON DELETE CASCADE,
-  reported_at TIMESTAMPTZ NOT NULL,
-  channel TEXT,
-  summary TEXT,
-  destination TEXT,
-
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_reports_reported_at_desc ON reports (reported_at DESC);
-```
-
-## 3.5 `pipeline_runs`
+## 3.3 `pipeline_runs`
 
 ```sql
 CREATE TABLE IF NOT EXISTS pipeline_runs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   run_at TIMESTAMPTZ NOT NULL,
-  mode TEXT NOT NULL CHECK (mode IN ('priority','discovery','both','refresh24h','manual')),
+  mode TEXT NOT NULL CHECK (mode IN ('priority','discovery','both','manual')),
 
   fetched_count INTEGER NOT NULL DEFAULT 0,
   significant_count INTEGER NOT NULL DEFAULT 0,
-  reported_count INTEGER NOT NULL DEFAULT 0,
   note TEXT,
 
   source TEXT DEFAULT 'local-dispatcher',
@@ -197,7 +135,7 @@ CREATE TABLE IF NOT EXISTS pipeline_runs (
 CREATE INDEX IF NOT EXISTS idx_pipeline_runs_mode_run_at_desc ON pipeline_runs (mode, run_at DESC);
 ```
 
-## 3.6 `embeddings` (semantic-ready)
+## 3.4 `embeddings` (semantic-ready)
 
 ```sql
 CREATE TABLE IF NOT EXISTS embeddings (
@@ -226,7 +164,6 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_model_dims ON embeddings (model, dims)
 ## 4.1 Table mapping
 
 - `tweets` -> `posts`
-- `reports` -> `reports`
 - `watch_accounts` -> `watch_accounts`
 - `runs` -> `pipeline_runs`
 - `tweet_embeddings` -> `embeddings`
@@ -235,14 +172,7 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_model_dims ON embeddings (model, dims)
 
 SQLite values are ISO-like text (`...+00:00`). Parse as UTC and write to `TIMESTAMPTZ`.
 
-## 4.3 Snapshot derivation rules
-
-For each migrated `posts` row, create snapshots:
-1. `initial_capture` at `discovered_at` using `initial_*` (fallback to current metrics if null)
-2. `latest_observed` at `last_seen_at` using current `likes/reposts/replies/views`
-3. `refresh_24h` at `refresh_24h_at` if present, using `*_24h`
-
-## 4.4 Data quality normalization
+## 4.3 Data quality normalization
 
 - Lowercase `author_handle` and `watch_accounts.handle` during import.
 - Preserve `status_id` exactly as text.

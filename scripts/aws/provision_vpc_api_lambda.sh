@@ -71,6 +71,7 @@ set -euo pipefail
 #   EMAIL_MAX_BODY_CHARS=20000
 #   EMAIL_SCHEDULE_DISPATCH_LIMIT=25
 #   EMAIL_SCHEMA_BOOTSTRAP=true
+#   DB_MIGRATIONS_BOOTSTRAP=false
 #   USER_PROXY_SECRET=...
 #   SUMMARY_SCHEMA_BOOTSTRAP=true
 #   SUMMARY_SCHEMA_GRANT_ROLE=xmonitor_app
@@ -175,6 +176,7 @@ EMAIL_MAX_JOBS_PER_USER="${EMAIL_MAX_JOBS_PER_USER:-25}"
 EMAIL_MAX_BODY_CHARS="${EMAIL_MAX_BODY_CHARS:-20000}"
 EMAIL_SCHEDULE_DISPATCH_LIMIT="${EMAIL_SCHEDULE_DISPATCH_LIMIT:-25}"
 EMAIL_SCHEMA_BOOTSTRAP="${EMAIL_SCHEMA_BOOTSTRAP:-false}"
+DB_MIGRATIONS_BOOTSTRAP="${DB_MIGRATIONS_BOOTSTRAP:-false}"
 USER_PROXY_SECRET="${USER_PROXY_SECRET:-}"
 SUMMARY_SCHEMA_BOOTSTRAP="${SUMMARY_SCHEMA_BOOTSTRAP:-}"
 SUMMARY_SCHEMA_GRANT_ROLE="${SUMMARY_SCHEMA_GRANT_ROLE:-xmonitor_app}"
@@ -542,13 +544,14 @@ cp index.mjs package.json package-lock.json "$BUILD_DIR"/
 cp -R node_modules "$BUILD_DIR"/
 popd >/dev/null
 
-mkdir -p "$BUILD_DIR/shared/xmonitor" "$BUILD_DIR/config/xmonitor"
+mkdir -p "$BUILD_DIR/shared/xmonitor" "$BUILD_DIR/config/xmonitor" "$BUILD_DIR/db/migrations"
 cp "$ROOT_DIR/shared/xmonitor/ingest-policy.mjs" "$BUILD_DIR/shared/xmonitor/ingest-policy.mjs"
 cp "$ROOT_DIR/config/xmonitor/omit-handles.json" "$BUILD_DIR/config/xmonitor/omit-handles.json"
+cp "$ROOT_DIR"/db/migrations/*.sql "$BUILD_DIR/db/migrations/"
 
 rm -f "$LAMBDA_DIR/function.zip"
 pushd "$BUILD_DIR" >/dev/null
-zip -rq "$LAMBDA_DIR/function.zip" index.mjs package.json package-lock.json node_modules shared config
+zip -rq "$LAMBDA_DIR/function.zip" index.mjs package.json package-lock.json node_modules shared config db
 popd >/dev/null
 
 ENV_JSON="$(
@@ -603,6 +606,7 @@ ENV_JSON="$(
   EMAIL_MAX_BODY_CHARS="$EMAIL_MAX_BODY_CHARS" \
   EMAIL_SCHEDULE_DISPATCH_LIMIT="$EMAIL_SCHEDULE_DISPATCH_LIMIT" \
   EMAIL_SCHEMA_BOOTSTRAP="$EMAIL_SCHEMA_BOOTSTRAP" \
+  DB_MIGRATIONS_BOOTSTRAP="$DB_MIGRATIONS_BOOTSTRAP" \
   USER_PROXY_SECRET="$USER_PROXY_SECRET" \
   COMPOSE_QUEUE_URL="$COMPOSE_QUEUE_URL" \
   COMPOSE_JOBS_SCHEMA_BOOTSTRAP="$COMPOSE_JOBS_SCHEMA_BOOTSTRAP" \
@@ -666,6 +670,7 @@ print(json.dumps({
     "XMONITOR_EMAIL_MAX_BODY_CHARS": os.environ.get("EMAIL_MAX_BODY_CHARS", ""),
     "XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT": os.environ.get("EMAIL_SCHEDULE_DISPATCH_LIMIT", ""),
     "XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP": os.environ.get("EMAIL_SCHEMA_BOOTSTRAP", ""),
+    "XMONITOR_ENABLE_DB_MIGRATIONS_BOOTSTRAP": os.environ.get("DB_MIGRATIONS_BOOTSTRAP", ""),
     "XMONITOR_USER_PROXY_SECRET": os.environ.get("USER_PROXY_SECRET", ""),
     "XMONITOR_ENABLE_COMPOSE_JOBS_SCHEMA_BOOTSTRAP": os.environ.get("COMPOSE_JOBS_SCHEMA_BOOTSTRAP", ""),
     "XMONITOR_ENABLE_SUMMARY_SCHEMA_BOOTSTRAP": os.environ.get("SUMMARY_SCHEMA_BOOTSTRAP", ""),

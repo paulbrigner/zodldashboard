@@ -17,8 +17,7 @@ DEFAULT_INPUT_DIR = "data/export"
 DEFAULT_REJECT_LOG = "data/import_rejects.ndjson"
 
 VALID_TIERS = {"teammate", "influencer", "ecosystem"}
-VALID_RUN_MODES = {"priority", "discovery", "both", "refresh24h", "manual"}
-RUN_MODE_MAP = {"refresh-24h": "refresh24h", "refresh_24h": "refresh24h"}
+VALID_RUN_MODES = {"priority", "discovery", "both", "manual"}
 
 
 @dataclass
@@ -52,16 +51,6 @@ def parse_args() -> argparse.Namespace:
         "--reject-log",
         default=DEFAULT_REJECT_LOG,
         help=f"Path for rejected row logs (default: {DEFAULT_REJECT_LOG})",
-    )
-    parser.add_argument(
-        "--source",
-        default="sqlite_migration",
-        help="Source label used for derived metric snapshots (default: sqlite_migration)",
-    )
-    parser.add_argument(
-        "--skip-derived-snapshots",
-        action="store_true",
-        help="Skip deriving post_metrics_snapshots from imported posts.",
     )
     return parser.parse_args()
 
@@ -118,7 +107,6 @@ def normalize_run_mode(value: Any) -> Optional[str]:
     if value is None:
         return None
     text = str(value).strip().lower()
-    text = RUN_MODE_MAP.get(text, text)
     return text if text in VALID_RUN_MODES else None
 
 
@@ -259,29 +247,12 @@ def import_posts(cur, path: pathlib.Path, reject_handle) -> Counters:
           reposts,
           replies,
           views,
-          initial_likes,
-          initial_reposts,
-          initial_replies,
-          initial_views,
-          likes_24h,
-          reposts_24h,
-          replies_24h,
-          views_24h,
-          refresh_24h_at,
-          refresh_24h_status,
-          refresh_24h_delta_likes,
-          refresh_24h_delta_reposts,
-          refresh_24h_delta_replies,
-          refresh_24h_delta_views,
           discovered_at,
           last_seen_at
         )
         VALUES (
           %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
           %s, %s, %s, %s,
-          %s, %s, %s, %s,
-          %s, %s, %s, %s,
-          %s, %s, %s, %s, %s, %s,
           %s, %s
         )
         ON CONFLICT (status_id) DO UPDATE SET
@@ -299,20 +270,6 @@ def import_posts(cur, path: pathlib.Path, reject_handle) -> Counters:
           reposts = EXCLUDED.reposts,
           replies = EXCLUDED.replies,
           views = EXCLUDED.views,
-          initial_likes = EXCLUDED.initial_likes,
-          initial_reposts = EXCLUDED.initial_reposts,
-          initial_replies = EXCLUDED.initial_replies,
-          initial_views = EXCLUDED.initial_views,
-          likes_24h = EXCLUDED.likes_24h,
-          reposts_24h = EXCLUDED.reposts_24h,
-          replies_24h = EXCLUDED.replies_24h,
-          views_24h = EXCLUDED.views_24h,
-          refresh_24h_at = EXCLUDED.refresh_24h_at,
-          refresh_24h_status = EXCLUDED.refresh_24h_status,
-          refresh_24h_delta_likes = EXCLUDED.refresh_24h_delta_likes,
-          refresh_24h_delta_reposts = EXCLUDED.refresh_24h_delta_reposts,
-          refresh_24h_delta_replies = EXCLUDED.refresh_24h_delta_replies,
-          refresh_24h_delta_views = EXCLUDED.refresh_24h_delta_views,
           discovered_at = EXCLUDED.discovered_at,
           last_seen_at = EXCLUDED.last_seen_at,
           updated_at = now()
@@ -348,20 +305,6 @@ def import_posts(cur, path: pathlib.Path, reject_handle) -> Counters:
                 parse_int(get_first(row, "reposts", "retweets"), 0),
                 parse_int(get_first(row, "replies"), 0),
                 parse_int(get_first(row, "views"), 0),
-                parse_int(get_first(row, "initial_likes"), 0),
-                parse_int(get_first(row, "initial_reposts", "initial_retweets"), 0),
-                parse_int(get_first(row, "initial_replies"), 0),
-                parse_int(get_first(row, "initial_views"), 0),
-                parse_int(get_first(row, "likes_24h"), 0),
-                parse_int(get_first(row, "reposts_24h", "retweets_24h"), 0),
-                parse_int(get_first(row, "replies_24h"), 0),
-                parse_int(get_first(row, "views_24h"), 0),
-                parse_timestamp(get_first(row, "refresh_24h_at"), required=False),
-                get_first(row, "refresh_24h_status"),
-                parse_int(get_first(row, "refresh_24h_delta_likes"), 0),
-                parse_int(get_first(row, "refresh_24h_delta_reposts", "refresh_24h_delta_retweets"), 0),
-                parse_int(get_first(row, "refresh_24h_delta_replies"), 0),
-                parse_int(get_first(row, "refresh_24h_delta_views"), 0),
                 parse_timestamp(get_first(row, "discovered_at", "captured_at", "created_at"), required=True),
                 parse_timestamp(get_first(row, "last_seen_at", "updated_at", "seen_at"), required=True),
             )
@@ -375,61 +318,14 @@ def import_posts(cur, path: pathlib.Path, reject_handle) -> Counters:
             log_reject(reject_handle, "posts", index, str(exc), row, counters)
 
     return counters
-
-
-def import_reports(cur, path: pathlib.Path, reject_handle) -> Counters:
-    counters = Counters()
-    sql = """
-        INSERT INTO reports(status_id, reported_at, channel, summary, destination)
-        VALUES (%s, %s, %s, %s, %s)
-        ON CONFLICT (status_id) DO UPDATE SET
-          reported_at = EXCLUDED.reported_at,
-          channel = EXCLUDED.channel,
-          summary = EXCLUDED.summary,
-          destination = EXCLUDED.destination
-        RETURNING (xmax = 0) AS inserted
-    """
-
-    for index, row in iter_jsonl(path):
-        counters.received += 1
-        try:
-            status_id = str(get_first(row, "status_id") or "").strip()
-            reported_at = parse_timestamp(get_first(row, "reported_at", "created_at"), required=True)
-            if not status_id:
-                counters.skipped += 1
-                log_reject(reject_handle, "reports", index, "missing status_id", row, counters)
-                continue
-
-            inserted = run_upsert(
-                cur,
-                sql,
-                (
-                    status_id,
-                    reported_at,
-                    get_first(row, "channel"),
-                    get_first(row, "summary"),
-                    get_first(row, "destination"),
-                ),
-            )
-            if inserted:
-                counters.inserted += 1
-            else:
-                counters.updated += 1
-        except Exception as exc:  # noqa: BLE001
-            log_reject(reject_handle, "reports", index, str(exc), row, counters)
-
-    return counters
-
-
 def import_pipeline_runs(cur, path: pathlib.Path, reject_handle) -> Counters:
     counters = Counters()
     sql = """
-        INSERT INTO pipeline_runs(run_at, mode, fetched_count, significant_count, reported_count, note, source)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        INSERT INTO pipeline_runs(run_at, mode, fetched_count, significant_count, note, source)
+        VALUES (%s, %s, %s, %s, %s, %s)
         ON CONFLICT (run_at, mode, source) DO UPDATE SET
           fetched_count = EXCLUDED.fetched_count,
           significant_count = EXCLUDED.significant_count,
-          reported_count = EXCLUDED.reported_count,
           note = EXCLUDED.note
         RETURNING (xmax = 0) AS inserted
     """
@@ -454,7 +350,6 @@ def import_pipeline_runs(cur, path: pathlib.Path, reject_handle) -> Counters:
                     mode,
                     parse_int(get_first(row, "fetched_count"), 0),
                     parse_int(get_first(row, "significant_count"), 0),
-                    parse_int(get_first(row, "reported_count"), 0),
                     get_first(row, "note"),
                     source,
                 ),
@@ -542,64 +437,6 @@ def import_embeddings(cur, path: pathlib.Path, reject_handle) -> Counters:
             log_reject(reject_handle, "embeddings", index, str(exc), row, counters)
 
     return counters
-
-
-def derive_snapshots(cur, source: str) -> Dict[str, int]:
-    results: Dict[str, int] = {}
-
-    statements = {
-        "initial_capture": """
-            INSERT INTO post_metrics_snapshots(status_id, snapshot_type, snapshot_at, likes, reposts, replies, views, source)
-            SELECT
-              p.status_id,
-              'initial_capture',
-              p.discovered_at,
-              COALESCE(p.initial_likes, p.likes, 0),
-              COALESCE(p.initial_reposts, p.reposts, 0),
-              COALESCE(p.initial_replies, p.replies, 0),
-              COALESCE(p.initial_views, p.views, 0),
-              %s
-            FROM posts p
-            ON CONFLICT (status_id, snapshot_type, snapshot_at) DO NOTHING
-        """,
-        "latest_observed": """
-            INSERT INTO post_metrics_snapshots(status_id, snapshot_type, snapshot_at, likes, reposts, replies, views, source)
-            SELECT
-              p.status_id,
-              'latest_observed',
-              p.last_seen_at,
-              COALESCE(p.likes, 0),
-              COALESCE(p.reposts, 0),
-              COALESCE(p.replies, 0),
-              COALESCE(p.views, 0),
-              %s
-            FROM posts p
-            ON CONFLICT (status_id, snapshot_type, snapshot_at) DO NOTHING
-        """,
-        "refresh_24h": """
-            INSERT INTO post_metrics_snapshots(status_id, snapshot_type, snapshot_at, likes, reposts, replies, views, source)
-            SELECT
-              p.status_id,
-              'refresh_24h',
-              p.refresh_24h_at,
-              COALESCE(p.likes_24h, p.likes, 0),
-              COALESCE(p.reposts_24h, p.reposts, 0),
-              COALESCE(p.replies_24h, p.replies, 0),
-              COALESCE(p.views_24h, p.views, 0),
-              %s
-            FROM posts p
-            WHERE p.refresh_24h_at IS NOT NULL
-            ON CONFLICT (status_id, snapshot_type, snapshot_at) DO NOTHING
-        """,
-    }
-
-    for key, sql in statements.items():
-        cur.execute(sql, (source,))
-        results[key] = cur.rowcount or 0
-
-    return results
-
-
 def main() -> int:
     args = parse_args()
 
@@ -613,7 +450,6 @@ def main() -> int:
     files = {
         "watch_accounts": input_dir / "watch_accounts.jsonl",
         "posts": input_dir / "tweets.jsonl",
-        "reports": input_dir / "reports.jsonl",
         "pipeline_runs": input_dir / "runs.jsonl",
         "embeddings": input_dir / "tweet_embeddings.jsonl",
     }
@@ -632,11 +468,6 @@ def main() -> int:
             else:
                 summary["posts"] = asdict(Counters())
 
-            if files["reports"].exists():
-                summary["reports"] = asdict(import_reports(cur, files["reports"], reject_handle))
-            else:
-                summary["reports"] = asdict(Counters())
-
             if files["pipeline_runs"].exists():
                 summary["pipeline_runs"] = asdict(import_pipeline_runs(cur, files["pipeline_runs"], reject_handle))
             else:
@@ -646,11 +477,6 @@ def main() -> int:
                 summary["embeddings"] = asdict(import_embeddings(cur, files["embeddings"], reject_handle))
             else:
                 summary["embeddings"] = asdict(Counters())
-
-            if args.skip_derived_snapshots:
-                summary["derived_snapshots"] = {"initial_capture": 0, "latest_observed": 0, "refresh_24h": 0}
-            else:
-                summary["derived_snapshots"] = derive_snapshots(cur, args.source)
 
     print(json.dumps(summary, indent=2, sort_keys=True))
     print(f"reject log: {reject_log_path}")
