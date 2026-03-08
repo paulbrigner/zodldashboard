@@ -213,7 +213,6 @@ export type FeedItem = {
   reposts: number;
   replies: number;
   views: number;
-  reported_at: string | null;
   score?: number | null;
 };
 
@@ -297,8 +296,6 @@ export type EngagementResponse = {
 
 export type PostDetail = {
   post: FeedItem;
-  snapshots: MetricsSnapshotUpsert[];
-  report: ReportUpsert | null;
 };
 
 export type FeedQuery = {

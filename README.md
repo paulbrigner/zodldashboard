@@ -21,7 +21,7 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
   - cursor-based pagination,
   - freshness indicator with manual refresh,
   - rolling summary panel (2h + 12h).
-- Post detail page (`/posts/{statusId}`) with metrics snapshots and report state.
+- Post detail page (`/posts/{statusId}`) with captured post metadata.
 - App Stores dashboard pages with alpha/MVP workflows:
   - overview (`/app-stores`),
   - submissions (`/app-stores/submissions`),
@@ -32,8 +32,6 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
   - settings (`/app-stores/settings`).
 - Ingest APIs for:
   - posts,
-  - metric snapshots,
-  - reports,
   - pipeline runs,
   - window summaries,
   - narrative shifts.
@@ -426,8 +424,6 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /api/v1/ops/reconcile-counts`
 - `POST /api/v1/ops/purge-handle`
 - `POST /api/v1/ingest/posts/batch`
-- `POST /api/v1/ingest/metrics/batch`
-- `POST /api/v1/ingest/reports/batch`
 - `POST /api/v1/ingest/window-summaries/batch`
 - `POST /api/v1/ingest/narrative-shifts/batch`
 - `POST /api/v1/ingest/embeddings/batch`
@@ -452,8 +448,6 @@ Open [http://localhost:3000](http://localhost:3000).
 - `GET /v1/ops/reconcile-counts`
 - `POST /v1/ops/purge-handle`
 - `POST /v1/ingest/posts/batch`
-- `POST /v1/ingest/metrics/batch`
-- `POST /v1/ingest/reports/batch`
 - `POST /v1/ingest/window-summaries/batch`
 - `POST /v1/ingest/narrative-shifts/batch`
 - `POST /v1/ingest/embeddings/batch`

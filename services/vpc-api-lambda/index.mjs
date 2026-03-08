@@ -701,7 +701,6 @@ function rowToFeedItem(row) {
     reposts: Number(row.reposts || 0),
     replies: Number(row.replies || 0),
     views: Number(row.views || 0),
-    reported_at: toIso(row.reported_at),
     score: row.score !== undefined && row.score !== null ? Number(row.score) : null,
   };
 }
@@ -2708,11 +2707,9 @@ async function querySemanticFeed(query, embeddingVector) {
       p.reposts,
       p.replies,
       p.views,
-      r.reported_at,
       c.score
     FROM semantic_candidates c
     JOIN posts p ON p.status_id = c.status_id
-    LEFT JOIN reports r ON r.status_id = p.status_id
     ${whereClause}
     ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
     LIMIT $${finalLimitParam}
@@ -2839,19 +2836,17 @@ async function queryComposeEvidence(query, embeddingVector) {
       p.body_text,
       p.url,
       p.is_significant,
-      p.significance_reason,
-      p.likes,
-      p.reposts,
-      p.replies,
-      p.views,
-      r.reported_at,
-      c.score
-    FROM semantic_candidates c
-    JOIN posts p ON p.status_id = c.status_id
-    LEFT JOIN reports r ON r.status_id = p.status_id
-    ${semanticWhereClause}
-    ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
-  `;
+          p.significance_reason,
+          p.likes,
+          p.reposts,
+          p.replies,
+          p.views,
+          c.score
+        FROM semantic_candidates c
+        JOIN posts p ON p.status_id = c.status_id
+        ${semanticWhereClause}
+        ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
+      `;
 
   const semanticResult = await db.query(semanticSql, semanticParams);
   const semanticItems = semanticResult.rows.map(rowToFeedItem);
@@ -2899,10 +2894,8 @@ async function queryComposeEvidence(query, embeddingVector) {
           p.reposts,
           p.replies,
           p.views,
-          r.reported_at,
           NULL::double precision AS score
         FROM posts p
-        LEFT JOIN reports r ON r.status_id = p.status_id
         ${lexicalWhereClause}
         ORDER BY p.discovered_at DESC, p.status_id DESC
         LIMIT $${lexicalLimitParam}
@@ -4806,10 +4799,8 @@ async function getFeed(query) {
       p.likes,
       p.reposts,
       p.replies,
-      p.views,
-      r.reported_at
+      p.views
     FROM posts p
-    LEFT JOIN reports r ON r.status_id = p.status_id
     ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
     ORDER BY p.discovered_at DESC, p.status_id DESC
     LIMIT $${params.length}
@@ -5099,13 +5090,8 @@ async function getPostDetail(statusId) {
         p.likes,
         p.reposts,
         p.replies,
-        p.views,
-        r.reported_at,
-        r.channel,
-        r.destination,
-        r.summary
+        p.views
       FROM posts p
-      LEFT JOIN reports r ON r.status_id = p.status_id
       WHERE p.status_id = $1
       LIMIT 1
     `,
@@ -5118,39 +5104,8 @@ async function getPostDetail(statusId) {
 
   const postRow = postResult.rows[0];
 
-  const snapshotsResult = await db.query(
-    `
-      SELECT status_id, snapshot_type, snapshot_at, likes, reposts, replies, views, source
-      FROM post_metrics_snapshots
-      WHERE status_id = $1
-      ORDER BY snapshot_at DESC
-    `,
-    [statusId]
-  );
-
-  const report = postRow.reported_at
-    ? {
-        status_id: statusId,
-        reported_at: toIso(postRow.reported_at) || new Date(0).toISOString(),
-        channel: postRow.channel ? String(postRow.channel) : null,
-        destination: postRow.destination ? String(postRow.destination) : null,
-        summary: postRow.summary ? String(postRow.summary) : null,
-      }
-    : null;
-
   return {
     post: rowToFeedItem(postRow),
-    snapshots: snapshotsResult.rows.map((row) => ({
-      status_id: String(row.status_id),
-      snapshot_type: row.snapshot_type,
-      snapshot_at: toIso(row.snapshot_at) || new Date(0).toISOString(),
-      likes: Number(row.likes || 0),
-      reposts: Number(row.reposts || 0),
-      replies: Number(row.replies || 0),
-      views: Number(row.views || 0),
-      source: row.source ? String(row.source) : "ingest",
-    })),
-    report,
   };
 }
 

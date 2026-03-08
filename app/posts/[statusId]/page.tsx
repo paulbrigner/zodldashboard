@@ -45,7 +45,7 @@ async function fetchPostDetailViaApi(baseUrl: string, statusId: string): Promise
   }
 
   const payload = (await response.json()) as PostDetail;
-  if (!payload || !payload.post || !Array.isArray(payload.snapshots)) {
+  if (!payload || !payload.post) {
     throw new Error("Invalid post detail response payload");
   }
 
@@ -130,48 +130,6 @@ export default async function PostPage({ params }: PostPageProps) {
             Back to feed
           </Link>
         </div>
-
-        <section className="detail-block">
-          <h2>Metrics snapshots</h2>
-          {detail.snapshots.length === 0 ? (
-            <p className="subtle-text">No snapshots recorded.</p>
-          ) : (
-            <div className="snapshot-list">
-              {detail.snapshots.map((snapshot) => (
-                <article className="snapshot-row" key={`${snapshot.snapshot_type}:${snapshot.snapshot_at}`}>
-                  <p>
-                    <strong>{snapshot.snapshot_type}</strong> at <LocalDateTime iso={snapshot.snapshot_at} />
-                  </p>
-                  <p className="subtle-text">
-                    likes {snapshot.likes} | reposts {snapshot.reposts} | replies {snapshot.replies} | views {snapshot.views}
-                  </p>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
-
-        <section className="detail-block">
-          <h2>Report state</h2>
-          {detail.report ? (
-            <div className="report-box">
-              <p>
-                <strong>Reported:</strong> <LocalDateTime iso={detail.report.reported_at} />
-              </p>
-              <p>
-                <strong>Channel:</strong> {detail.report.channel || "-"}
-              </p>
-              <p>
-                <strong>Destination:</strong> {detail.report.destination || "-"}
-              </p>
-              <p>
-                <strong>Summary:</strong> {detail.report.summary || "-"}
-              </p>
-            </div>
-          ) : (
-            <p className="subtle-text">This post has not been marked as reported.</p>
-          )}
-        </section>
       </section>
     </main>
   );

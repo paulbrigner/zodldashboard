@@ -268,12 +268,6 @@ Auth requirement (v1 hardening):
   - Upsert posts by `status_id`
   - Idempotent by PK
 
-- `POST /ingest/metrics/batch`
-  - Upsert snapshots by unique key `(status_id, snapshot_type, snapshot_at)`
-
-- `POST /ingest/reports/batch`
-  - Upsert report marker by `status_id`
-
 - `POST /ingest/runs`
   - Upsert by `(run_at, mode, source)`
 
@@ -295,7 +289,7 @@ Auth requirement (v1 hardening):
   - Returns newest-first items + next cursor.
 
 - `GET /posts/{statusId}`
-  - Returns post detail + snapshots + report state.
+  - Returns post detail.
 
 - `GET /watch-accounts`
   - Optional filter: `tier`
@@ -337,38 +331,6 @@ paths:
                   type: array
                   items:
                     $ref: '#/components/schemas/PostUpsert'
-      responses:
-        '200': { description: Upsert summary }
-  /ingest/metrics/batch:
-    post:
-      summary: Upsert metric snapshots
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/MetricsSnapshotUpsert'
-      responses:
-        '200': { description: Upsert summary }
-  /ingest/reports/batch:
-    post:
-      summary: Upsert report marks
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/ReportUpsert'
       responses:
         '200': { description: Upsert summary }
   /ingest/runs:
@@ -445,35 +407,14 @@ components:
         reposts: { type: integer }
         replies: { type: integer }
         views: { type: integer }
-    MetricsSnapshotUpsert:
-      type: object
-      required: [status_id, snapshot_type, snapshot_at, likes, reposts, replies, views]
-      properties:
-        status_id: { type: string }
-        snapshot_type: { type: string, enum: [initial_capture, latest_observed, refresh_24h] }
-        snapshot_at: { type: string, format: date-time }
-        likes: { type: integer }
-        reposts: { type: integer }
-        replies: { type: integer }
-        views: { type: integer }
-    ReportUpsert:
-      type: object
-      required: [status_id, reported_at]
-      properties:
-        status_id: { type: string }
-        reported_at: { type: string, format: date-time }
-        channel: { type: string }
-        summary: { type: string }
-        destination: { type: string }
     PipelineRunUpsert:
       type: object
       required: [run_at, mode]
       properties:
         run_at: { type: string, format: date-time }
-        mode: { type: string, enum: [priority, discovery, both, refresh24h, manual] }
+        mode: { type: string, enum: [priority, discovery, both, manual] }
         fetched_count: { type: integer }
         significant_count: { type: integer }
-        reported_count: { type: integer }
         note: { type: string }
         source: { type: string }
 ```
