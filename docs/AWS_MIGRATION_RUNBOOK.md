@@ -59,6 +59,7 @@ Backend/API:
   - `XMONITOR_EMAIL_FROM_NAME`
   - `XMONITOR_ENABLE_EMAIL_SCHEMA_BOOTSTRAP` (set `true` if applying schema inside VPC Lambda instead of direct `psql` from ops host)
   - `XMONITOR_ENABLE_DB_MIGRATIONS_BOOTSTRAP` (set `true` only for a controlled migration window when packaged SQL must be applied from inside the VPC Lambda)
+  - `XMONITOR_DB_MIGRATIONS_FROM_FILE` (set when the app DB role should start at a specific migration, e.g. skip privileged bootstrap migrations and apply only a later cleanup migration)
 
 Collectors:
 - `XMON_X_API_BEARER_TOKEN`

@@ -393,6 +393,10 @@ function shouldBootstrapDbMigrations() {
   return normalized === "1" || normalized === "true" || normalized === "yes";
 }
 
+function dbMigrationsFromFile() {
+  return asString(process.env.XMONITOR_DB_MIGRATIONS_FROM_FILE) || null;
+}
+
 function quoteIdent(identifier) {
   return `"${String(identifier || "").replace(/"/g, "\"\"")}"`;
 }
@@ -1594,9 +1598,16 @@ async function ensurePackagedDbMigrations() {
   const migrationFiles = readdirSync(migrationsDir)
     .filter((name) => name.endsWith(".sql"))
     .sort((left, right) => left.localeCompare(right));
+  const fromFile = dbMigrationsFromFile();
+  const filteredFiles = fromFile
+    ? migrationFiles.filter((fileName) => fileName.localeCompare(fromFile) >= 0)
+    : migrationFiles;
+  if (filteredFiles.length === 0) {
+    throw new Error(`no packaged migrations matched bootstrap selector: ${fromFile}`);
+  }
 
   const db = getPool();
-  for (const fileName of migrationFiles) {
+  for (const fileName of filteredFiles) {
     const sql = readFileSync(resolve(migrationsDir, fileName), "utf8");
     await db.query(sql);
   }
