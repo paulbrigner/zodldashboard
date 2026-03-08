@@ -3,21 +3,21 @@ import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
-import { getEngagement, getFeed, getLatestWindowSummaries } from "@/lib/xmonitor/repository";
+import { getFeed, getLatestWindowSummaries, getTrends } from "@/lib/xmonitor/repository";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
 import type {
-  EngagementResponse,
   FeedResponse,
   SemanticQueryResponse,
+  TrendsResponse,
   WindowSummariesLatestResponse,
   WindowSummary,
 } from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
 import { ComposePanel } from "./compose-panel";
-import { EngagementPanel } from "./engagement-panel";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { FilterPanel } from "./filter-panel";
 import { QueryReferencePopup } from "./query-reference-popup";
+import { TrendsPanel } from "./trends-panel";
 import { SignOutButton } from "../sign-out-button";
 import { LocalDateTime } from "../components/local-date-time";
 
@@ -29,7 +29,7 @@ type HomePageProps = {
 
 const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
 type SearchMode = "keyword" | "semantic";
-type EngagementRangeKey = "24h" | "7d" | "30d";
+type TrendRangeKey = "24h" | "7d" | "30d";
 
 const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
   rolling_2h: "2-hour rolling summary",
@@ -65,7 +65,7 @@ function parseSearchMode(value: string | string[] | undefined): SearchMode {
   return text === "keyword" ? "keyword" : "semantic";
 }
 
-function parseEngagementRange(value: string | string[] | undefined): EngagementRangeKey {
+function parseTrendRange(value: string | string[] | undefined): TrendRangeKey {
   const text = asString(value);
   if (text === "24h" || text === "30d") return text;
   return "7d";
@@ -85,11 +85,13 @@ function buildQuery(
     "significant",
     "q",
     "limit",
-    "engagement_range",
+    "trend_range",
   ];
 
   keys.forEach((key) => {
-    const value = asString(params[key]);
+    const value = key === "trend_range"
+      ? asString(params.trend_range ?? params.engagement_range)
+      : asString(params[key]);
     if (value) {
       query.set(String(key), value);
     }
@@ -151,14 +153,14 @@ function buildWindowSummariesApiUrl(baseUrl: string): string {
   return `${normalizedBase}/window-summaries/latest`;
 }
 
-function buildEngagementApiUrl(
+function buildTrendsApiUrl(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
   searchMode: SearchMode,
-  engagementRange: EngagementRangeKey
+  trendRange: TrendRangeKey
 ): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
-  const url = new URL(`${normalizedBase}/engagement`);
+  const url = new URL(`${normalizedBase}/trends`);
 
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
@@ -167,24 +169,24 @@ function buildEngagementApiUrl(
   if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
   if (query.q) url.searchParams.set("q", query.q);
   if (searchMode === "semantic") url.searchParams.set("search_mode", "semantic");
-  url.searchParams.set("engagement_range", engagementRange);
+  url.searchParams.set("trend_range", trendRange);
 
   return url.toString();
 }
 
-function buildEngagementRangeUrl(
+function buildTrendRangeUrl(
   params: Record<string, string | string[] | undefined>,
-  targetRange: EngagementRangeKey
+  targetRange: TrendRangeKey
 ): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === "cursor") continue;
+    if (key === "cursor" || key === "engagement_range") continue;
     const text = asString(value);
     if (text) {
       query.set(key, text);
     }
   }
-  query.set("engagement_range", targetRange);
+  query.set("trend_range", targetRange);
   const serialized = query.toString();
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
@@ -279,13 +281,13 @@ async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummar
   return payload.items;
 }
 
-async function fetchEngagementViaApi(
+async function fetchTrendsViaApi(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
   searchMode: SearchMode,
-  engagementRange: EngagementRangeKey
-): Promise<EngagementResponse> {
-  const response = await fetch(buildEngagementApiUrl(baseUrl, query, searchMode, engagementRange), {
+  trendRange: TrendRangeKey
+): Promise<TrendsResponse> {
+  const response = await fetch(buildTrendsApiUrl(baseUrl, query, searchMode, trendRange), {
     cache: "no-store",
   });
 
@@ -293,9 +295,9 @@ async function fetchEngagementViaApi(
     throw new Error(await readApiError(response));
   }
 
-  const payload = (await response.json()) as EngagementResponse;
-  if (!payload || !payload.totals || !Array.isArray(payload.buckets)) {
-    throw new Error("Invalid engagement response payload");
+  const payload = (await response.json()) as TrendsResponse;
+  if (!payload || !payload.activity?.totals || !Array.isArray(payload.activity?.buckets)) {
+    throw new Error("Invalid trends response payload");
   }
 
   return payload;
@@ -330,7 +332,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         ? "Compose mode requires XMONITOR_BACKEND_API_BASE_URL."
         : null;
   const searchMode = parseSearchMode(params.search_mode);
-  const engagementRange = parseEngagementRange(params.engagement_range);
+  const trendRange = parseTrendRange(params.trend_range ?? params.engagement_range);
   const useSemanticRetrieval = searchMode === "semantic" && Boolean(query.q);
   const apiBaseUrl = readApiBaseUrl();
   const refreshUrl = buildRefreshUrl(query, searchMode);
@@ -340,8 +342,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   let feedError: string | null = null;
   let summaries: WindowSummary[] = [];
   let summariesError: string | null = null;
-  let engagement: EngagementResponse | null = null;
-  let engagementError: string | null = null;
+  let trends: TrendsResponse | null = null;
+  let trendsError: string | null = null;
 
   if (apiBaseUrl) {
     try {
@@ -365,9 +367,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
 
     try {
-      engagement = await fetchEngagementViaApi(apiBaseUrl, query, searchMode, engagementRange);
+      trends = await fetchTrendsViaApi(apiBaseUrl, query, searchMode, trendRange);
     } catch (error) {
-      engagementError = error instanceof Error ? error.message : "Failed to load engagement";
+      trendsError = error instanceof Error ? error.message : "Failed to load trends";
     }
   } else if (hasDatabaseConfig()) {
     try {
@@ -387,17 +389,17 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
 
     try {
-      engagement = await getEngagement(query, {
+      trends = await getTrends(query, {
         applyTextQuery: searchMode !== "semantic",
-        rangeKey: engagementRange,
+        rangeKey: trendRange,
       });
     } catch (error) {
-      engagementError = error instanceof Error ? error.message : "Failed to load engagement";
+      trendsError = error instanceof Error ? error.message : "Failed to load trends";
     }
   } else {
     feedError = "No feed backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
     summariesError = "No summary backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
-    engagementError = "No engagement backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
+    trendsError = "No trends backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
   }
 
   const latestItem = feed.items[0];
@@ -413,11 +415,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       (query.limit && query.limit !== 50)
   );
   const hasActiveFilters = searchMode === "semantic" ? Boolean(query.q) : keywordHasActiveFilters;
-  const engagementRangeOptions = (["24h", "7d", "30d"] as const).map((range) => ({
+  const trendRangeOptions = (["24h", "7d", "30d"] as const).map((range) => ({
     key: range,
     label: range.toUpperCase(),
-    href: buildEngagementRangeUrl(params, range),
-    active: range === engagementRange,
+    href: buildTrendRangeUrl(params, range),
+    active: range === trendRange,
   }));
 
   return (
@@ -486,7 +488,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           {summariesError ? <p className="error-text summary-error">{summariesError}</p> : null}
         </details>
 
-        <EngagementPanel error={engagementError} payload={engagement} rangeOptions={engagementRangeOptions} />
+        <TrendsPanel error={trendsError} payload={trends} rangeOptions={trendRangeOptions} />
 
         <ComposePanel
           enabled={composePanelEnabled}

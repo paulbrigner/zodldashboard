@@ -15,7 +15,7 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
 - X Monitor page (`/x-monitor`) with:
   - semantic search mode as the default filter mode for natural-language retrieval,
   - keyword filter mode (tier, handle, significant flag, date range, text search, limit),
-  - engagement panel with trend bars, tier breakdown, top handles, and top posts for the active scope,
+  - trends panel with activity bars and scope breakdown for the active range,
   - grounded "Answer mode" (retrieve + synthesize + citations + optional `x_post`/`thread`/`email` drafts),
   - email send + per-user scheduled email jobs from Answer Mode (OAuth users),
   - cursor-based pagination,
@@ -38,7 +38,7 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
 - Read APIs include:
   - feed (`/api/v1/feed`),
   - post detail (`/api/v1/posts/{statusId}`),
-  - engagement analytics (`/api/v1/engagement`),
+  - trends analytics (`/api/v1/trends`),
   - latest rolling summaries (`/api/v1/window-summaries/latest`).
 - Shared-secret auth on all ingest routes.
 

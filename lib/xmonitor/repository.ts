@@ -11,6 +11,8 @@ import {
   shouldOmitKeywordOriginPost,
 } from "@/shared/xmonitor/ingest-policy.mjs";
 import type {
+  ActivityTrendBucket,
+  ActivityTrendTotals,
   BatchUpsertResult,
   DeletePostsByHandleResult,
   EngagementHandleBreakdown,
@@ -30,22 +32,23 @@ import type {
   PostDetail,
   PostUpsert,
   ReconcileCounts,
+  TrendsResponse,
   WindowSummary,
   WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 
-const DEFAULT_ENGAGEMENT_LOOKBACK_HOURS = 24 * 7;
-const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 30;
+const DEFAULT_TREND_LOOKBACK_HOURS = 24 * 7;
+const MAX_TREND_LOOKBACK_HOURS = 24 * 30;
 const MAX_ENGAGEMENT_TOP_ITEMS = 12;
-const ENGAGEMENT_RANGE_HOURS = {
+const TREND_RANGE_HOURS = {
   "24h": 24,
   "7d": 24 * 7,
   "30d": 24 * 30,
 } as const;
 
-type EngagementRangeKey = keyof typeof ENGAGEMENT_RANGE_HOURS;
+type TrendRangeKey = keyof typeof TREND_RANGE_HOURS;
 
-function parseEngagementRangeKey(value: string | undefined): EngagementRangeKey | null {
+function parseTrendRangeKey(value: string | undefined): TrendRangeKey | null {
   const normalized = String(value || "").trim().toLowerCase();
   if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
     return normalized;
@@ -728,7 +731,7 @@ function parseDateOrNull(value: string | undefined): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
-function normalizeEngagementRange(
+function normalizeTrendRange(
   query: FeedQuery,
   options: { rangeKey?: string | null } = {}
 ): { since: string; until: string; bucketHours: number; rangeKey: "24h" | "7d" | "30d" | "custom" } {
@@ -737,9 +740,9 @@ function normalizeEngagementRange(
   const requestedSince = parseDateOrNull(query.since);
 
   let until = requestedUntil || now;
-  const explicitRangeKey = parseEngagementRangeKey(options.rangeKey || undefined);
-  const explicitRangeHours = explicitRangeKey ? ENGAGEMENT_RANGE_HOURS[explicitRangeKey] : null;
-  let since = requestedSince || new Date(until.getTime() - (explicitRangeHours || DEFAULT_ENGAGEMENT_LOOKBACK_HOURS) * 60 * 60 * 1000);
+  const explicitRangeKey = parseTrendRangeKey(options.rangeKey || undefined);
+  const explicitRangeHours = explicitRangeKey ? TREND_RANGE_HOURS[explicitRangeKey] : null;
+  let since = requestedSince || new Date(until.getTime() - (explicitRangeHours || DEFAULT_TREND_LOOKBACK_HOURS) * 60 * 60 * 1000);
   let resolvedRangeKey: "24h" | "7d" | "30d" | "custom" = explicitRangeKey || "7d";
 
   if (since > until) {
@@ -749,7 +752,7 @@ function normalizeEngagementRange(
     resolvedRangeKey = "custom";
   }
 
-  const maxLookbackMs = MAX_ENGAGEMENT_LOOKBACK_HOURS * 60 * 60 * 1000;
+  const maxLookbackMs = MAX_TREND_LOOKBACK_HOURS * 60 * 60 * 1000;
   if (until.getTime() - since.getTime() > maxLookbackMs) {
     since = new Date(until.getTime() - maxLookbackMs);
     resolvedRangeKey = "custom";
@@ -772,6 +775,16 @@ function normalizeEngagementRange(
     bucketHours,
     rangeKey: resolvedRangeKey,
   };
+}
+
+function collectorLaneCase(): string {
+  return `
+    CASE
+      WHEN p.source_query = 'discovery' THEN 'discovery'
+      WHEN p.source_query IN ('priority', 'priority_reply_selected', 'priority_reply_term') THEN 'priority'
+      ELSE 'other'
+    END
+  `;
 }
 
 export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
@@ -815,12 +828,128 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
   return { items, next_cursor: nextCursor };
 }
 
+export async function getTrends(
+  query: FeedQuery,
+  options: { applyTextQuery?: boolean; rangeKey?: string | null } = {}
+): Promise<TrendsResponse> {
+  const pool = getDbPool();
+  const range = normalizeTrendRange(query, { rangeKey: options.rangeKey });
+  const scopedQuery: FeedQuery = {
+    ...query,
+    since: range.since,
+    until: range.until,
+    cursor: undefined,
+  };
+  const { where, params } = buildFeedWhereClause(scopedQuery, {
+    includeCursor: false,
+    includeTextQuery: options.applyTextQuery !== false,
+  });
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const bucketSeconds = range.bucketHours * 60 * 60;
+
+  const totalsSql = `
+    WITH filtered AS (
+      SELECT
+        p.*,
+        ${collectorLaneCase()} AS collector_lane
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
+      COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
+      COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
+      COUNT(*) FILTER (WHERE collector_lane = 'other')::bigint AS other_count,
+      COUNT(DISTINCT author_handle)::bigint AS unique_handle_count
+    FROM filtered
+  `;
+
+  const bucketsSql = `
+    WITH filtered AS (
+      SELECT
+        p.*,
+        ${collectorLaneCase()} AS collector_lane
+      FROM posts p
+      ${whereSql}
+    ),
+    bucketed AS (
+      SELECT
+        to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
+        COUNT(*)::bigint AS post_count,
+        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
+        COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
+        COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
+        COUNT(*) FILTER (WHERE collector_lane = 'other')::bigint AS other_count,
+        COUNT(DISTINCT author_handle)::bigint AS unique_handle_count
+      FROM filtered
+      GROUP BY 1
+    )
+    SELECT
+      bucket_start,
+      bucket_start + make_interval(secs => $${params.length + 1}) AS bucket_end,
+      post_count,
+      significant_count,
+      watchlist_count,
+      priority_count,
+      discovery_count,
+      other_count,
+      unique_handle_count
+    FROM bucketed
+    ORDER BY bucket_start ASC
+  `;
+
+  const [totalsResult, bucketsResult] = await Promise.all([
+    pool.query(totalsSql, params),
+    pool.query(bucketsSql, [...params, bucketSeconds]),
+  ]);
+
+  const totalsRow = totalsResult.rows[0] || {};
+  const totals: ActivityTrendTotals = {
+    post_count: Number(totalsRow.post_count || 0),
+    significant_count: Number(totalsRow.significant_count || 0),
+    watchlist_count: Number(totalsRow.watchlist_count || 0),
+    priority_count: Number(totalsRow.priority_count || 0),
+    discovery_count: Number(totalsRow.discovery_count || 0),
+    other_count: Number(totalsRow.other_count || 0),
+    unique_handle_count: Number(totalsRow.unique_handle_count || 0),
+  };
+
+  const buckets: ActivityTrendBucket[] = bucketsResult.rows.map((row) => ({
+    bucket_start: toIso(row.bucket_start) || new Date(0).toISOString(),
+    bucket_end: toIso(row.bucket_end) || new Date(0).toISOString(),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    watchlist_count: Number(row.watchlist_count || 0),
+    priority_count: Number(row.priority_count || 0),
+    discovery_count: Number(row.discovery_count || 0),
+    other_count: Number(row.other_count || 0),
+    unique_handle_count: Number(row.unique_handle_count || 0),
+  }));
+
+  return {
+    scope: {
+      since: range.since,
+      until: range.until,
+      bucket_hours: range.bucketHours,
+      range_key: range.rangeKey,
+      text_filter_applied: options.applyTextQuery !== false,
+    },
+    activity: {
+      totals,
+      buckets,
+    },
+  };
+}
+
 export async function getEngagement(
   query: FeedQuery,
   options: { applyTextQuery?: boolean; rangeKey?: string | null } = {}
 ): Promise<EngagementResponse> {
   const pool = getDbPool();
-  const range = normalizeEngagementRange(query, { rangeKey: options.rangeKey });
+  const range = normalizeTrendRange(query, { rangeKey: options.rangeKey });
   const scopedQuery: FeedQuery = {
     ...query,
     since: range.since,

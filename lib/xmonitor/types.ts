@@ -183,6 +183,44 @@ export type FeedResponse = {
   next_cursor: string | null;
 };
 
+export type TrendScope = {
+  since: string;
+  until: string;
+  bucket_hours: number;
+  range_key: "24h" | "7d" | "30d" | "custom";
+  text_filter_applied: boolean;
+};
+
+export type ActivityTrendTotals = {
+  post_count: number;
+  significant_count: number;
+  watchlist_count: number;
+  priority_count: number;
+  discovery_count: number;
+  other_count: number;
+  unique_handle_count: number;
+};
+
+export type ActivityTrendBucket = {
+  bucket_start: string;
+  bucket_end: string;
+  post_count: number;
+  significant_count: number;
+  watchlist_count: number;
+  priority_count: number;
+  discovery_count: number;
+  other_count: number;
+  unique_handle_count: number;
+};
+
+export type TrendsResponse = {
+  scope: TrendScope;
+  activity: {
+    totals: ActivityTrendTotals;
+    buckets: ActivityTrendBucket[];
+  };
+};
+
 export type EngagementTotals = {
   post_count: number;
   significant_count: number;
@@ -242,13 +280,7 @@ export type EngagementTopPost = {
 };
 
 export type EngagementResponse = {
-  scope: {
-    since: string;
-    until: string;
-    bucket_hours: number;
-    range_key: "24h" | "7d" | "30d" | "custom";
-    text_filter_applied: boolean;
-  };
+  scope: TrendScope;
   totals: EngagementTotals;
   buckets: EngagementBucket[];
   by_tier: EngagementTierBreakdown[];

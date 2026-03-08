@@ -353,7 +353,7 @@ p {
   margin: 0 0.95rem 0.95rem;
 }
 
-.engagement-panel {
+.trends-panel {
   margin-top: 1.2rem;
   border: 1px solid var(--border);
   border-radius: 0.95rem;
@@ -361,11 +361,11 @@ p {
   min-width: 0;
 }
 
-.engagement-panel[open] .summary-panel-header {
+.trends-panel[open] .summary-panel-header {
   border-bottom: 1px solid var(--border);
 }
 
-.engagement-panel-body {
+.trends-panel-body {
   padding: 0.95rem;
   display: flex;
   flex-direction: column;
@@ -374,21 +374,21 @@ p {
   overflow-x: hidden;
 }
 
-.engagement-range-row {
+.trend-range-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.7rem;
 }
 
-.engagement-range-chips {
+.trend-range-chips {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
   flex-wrap: wrap;
 }
 
-.engagement-range-chip {
+.trend-range-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -404,29 +404,29 @@ p {
   text-decoration: none;
 }
 
-.engagement-range-chip:hover {
+.trend-range-chip:hover {
   background: #e8f1ff;
 }
 
-.engagement-range-chip-active {
+.trend-range-chip-active {
   background: #2f5bb5;
   border-color: #2f5bb5;
   color: #ffffff;
 }
 
-.engagement-range-chip-active:hover {
+.trend-range-chip-active:hover {
   background: #294f9c;
 }
 
-.engagement-block {
+.trend-block {
   min-width: 0;
 }
 
-.engagement-block h3 {
+.trend-block h3 {
   margin: 0 0 0.45rem;
 }
 
-.engagement-trend-wrap {
+.trend-chart-wrap {
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: #ffffff;
@@ -437,14 +437,14 @@ p {
   min-width: 0;
 }
 
-.engagement-trend-bars {
+.trend-bars {
   display: grid;
   align-items: end;
   gap: 0.35rem;
   min-width: 100%;
 }
 
-.engagement-trend-col {
+.trend-col {
   display: grid;
   grid-template-rows: 1fr auto;
   min-width: 0;
@@ -452,14 +452,14 @@ p {
   gap: 0.3rem;
 }
 
-.engagement-trend-bar-wrap {
+.trend-bar-wrap {
   display: flex;
   align-items: flex-end;
   height: 100%;
   width: 100%;
 }
 
-.engagement-trend-bar {
+.trend-bar {
   display: block;
   width: 100%;
   min-height: 6%;
@@ -467,7 +467,7 @@ p {
   background: linear-gradient(180deg, #6e95ea 0%, #2f5bb5 100%);
 }
 
-.engagement-trend-label {
+.trend-label {
   display: block;
   width: 100%;
   margin: 0;
@@ -482,45 +482,36 @@ p {
   font-variant-numeric: tabular-nums;
 }
 
-.engagement-handle-list,
-.engagement-post-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.6rem;
+.trend-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 0.65rem;
 }
 
-.engagement-handle-list li {
-  border: 1px solid var(--border);
-  border-radius: 0.7rem;
-  background: #ffffff;
-  padding: 0.6rem;
-}
-
-.engagement-handle-list li {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.6rem;
-}
-
-.engagement-post-item {
+.trend-stat-card {
   border: 1px solid var(--border);
   border-radius: 0.75rem;
   background: #ffffff;
   padding: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.22rem;
 }
 
-.engagement-post-item p {
+.trend-stat-value,
+.trend-stat-label {
   margin: 0;
 }
 
-.engagement-post-top {
-  display: flex;
-  justify-content: space-between;
-  gap: 0.6rem;
-  margin-bottom: 0.45rem;
+.trend-stat-value {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.05;
+  color: #1f3e7d;
+}
+
+.trend-stat-label {
+  font-size: 0.8rem;
 }
 
 .compose-panel {

@@ -1461,6 +1461,16 @@ function normalizeEngagementRange(query, options = {}) {
   };
 }
 
+function collectorLaneCase() {
+  return `
+    CASE
+      WHEN p.source_query = 'discovery' THEN 'discovery'
+      WHEN p.source_query IN ('priority', 'priority_reply_selected', 'priority_reply_term') THEN 'priority'
+      ELSE 'other'
+    END
+  `;
+}
+
 function parseSemanticQueryBody(value) {
   if (!isRecord(value)) return { ok: false, error: "body must be an object" };
 
@@ -4888,6 +4898,119 @@ async function getEngagement(query, options = {}) {
   };
 }
 
+async function getTrends(query, options = {}) {
+  const db = getPool();
+  const range = normalizeEngagementRange(query, { rangeKey: options.rangeKey });
+  const scopedQuery = {
+    ...query,
+    since: range.since,
+    until: range.until,
+    cursor: undefined,
+  };
+  const { where, params } = buildFeedWhereClause(scopedQuery, {
+    includeCursor: false,
+    includeTextQuery: options.applyTextQuery !== false,
+  });
+  const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
+  const bucketSeconds = range.bucket_hours * 60 * 60;
+
+  const totalsSql = `
+    WITH filtered AS (
+      SELECT
+        p.*,
+        ${collectorLaneCase()} AS collector_lane
+      FROM posts p
+      ${whereSql}
+    )
+    SELECT
+      COUNT(*)::bigint AS post_count,
+      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
+      COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
+      COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
+      COUNT(*) FILTER (WHERE collector_lane = 'other')::bigint AS other_count,
+      COUNT(DISTINCT author_handle)::bigint AS unique_handle_count
+    FROM filtered
+  `;
+
+  const bucketsSql = `
+    WITH filtered AS (
+      SELECT
+        p.*,
+        ${collectorLaneCase()} AS collector_lane
+      FROM posts p
+      ${whereSql}
+    ),
+    bucketed AS (
+      SELECT
+        to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
+        COUNT(*)::bigint AS post_count,
+        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
+        COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
+        COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
+        COUNT(*) FILTER (WHERE collector_lane = 'other')::bigint AS other_count,
+        COUNT(DISTINCT author_handle)::bigint AS unique_handle_count
+      FROM filtered
+      GROUP BY 1
+    )
+    SELECT
+      bucket_start,
+      bucket_start + make_interval(secs => $${params.length + 1}) AS bucket_end,
+      post_count,
+      significant_count,
+      watchlist_count,
+      priority_count,
+      discovery_count,
+      other_count,
+      unique_handle_count
+    FROM bucketed
+    ORDER BY bucket_start ASC
+  `;
+
+  const [totalsResult, bucketsResult] = await Promise.all([
+    db.query(totalsSql, params),
+    db.query(bucketsSql, [...params, bucketSeconds]),
+  ]);
+
+  const totalsRow = totalsResult.rows[0] || {};
+  const totals = {
+    post_count: Number(totalsRow.post_count || 0),
+    significant_count: Number(totalsRow.significant_count || 0),
+    watchlist_count: Number(totalsRow.watchlist_count || 0),
+    priority_count: Number(totalsRow.priority_count || 0),
+    discovery_count: Number(totalsRow.discovery_count || 0),
+    other_count: Number(totalsRow.other_count || 0),
+    unique_handle_count: Number(totalsRow.unique_handle_count || 0),
+  };
+
+  const buckets = bucketsResult.rows.map((row) => ({
+    bucket_start: toIso(row.bucket_start) || new Date(0).toISOString(),
+    bucket_end: toIso(row.bucket_end) || new Date(0).toISOString(),
+    post_count: Number(row.post_count || 0),
+    significant_count: Number(row.significant_count || 0),
+    watchlist_count: Number(row.watchlist_count || 0),
+    priority_count: Number(row.priority_count || 0),
+    discovery_count: Number(row.discovery_count || 0),
+    other_count: Number(row.other_count || 0),
+    unique_handle_count: Number(row.unique_handle_count || 0),
+  }));
+
+  return {
+    scope: {
+      since: range.since,
+      until: range.until,
+      bucket_hours: range.bucket_hours,
+      range_key: range.range_key,
+      text_filter_applied: options.applyTextQuery !== false,
+    },
+    activity: {
+      totals,
+      buckets,
+    },
+  };
+}
+
 async function getLatestWindowSummaries() {
   const db = getPool();
   const result = await db.query(
@@ -5059,6 +5182,32 @@ async function handleEngagement(event) {
     return jsonOk(payload);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to query engagement", 503);
+  }
+}
+
+async function handleTrends(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const input = {};
+  const params = event?.queryStringParameters || {};
+  for (const [key, value] of Object.entries(params)) {
+    if (typeof value === "string" && input[key] === undefined) {
+      input[key] = value;
+    }
+  }
+
+  const query = parseFeedQuery(input);
+  const searchMode = asString(firstValue(input.search_mode));
+  const trendRange = parseEngagementRangeKey(asString(firstValue(input.trend_range) || firstValue(input.engagement_range)));
+  const applyTextQuery = searchMode !== "semantic";
+
+  try {
+    const payload = await getTrends(query, { applyTextQuery, rangeKey: trendRange });
+    return jsonOk(payload);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to query trends", 503);
   }
 }
 
@@ -5709,6 +5858,10 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/engagement") {
     return handleEngagement(event);
+  }
+
+  if (method === "GET" && path === "/v1/trends") {
+    return handleTrends(event);
   }
 
   if (method === "POST" && path === "/v1/query/semantic") {
