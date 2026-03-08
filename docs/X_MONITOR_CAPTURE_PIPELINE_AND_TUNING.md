@@ -95,6 +95,9 @@ Rejected posts are tagged with `discovery_noise:*` style reasons in run diagnost
 - engagement thresholds
 - spam/low-signal guards
 
+TODO: remove engagement thresholds from significance classification because captured metrics are
+not a reliable measure of post engagement over time in the current pipeline.
+
 ## Embeddings and summary generation
 
 ### Embeddings

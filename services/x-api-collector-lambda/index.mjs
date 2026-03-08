@@ -733,6 +733,9 @@ function evaluateSignificance(record) {
   const { wordCount, charCount, isReply } = getSubstanceProfile(text);
   const hasWatchlist = Boolean(watchTier);
 
+  // TODO: Remove engagement-based significance gates and reasons. Current capture does not
+  // measure engagement consistently enough for significance to depend on likes/reposts.
+
   let keywordReason = null;
   for (const kw of MATERIAL_KEYWORDS) {
     if (low.includes(kw)) {
