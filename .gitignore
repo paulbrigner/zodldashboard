@@ -26,3 +26,4 @@ pnpm-debug.log*
 # local Lambda packaging artifacts
 services/vpc-api-lambda/function*.zip
 services/x-api-collector-lambda/function*.zip
+services/x-significance-classifier-lambda/function*.zip
