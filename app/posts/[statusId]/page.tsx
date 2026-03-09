@@ -123,6 +123,29 @@ export default async function PostPage({ params }: PostPageProps) {
           <span className="pill">views: {detail.post.views}</span>
         </div>
 
+        <section>
+          <h2>Classification details</h2>
+          <p>
+            <strong>Reason:</strong>{" "}
+            {detail.post.classification_status === "classified"
+              ? detail.post.significance_reason || "No significance reason was returned."
+              : "Classification pending."}
+          </p>
+          {detail.post.classified_at ? (
+            <p>
+              <strong>Classified:</strong> <LocalDateTime iso={detail.post.classified_at} />
+            </p>
+          ) : null}
+          {detail.post.classification_model ? (
+            <p>
+              <strong>Model:</strong> {detail.post.classification_model}
+              {typeof detail.post.classification_confidence === "number"
+                ? ` (${Math.round(detail.post.classification_confidence * 100)}% confidence)`
+                : ""}
+            </p>
+          ) : null}
+        </section>
+
         <div className="button-row">
           <a className="button" href={detail.post.url} rel="noreferrer" target="_blank">
             Open on X
