@@ -43,6 +43,7 @@ const WATCHLIST_BY_TIER = {
     "balajis",
     "bitlarrain",
     "btcturtle",
+    "colludingnode",
     "cypherpunk",
     "dignitycipher",
     "dismad8",

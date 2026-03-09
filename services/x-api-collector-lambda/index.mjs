@@ -20,6 +20,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   balajis: "influencer",
   bitlarrain: "influencer",
   btcturtle: "influencer",
+  colludingnode: "influencer",
   cypherpunk: "influencer",
   dignitycipher: "influencer",
   dismad8: "influencer",

@@ -103,7 +103,7 @@ Applied in collector runtime before ingest:
 
 ## 4) Watchlist defaults in collector code
 
-Total default watchlist handles: **42**
+Total default watchlist handles: **43**
 
 ### Teammate (8)
 - @bostonzcash
@@ -123,6 +123,7 @@ Total default watchlist handles: **42**
 - @balajis
 - @bitlarrain
 - @btcturtle
+- @colludingnode
 - @cypherpunk
 - @dignitycipher
 - @dismad8
