@@ -103,11 +103,12 @@ Applied in collector runtime before ingest:
 
 ## 4) Watchlist defaults in collector code
 
-Total default watchlist handles: **43**
+Total default watchlist handles: **56**
 
-### Teammate (8)
+### Teammate (9)
 - @bostonzcash
 - @jwihart
+- @lukaskorba
 - @nuttycom
 - @paulbrigner
 - @peacemongerz
@@ -115,19 +116,24 @@ Total default watchlist handles: **43**
 - @txds_
 - @zodl_app
 
-### Influencer (29)
+### Influencer (40)
 - @_tomhoward
+- @agzt_111
 - @anonymist
 - @aquietinvestor
 - @arjunkhemani
 - @balajis
+- @banthys
 - @bitlarrain
 - @btcturtle
+- @cipherscan_app
 - @colludingnode
-- @cypherpunk
+- @cq_elzz
 - @dignitycipher
 - @dismad8
 - @ebfull
+- @hedging_reality
+- @inthepixels
 - @ivydngg
 - @lucidzk
 - @maxdesalle
@@ -139,20 +145,27 @@ Total default watchlist handles: **43**
 - @neuralunlock
 - @rargulati
 - @roommatemusing
+- @sacha
+- @seams5s
 - @shieldedmoney
 - @thecodebuffet
 - @thortorrens
+- @tipz_cash
 - @valkenburgh
+- @will_mcevoy
+- @zcashme
 - @zerodartz
 - @zooko
 - @zpartanll7
 
-### Ecosystem (5)
+### Ecosystem (7)
+- @cypherpunk
 - @genzcash
 - @shieldedlabs
 - @zcashcommgrants
 - @zcashfoundation
 - @zechub
+- @zodl_co
 
 Override options:
 - `XMON_X_API_WATCHLIST_TIERS_JSON` (full map override)
