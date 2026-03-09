@@ -65,8 +65,8 @@ Controlled by:
 ```
 
 Note:
-- teammate/ecosystem handles are excluded from reply-specific lanes because they are already captured by direct watchlist queries (including replies)
-- this reduces overlap without reducing teammate/ecosystem reply coverage
+- teammate/investor/ecosystem handles are excluded from reply-specific lanes because they are already captured by direct watchlist queries (including replies)
+- this reduces overlap without reducing teammate/investor/ecosystem reply coverage
 
 `selected_handles` (`source_query=priority_reply_selected`):
 
@@ -103,7 +103,7 @@ Applied in collector runtime before ingest:
 
 ## 4) Watchlist defaults in collector code
 
-Total default watchlist handles: **56**
+Total default watchlist handles: **62**
 
 ### Teammate (10)
 - @bostonzcash
@@ -116,6 +116,15 @@ Total default watchlist handles: **56**
 - @txds_
 - @zodl_co
 - @zodl_app
+
+### Investors (7)
+- @a16zcrypto
+- @cbventures
+- @chapterone
+- @cypherpunk
+- @MaelstromFund
+- @paradigm
+- @winklevosscap
 
 ### Influencer (40)
 - @_tomhoward
@@ -159,8 +168,7 @@ Total default watchlist handles: **56**
 - @zooko
 - @zpartanll7
 
-### Ecosystem (6)
-- @cypherpunk
+### Ecosystem (5)
 - @genzcash
 - @shieldedlabs
 - @zcashcommgrants

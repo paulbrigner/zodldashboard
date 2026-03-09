@@ -157,7 +157,7 @@ paths:
           schema: { type: string, format: date-time }
         - in: query
           name: tier
-          schema: { type: string, enum: [teammate, influencer, ecosystem] }
+          schema: { type: string, enum: [teammate, investor, influencer, ecosystem] }
         - in: query
           name: handle
           schema: { type: string }
@@ -405,7 +405,7 @@ components:
         body_text: { type: string }
         posted_relative: { type: string }
         source_query: { type: string }
-        watch_tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        watch_tier: { type: string, enum: [teammate, investor, influencer, ecosystem] }
         is_significant: { type: boolean }
         significance_reason: { type: string }
         significance_version: { type: string }
@@ -571,7 +571,7 @@ components:
         query_text: { type: string }
         since: { type: string, format: date-time }
         until: { type: string, format: date-time }
-        tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        tier: { type: string, enum: [teammate, investor, influencer, ecosystem] }
         handle: { type: string }
         significant: { type: boolean }
         limit: { type: integer, minimum: 1, maximum: 200 }
@@ -593,7 +593,7 @@ components:
         task_text: { type: string }
         since: { type: string, format: date-time }
         until: { type: string, format: date-time }
-        tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        tier: { type: string, enum: [teammate, investor, influencer, ecosystem] }
         handle: { type: string }
         significant: { type: boolean }
         retrieval_limit: { type: integer, minimum: 1, maximum: 100, default: 50 }

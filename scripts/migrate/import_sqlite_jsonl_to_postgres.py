@@ -16,7 +16,7 @@ from typing import Any, Dict, Iterator, Optional, Tuple
 DEFAULT_INPUT_DIR = "data/export"
 DEFAULT_REJECT_LOG = "data/import_rejects.ndjson"
 
-VALID_TIERS = {"teammate", "influencer", "ecosystem"}
+VALID_TIERS = {"teammate", "investor", "influencer", "ecosystem"}
 VALID_RUN_MODES = {"priority", "discovery", "both", "manual"}
 
 

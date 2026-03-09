@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS posts (
   posted_relative TEXT,
 
   source_query TEXT,
-  watch_tier TEXT CHECK (watch_tier IN ('teammate', 'influencer', 'ecosystem')),
+  watch_tier TEXT CHECK (watch_tier IN ('teammate', 'investor', 'influencer', 'ecosystem')),
 
   is_significant BOOLEAN NOT NULL DEFAULT FALSE,
   significance_reason TEXT,
@@ -85,7 +85,7 @@ CREATE INDEX IF NOT EXISTS idx_snapshots_type_time ON post_metrics_snapshots (sn
 
 CREATE TABLE IF NOT EXISTS watch_accounts (
   handle CITEXT PRIMARY KEY,
-  tier TEXT NOT NULL CHECK (tier IN ('teammate', 'influencer', 'ecosystem')),
+  tier TEXT NOT NULL CHECK (tier IN ('teammate', 'investor', 'influencer', 'ecosystem')),
   note TEXT,
   added_at TIMESTAMPTZ NOT NULL,
 

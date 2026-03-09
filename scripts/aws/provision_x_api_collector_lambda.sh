@@ -26,7 +26,7 @@ set -euo pipefail
 #   X_API_HANDLE_CHUNK_SIZE=16
 #   X_API_REPLY_CAPTURE_ENABLED=true
 #   X_API_REPLY_MODE=term_constrained          # off|term_constrained|selected_handles
-#   X_API_REPLY_TIERS=teammate,influencer,ecosystem
+#   X_API_REPLY_TIERS=teammate,investor,influencer,ecosystem
 #   X_API_REPLY_SELECTED_HANDLES=
 #   X_API_BASE_TERMS='Zcash OR ZEC OR Zodl OR Zashi'
 #   X_API_ENFORCE_LANG_ALLOWLIST=true
@@ -92,7 +92,7 @@ X_API_MAX_PAGES_PER_QUERY="${X_API_MAX_PAGES_PER_QUERY:-2}"
 X_API_HANDLE_CHUNK_SIZE="${X_API_HANDLE_CHUNK_SIZE:-16}"
 X_API_REPLY_CAPTURE_ENABLED="${X_API_REPLY_CAPTURE_ENABLED:-true}"
 X_API_REPLY_MODE="${X_API_REPLY_MODE:-term_constrained}"
-X_API_REPLY_TIERS="${X_API_REPLY_TIERS:-teammate,influencer,ecosystem}"
+X_API_REPLY_TIERS="${X_API_REPLY_TIERS:-teammate,investor,influencer,ecosystem}"
 X_API_REPLY_SELECTED_HANDLES="${X_API_REPLY_SELECTED_HANDLES:-}"
 X_API_BASE_TERMS="${X_API_BASE_TERMS:-Zcash OR ZEC OR Zodl OR Zashi}"
 X_API_ENFORCE_LANG_ALLOWLIST="${X_API_ENFORCE_LANG_ALLOWLIST:-true}"

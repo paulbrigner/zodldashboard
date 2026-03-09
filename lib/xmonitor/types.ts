@@ -1,4 +1,4 @@
-export const WATCH_TIERS = ["teammate", "influencer", "ecosystem"] as const;
+export const WATCH_TIERS = ["teammate", "investor", "influencer", "ecosystem"] as const;
 export type WatchTier = (typeof WATCH_TIERS)[number];
 
 export const RUN_MODES = ["priority", "discovery", "both", "manual"] as const;

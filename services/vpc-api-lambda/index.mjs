@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
-const WATCH_TIERS = new Set(["teammate", "influencer", "ecosystem"]);
+const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
 const RUN_MODES = new Set(["priority", "discovery", "both", "manual"]);
 const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
 const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread", "email"]);

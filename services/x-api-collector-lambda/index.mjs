@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-const WATCH_TIERS = new Set(["teammate", "influencer", "ecosystem"]);
+const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
 const QUERY_REPLY_MODES = new Set(["off", "term_constrained", "selected_handles"]);
 const COLLECTOR_MODES = new Set(["priority", "discovery"]);
 
@@ -15,6 +15,13 @@ const DEFAULT_WATCHLIST_TIERS = {
   txds_: "teammate",
   zodl_co: "teammate",
   zodl_app: "teammate",
+  a16zcrypto: "investor",
+  cbventures: "investor",
+  chapterone: "investor",
+  cypherpunk: "investor",
+  maelstromfund: "investor",
+  paradigm: "investor",
+  winklevosscap: "investor",
   _tomhoward: "influencer",
   agzt_111: "influencer",
   anonymist: "influencer",
@@ -55,7 +62,6 @@ const DEFAULT_WATCHLIST_TIERS = {
   zerodartz: "influencer",
   zooko: "influencer",
   zpartanll7: "influencer",
-  cypherpunk: "ecosystem",
   genzcash: "ecosystem",
   shieldedlabs: "ecosystem",
   zcashcommgrants: "ecosystem",
@@ -363,10 +369,10 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
   const handles = Object.keys(watchlistMap).sort();
   const queries = [];
 
-  // Teammate + ecosystem captures should include all posts from those handles.
+  // Teammate + investor + ecosystem captures should include all posts from those handles.
   const directCaptureHandles = handles.filter((handle) => {
     const tier = watchlistMap[handle];
-    return tier === "teammate" || tier === "ecosystem";
+    return tier === "teammate" || tier === "investor" || tier === "ecosystem";
   });
   const directCaptureChunks = chunkHandles(directCaptureHandles, config.handleChunkSize);
   const directCaptureHandleSet = new Set(directCaptureHandles);
@@ -414,7 +420,7 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
     replyHandles = replyHandlesByTier.filter((handle) => selected.has(handle));
   }
 
-  // Teammate/ecosystem are already captured with direct watchlist queries (including replies).
+  // Teammate/investor/ecosystem are already captured with direct watchlist queries (including replies).
   // Excluding them from reply-specific lanes reduces duplicate reads without dropping coverage.
   replyHandles = replyHandles.filter((handle) => !directCaptureHandleSet.has(handle));
   if (replyHandles.length === 0) {
@@ -760,6 +766,7 @@ function detectSummaryDebateMatches(text) {
 function summarizeWindowPosts(posts, topPostsLimit) {
   const tierCounts = {
     teammate: 0,
+    investor: 0,
     influencer: 0,
     ecosystem: 0,
     other: 0,
@@ -784,7 +791,7 @@ function summarizeWindowPosts(posts, topPostsLimit) {
   let significantCount = 0;
   for (const post of posts) {
     const tierRaw = asString(post?.watch_tier).toLowerCase();
-    const tier = tierRaw && ["teammate", "influencer", "ecosystem"].includes(tierRaw) ? tierRaw : "other";
+    const tier = tierRaw && ["teammate", "investor", "influencer", "ecosystem"].includes(tierRaw) ? tierRaw : "other";
     tierCounts[tier] += 1;
 
     const handle = normalizeHandle(post?.author_handle);

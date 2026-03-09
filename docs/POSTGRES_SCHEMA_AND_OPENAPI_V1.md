@@ -73,7 +73,7 @@ CREATE TABLE IF NOT EXISTS posts (
   posted_relative TEXT,
 
   source_query TEXT,                             -- priority | discovery | both | legacy
-  watch_tier TEXT CHECK (watch_tier IN ('teammate','influencer','ecosystem')),
+  watch_tier TEXT CHECK (watch_tier IN ('teammate','investor','influencer','ecosystem')),
 
   is_significant BOOLEAN NOT NULL DEFAULT FALSE,
   significance_reason TEXT,
@@ -103,7 +103,7 @@ CREATE INDEX IF NOT EXISTS idx_posts_author_handle_discovered ON posts (author_h
 ```sql
 CREATE TABLE IF NOT EXISTS watch_accounts (
   handle CITEXT PRIMARY KEY,
-  tier TEXT NOT NULL CHECK (tier IN ('teammate','influencer','ecosystem')),
+  tier TEXT NOT NULL CHECK (tier IN ('teammate','investor','influencer','ecosystem')),
   note TEXT,
   added_at TIMESTAMPTZ NOT NULL,
 
@@ -210,7 +210,7 @@ Auth requirement (v1 hardening):
   - Query params:
     - `since` (ISO timestamp, optional)
     - `until` (ISO timestamp, optional)
-    - `tier` (`teammate|influencer|ecosystem`, optional)
+    - `tier` (`teammate|investor|influencer|ecosystem`, optional)
     - `handle` (optional)
     - `significant` (`true|false`, optional)
     - `q` (substring search over body/handle, optional)
@@ -286,7 +286,7 @@ paths:
           schema: { type: string, format: date-time }
         - in: query
           name: tier
-          schema: { type: string, enum: [teammate, influencer, ecosystem] }
+          schema: { type: string, enum: [teammate, investor, influencer, ecosystem] }
         - in: query
           name: handle
           schema: { type: string }
@@ -328,7 +328,7 @@ components:
         author_display: { type: string }
         body_text: { type: string }
         source_query: { type: string }
-        watch_tier: { type: string, enum: [teammate, influencer, ecosystem] }
+        watch_tier: { type: string, enum: [teammate, investor, influencer, ecosystem] }
         is_significant: { type: boolean }
         significance_reason: { type: string }
         discovered_at: { type: string, format: date-time }

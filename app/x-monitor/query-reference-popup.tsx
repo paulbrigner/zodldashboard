@@ -37,6 +37,15 @@ const WATCHLIST_BY_TIER = {
     "zodl_co",
     "zodl_app",
   ],
+  investor: [
+    "a16zcrypto",
+    "cbventures",
+    "chapterone",
+    "cypherpunk",
+    "maelstromfund",
+    "paradigm",
+    "winklevosscap",
+  ],
   influencer: [
     "_tomhoward",
     "agzt_111",
@@ -79,11 +88,12 @@ const WATCHLIST_BY_TIER = {
     "zooko",
     "zpartanll7",
   ],
-  ecosystem: ["cypherpunk", "genzcash", "shieldedlabs", "zcashcommgrants", "zcashfoundation", "zechub"],
+  ecosystem: ["genzcash", "shieldedlabs", "zcashcommgrants", "zcashfoundation", "zechub"],
 } as const;
 
 const WATCHLIST_TIER_LABELS: Record<keyof typeof WATCHLIST_BY_TIER, string> = {
   teammate: "Teammate",
+  investor: "Investors",
   influencer: "Influencer",
   ecosystem: "Ecosystem",
 };
@@ -134,10 +144,10 @@ export function QueryReferencePopup() {
             <p>
               <strong>Direct watchlist lane</strong>
             </p>
-            <pre className="query-code">(from:teammate1 OR from:ecosystem1 OR ...) -is:retweet</pre>
+            <pre className="query-code">(from:teammate1 OR from:investor1 OR from:ecosystem1 OR ...) -is:retweet</pre>
             <p className="subtle-text">
-              Teammate and ecosystem handles are captured directly. This lane includes replies and does not require base
-              terms.
+              Teammate, investor, and ecosystem handles are captured directly. This lane includes replies and does not
+              require base terms.
             </p>
             <p>
               <strong>Influencer top-level lane</strong>
@@ -154,8 +164,8 @@ export function QueryReferencePopup() {
             </p>
             <p className="subtle-text">
               Current watchlist size: {totalWatchlistHandles} handles (
-              {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.influencer.length} influencer,{" "}
-              {WATCHLIST_BY_TIER.ecosystem.length} ecosystem).
+              {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.investor.length} investors,{" "}
+              {WATCHLIST_BY_TIER.influencer.length} influencer, {WATCHLIST_BY_TIER.ecosystem.length} ecosystem).
             </p>
           </section>
 

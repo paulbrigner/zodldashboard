@@ -97,6 +97,7 @@ export function FilterPanel({
               <select name="tier" defaultValue={initialTier || ""}>
                 <option value="">All tiers</option>
                 <option value="teammate">Teammate</option>
+                <option value="investor">Investors</option>
                 <option value="influencer">Influencer</option>
                 <option value="ecosystem">Ecosystem</option>
               </select>
