@@ -94,23 +94,15 @@ export function QueryReferencePopup() {
       <section className="query-modal" onClick={(event) => event.stopPropagation()}>
         <header className="query-modal-header">
           <h2>How X Monitor Queries X</h2>
-          <p className="subtle-text">Plain-language reference for the repo-default AWS collector plan.</p>
+          <p className="subtle-text">Plain-language reference for the current deployed AWS collector plan.</p>
         </header>
 
         <div className="query-modal-body">
           <section>
-            <h3>What this popup reflects</h3>
+            <h3>Current capture plan</h3>
             <p>
-              This reference shows the default query families, watchlist tiers, and gates defined in the repo. Live AWS
-              Lambda env can still override base terms, watchlist includes, and reply-capture mode.
-            </p>
-          </section>
-
-          <section>
-            <h3>Collector cadence</h3>
-            <p>
-              Priority capture runs every 15 minutes. Discovery capture runs every 30 minutes. Async significance
-              classification runs every 5 minutes on newly ingested pending posts.
+              X Monitor runs a priority collector every 15 minutes, a discovery collector every 30 minutes, and an async
+              significance classifier every 5 minutes.
             </p>
           </section>
 
@@ -120,7 +112,7 @@ export function QueryReferencePopup() {
             <pre className="query-code">{PRIORITY_BASE_TERMS}</pre>
             <p>Discovery derives a narrower keyword set from those terms to reduce noise:</p>
             <pre className="query-code">{DISCOVERY_BASE_TERMS}</pre>
-            <p className="subtle-text">By default that drops standalone `ZEC` from the discovery lane.</p>
+            <p className="subtle-text">The current discovery lane drops standalone <code>ZEC</code> to reduce noise.</p>
           </section>
 
           <section>
@@ -144,16 +136,11 @@ export function QueryReferencePopup() {
             </p>
             <pre className="query-code">(from:influencer1 OR from:influencer2 OR ...) is:reply ({PRIORITY_BASE_TERMS}) -is:retweet</pre>
             <p className="subtle-text">
-              Default reply mode is <code>term_constrained</code>. Influencer replies are split into a dedicated lane to
-              reduce duplicate reads against the top-level influencer query.
-            </p>
-            <pre className="query-code">(from:selected_handle1 OR from:selected_handle2 OR ...) is:reply -is:retweet</pre>
-            <p className="subtle-text">
-              If reply mode is switched to <code>selected_handles</code>, the reply lane becomes handle-only as shown
-              above.
+              Reply capture is currently <code>term_constrained</code>. Influencer replies are split into a dedicated
+              lane to reduce duplicate reads against the top-level influencer query.
             </p>
             <p className="subtle-text">
-              Repo-default watchlist size: {totalWatchlistHandles} handles (
+              Current watchlist size: {totalWatchlistHandles} handles (
               {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.influencer.length} influencer,{" "}
               {WATCHLIST_BY_TIER.ecosystem.length} ecosystem).
             </p>
@@ -180,7 +167,7 @@ export function QueryReferencePopup() {
             <h3>Gates before ingest</h3>
             <p>Matching posts still go through collector-side gates before they are written to storage.</p>
             <ul>
-              <li>Language allowlist gate when enabled.</li>
+              <li>English language allowlist.</li>
               <li>Canonical omit-handle list for keyword/discovery-origin posts.</li>
               <li>Base-term relevance gate for discovery posts and term-constrained priority families.</li>
               <li>Empty or stub-text hard reject for URL-only/media-only/empty posts.</li>
@@ -190,8 +177,7 @@ export function QueryReferencePopup() {
           <section>
             <h3>Significance flow</h3>
             <p>
-              The collector does not score significance inline anymore. Accepted posts are ingested with{" "}
-              <code>classification_status=pending</code>.
+              Accepted posts are ingested with <code>classification_status=pending</code>.
             </p>
             <p>
               A separate async classifier then assigns <code>is_significant</code>, <code>significance_reason</code>,
@@ -200,21 +186,8 @@ export function QueryReferencePopup() {
           </section>
 
           <section>
-            <h3>Live override hooks</h3>
-            <p>The main env hooks that can make production differ from this popup are:</p>
-            <ul>
-              <li><code>XMON_X_API_BASE_TERMS</code></li>
-              <li><code>XMON_X_API_WATCHLIST_TIERS_JSON</code></li>
-              <li><code>XMON_X_API_WATCHLIST_INCLUDE_HANDLES</code></li>
-              <li><code>XMON_X_API_REPLY_MODE</code></li>
-              <li><code>XMON_X_API_REPLY_TIERS</code></li>
-              <li><code>XMON_X_API_REPLY_SELECTED_HANDLES</code></li>
-            </ul>
-          </section>
-
-          <section>
             <h3>Active watchlist handles by category</h3>
-            <p>These are the repo-default handles included in the priority capture plan.</p>
+            <p>These are the currently deployed handles included in the priority capture plan.</p>
             <div className="watchlist-groups">
               {(Object.keys(WATCHLIST_BY_TIER) as Array<keyof typeof WATCHLIST_BY_TIER>).map((tier) => (
                 <details className="watchlist-group" key={tier}>
