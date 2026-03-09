@@ -71,10 +71,11 @@ Production ingestion now runs server-side on AWS using scheduled X API collector
 1. EventBridge triggers AWS collector Lambdas:
    - `xmonitor-xapi-priority-collector` (priority + watchlist replies),
    - `xmonitor-xapi-discovery-collector` (discovery + rolling summaries).
-2. Collector calls X API search endpoints, normalizes records, applies language/noise/omit/significance gates, and computes embeddings.
+2. Collector calls X API search endpoints, normalizes records, applies language/omit/base-term capture gates plus an empty-text hard reject, and computes embeddings.
 3. Collector sends idempotent ingest payloads to hosted `/api/v1/ingest/*` endpoints.
-4. API proxy routes to backend `/v1/*`, Lambda validates payloads, and Postgres upserts by stable keys.
-5. PostgreSQL is the source of truth.
+4. A separate scheduled significance-classifier Lambda claims pending posts, classifies them with Venice AI, and writes results back through internal ingest endpoints.
+5. API proxy routes to backend `/v1/*`, Lambda validates payloads, and Postgres upserts by stable keys.
+6. PostgreSQL is the source of truth.
 
 Local OpenClaw/launchd collection is now fallback-only and not part of the normal production write path.
 
@@ -382,6 +383,23 @@ Open [http://localhost:3000](http://localhost:3000).
 - `SUMMARY_LLM_TIMEOUT_MS`
 - `SUMMARY_LLM_MAX_ATTEMPTS`
 - `SUMMARY_LLM_INITIAL_BACKOFF_MS`
+- `SIGNIFICANCE_ENABLED`
+- `SIGNIFICANCE_INGEST_API_BASE_URL`
+- `SIGNIFICANCE_INGEST_API_KEY`
+- `SIGNIFICANCE_INGEST_TIMEOUT_MS`
+- `SIGNIFICANCE_LLM_URL`
+- `SIGNIFICANCE_LLM_MODEL`
+- `SIGNIFICANCE_LLM_API_KEY`
+- `SIGNIFICANCE_LLM_TEMPERATURE`
+- `SIGNIFICANCE_LLM_MAX_TOKENS`
+- `SIGNIFICANCE_LLM_TIMEOUT_MS`
+- `SIGNIFICANCE_LLM_MAX_ATTEMPTS`
+- `SIGNIFICANCE_LLM_INITIAL_BACKOFF_MS`
+- `SIGNIFICANCE_BATCH_SIZE`
+- `SIGNIFICANCE_MAX_POSTS_PER_RUN`
+- `SIGNIFICANCE_MAX_ATTEMPTS`
+- `SIGNIFICANCE_LEASE_SECONDS`
+- `SIGNIFICANCE_VERSION`
 - `WATCHLIST_TIERS_JSON`
 - `WATCHLIST_INCLUDE_HANDLES`
 

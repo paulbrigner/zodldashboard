@@ -59,54 +59,7 @@ const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
 const DEFAULT_SUMMARY_LLM_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_SUMMARY_LLM_MODEL = "zai-org-glm-5";
 
-const MATERIAL_KEYWORDS = [
-  "listing",
-  "delist",
-  "partnership",
-  "exploit",
-  "vulnerability",
-  "upgrade",
-  "hard fork",
-  "release",
-  "regulation",
-  "etf",
-  "integration",
-  "wallet support",
-  "zashi",
-];
-
-const SPAM_HINTS = [
-  "airdrop",
-  "free trading group",
-  "trading signals",
-  "free signals",
-  "join for more free signals",
-  "accuracy rate",
-  "join now",
-  "t.me/",
-  "signal group",
-  "pump",
-  "moonshot",
-  "promo code",
-  "discount code",
-  "coupon",
-  "voucher code",
-  "كود خصم",
-  "كوبون",
-];
-
 const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b)/i;
-const DISCOVERY_NOISE_HINTS = [
-  "trading signals",
-  "free signals",
-  "join for more free signals",
-  "accuracy rate",
-  "xauusd",
-  "btcusd",
-  "join now",
-  "vip group",
-  "premium signals",
-];
 
 const SUMMARY_THEME_KEYWORDS = {
   "Governance / strategy": [
@@ -651,138 +604,9 @@ function hasConfiguredBaseTerm(text, baseTermRegex) {
   return baseTermRegex.test(normalized);
 }
 
-function isSpamText(text) {
-  const low = String(text || "").toLowerCase();
-  return SPAM_HINTS.some((hint) => low.includes(hint));
-}
-
-function isLowSignalText(text) {
-  const cleaned = normalizeSubstanceText(text).toLowerCase();
-  if (!cleaned) return true;
-  const lowSignalHints = [
-    "gm",
-    "gn",
-    "lfg",
-    "wagmi",
-    "nice",
-    "wow",
-    "cool",
-    "interesting",
-    "bullish",
-    "bearish",
-    "soon",
-    "wen",
-    "thread",
-    "thoughts?",
-  ];
-  return cleaned.length < 20 || lowSignalHints.some((hint) => cleaned === hint || cleaned.endsWith(` ${hint}`));
-}
-
-function getSubstanceProfile(text) {
-  const cleaned = normalizeSubstanceText(text);
-  const words = cleaned.match(/[A-Za-z0-9']+/g) || [];
-  const meaningfulWords = words.filter((word) => word.length >= 2 && !/^\d+$/.test(word));
-  const isReply = /\breplying to\b/i.test(String(text || ""));
-  return {
-    wordCount: meaningfulWords.length,
-    charCount: cleaned.length,
-    isReply,
-  };
-}
-
-function countCashtags(text) {
-  const matches = String(text || "").match(/\$[a-z][a-z0-9_]{1,20}/gi);
-  return matches ? matches.length : 0;
-}
-
-function countHashtags(text) {
-  const matches = String(text || "").match(/#[a-z0-9_]{1,30}/gi);
-  return matches ? matches.length : 0;
-}
-
-function rejectDiscoveryNoisePost(record) {
-  const text = String(record?.body_text || "");
-  if (!text) return { reject: false, reason: null };
-  const low = text.toLowerCase();
-
-  const hint = DISCOVERY_NOISE_HINTS.find((value) => low.includes(value)) || null;
-  const cashtags = countCashtags(text);
-  const hashtags = countHashtags(text);
-  const hasSignalTpPattern = /\btp\d{1,2}\s*[:\-]/i.test(low);
-  const hasTgLink = /(t\.me\/|telegram\.me\/)/i.test(low);
-  const hasSignalPhrase = /\b(?:free|daily)?\s*(?:trading\s+)?signals?\b/i.test(low);
-  const hasTickerBlast = cashtags >= 8 || hashtags >= 10;
-
-  if ((hasSignalPhrase || hasSignalTpPattern || hasTgLink || hint) && (cashtags >= 4 || hashtags >= 6 || hasTickerBlast)) {
-    return {
-      reject: true,
-      reason: hint ? `discovery_noise:${hint}` : "discovery_noise:signal_spam",
-    };
-  }
-
-  return { reject: false, reason: null };
-}
-
-function evaluateSignificance(record) {
-  const text = String(record?.body_text || "");
-  const low = text.toLowerCase();
-  const likes = coerceInt(record?.likes);
-  const reposts = coerceInt(record?.reposts);
-  const watchTier = asString(record?.watch_tier) || null;
-
-  const { wordCount, charCount, isReply } = getSubstanceProfile(text);
-  const hasWatchlist = Boolean(watchTier);
-
-  // TODO: Remove engagement-based significance gates and reasons. Current capture does not
-  // measure engagement consistently enough for significance to depend on likes/reposts.
-
-  let keywordReason = null;
-  for (const kw of MATERIAL_KEYWORDS) {
-    if (low.includes(kw)) {
-      keywordReason = `keyword:${kw}`;
-      break;
-    }
-  }
-  const hasKeyword = Boolean(keywordReason);
-
-  const engagementModerate = likes >= 25 || reposts >= 10;
-  const engagementStrong = reposts >= 8 || (reposts >= 3 && likes >= 100);
-  const engagementBalanced = likes >= 50 && reposts >= 5;
-  const engagementReason = `engagement:${likes} likes/${reposts} reposts`;
-
-  const substanceOk = isReply ? wordCount >= 8 || charCount >= 55 : wordCount >= 6 || charCount >= 40;
-  const spam = isSpamText(text);
-  const lowSignal = isLowSignalText(text);
-
-  if ((spam || lowSignal) && !engagementStrong && !hasWatchlist && !hasKeyword) {
-    return { isSignificant: false, reason: spam ? "spam" : "low_signal" };
-  }
-
-  const reasons = [];
-  if (hasWatchlist) {
-    if (!(substanceOk || hasKeyword || engagementStrong)) {
-      return { isSignificant: false, reason: "low_substance_watchlist" };
-    }
-    reasons.push(`watchlist:${watchTier}`);
-    if (keywordReason) reasons.push(keywordReason);
-    if (engagementModerate) reasons.push(engagementReason);
-    return { isSignificant: true, reason: reasons.join(";") };
-  }
-
-  if (hasKeyword) {
-    if (substanceOk || engagementModerate) {
-      reasons.push(keywordReason);
-      if (engagementModerate) reasons.push(engagementReason);
-      return { isSignificant: true, reason: reasons.join(";") };
-    }
-    return { isSignificant: false, reason: "low_substance_keyword" };
-  }
-
-  if ((engagementBalanced && substanceOk) || (engagementStrong && (substanceOk || charCount >= 20))) {
-    return { isSignificant: true, reason: engagementReason };
-  }
-
-  return { isSignificant: false, reason: "low_substance" };
+function isEmptyOrStubText(text) {
+  const normalized = normalizeSubstanceText(text);
+  return !normalized;
 }
 
 function toOffsetIso(value) {
@@ -1732,7 +1556,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
     skippedKeywordOmit: 0,
     skippedMissingDiscoveryBaseTerm: 0,
     skippedMissingPriorityBaseTerm: 0,
-    skippedDiscoveryNoise: 0,
+    skippedEmptyOrStub: 0,
     querySinceIdApplied: 0,
     querySinceIdMissing: 0,
     familyCounts: {},
@@ -1780,6 +1604,10 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
         const authorHandle = normalizeHandle(user.username);
         const watchTier = watchlistMap[authorHandle] || null;
         const record = buildPostRecord(tweet, user, entry.sourceQuery, watchTier, seenAtIso);
+        if (isEmptyOrStubText(record.body_text || "")) {
+          counters.skippedEmptyOrStub += 1;
+          continue;
+        }
         if (
           collectorMode === "priority" &&
           (entry.family === "priority_influencer_term" || entry.family === "priority_reply_term") &&
@@ -1797,19 +1625,11 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
             counters.skippedKeywordOmit += 1;
             continue;
           }
-          const discoveryNoise = rejectDiscoveryNoisePost(record);
-          if (discoveryNoise.reject) {
-            counters.skippedDiscoveryNoise += 1;
-            continue;
-          }
           if (!hasDiscoveryBaseTerm(record.body_text || "")) {
             counters.skippedMissingDiscoveryBaseTerm += 1;
             continue;
           }
         }
-        const significance = evaluateSignificance(record);
-        record.is_significant = significance.isSignificant;
-        record.significance_reason = significance.reason;
 
         const existing = aggregated.get(record.status_id);
         if (!existing || comparePriority(existing, record) < 0) {
@@ -2095,7 +1915,6 @@ async function ingestEmbeddings(config, items) {
 }
 
 function buildRunNote(config, counters, posts, collectorMode) {
-  const significantCount = posts.filter((item) => item.is_significant).length;
   const replyEnabledForRun = collectorMode === "priority" ? config.replyCaptureEnabled : false;
   const parts = [
     "source=lambda_x_api",
@@ -2104,7 +1923,8 @@ function buildRunNote(config, counters, posts, collectorMode) {
     `pages=${counters.pageCount}`,
     `raw=${counters.rawTweets}`,
     `unique=${counters.uniqueTweets}`,
-    `significant=${significantCount}`,
+    "significant=0",
+    `pending_classification=${posts.length}`,
     `reply_enabled=${replyEnabledForRun ? 1 : 0}`,
     `reply_mode=${replyEnabledForRun ? config.replyMode : "off"}`,
     `since_id_enabled=${config.sinceIdEnabled ? 1 : 0}`,
@@ -2114,7 +1934,7 @@ function buildRunNote(config, counters, posts, collectorMode) {
     `skipped_non_watchlist=${counters.skippedNonWatchlist}`,
     `skipped_keyword_omit=${counters.skippedKeywordOmit}`,
     `skipped_missing_discovery_base_term=${counters.skippedMissingDiscoveryBaseTerm}`,
-    `skipped_discovery_noise=${counters.skippedDiscoveryNoise}`,
+    `skipped_empty_or_stub=${counters.skippedEmptyOrStub}`,
     `skipped_retweet=${counters.skippedRetweet}`,
     `skipped_malformed=${counters.skippedMalformed}`,
   ];
@@ -2130,12 +1950,11 @@ function buildRunNote(config, counters, posts, collectorMode) {
 }
 
 async function ingestRun(config, counters, posts, dryRun, collectorMode) {
-  const significantCount = posts.filter((item) => item.is_significant).length;
   const runPayload = {
     run_at: nowIso(),
     mode: collectorMode,
     fetched_count: counters.uniqueTweets,
-    significant_count: significantCount,
+    significant_count: 0,
     note: buildRunNote(config, counters, posts, collectorMode),
     source: config.collectorSource,
   };
@@ -2178,7 +1997,8 @@ function summarizeResult(
     counters,
     post_summary: {
       total: posts.length,
-      significant: posts.filter((item) => item.is_significant).length,
+      significant: 0,
+      pending_classification: posts.length,
       by_tier: posts.reduce((acc, item) => {
         const tier = asString(item.watch_tier) || "other";
         acc[tier] = (acc[tier] || 0) + 1;

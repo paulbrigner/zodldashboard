@@ -84,19 +84,16 @@ Discovery mode rejects common spam/signal patterns, including:
 - high-density cashtag/hashtag blasts
 - TP/accuracy/VIP/Telegram signal patterns
 
-Rejected posts are tagged with `discovery_noise:*` style reasons in run diagnostics.
+Rejected posts are limited to collector-side capture gates:
+- omit-list handles
+- required base-term relevance for discovery and base-term-constrained priority families
+- empty or URL-only/media-stub text
 
 ### Significance scoring
 
-`is_significant` is derived from:
-- watchlist tier presence
-- text substance thresholds
-- material keyword matches
-- engagement thresholds
-- spam/low-signal guards
-
-TODO: remove engagement thresholds from significance classification because captured metrics are
-not a reliable measure of post engagement over time in the current pipeline.
+`is_significant` is now assigned asynchronously after ingest by a dedicated significance-classifier
+Lambda. New posts enter the system as `classification_status=pending`, then the classifier writes
+`classified` or `failed` along with `is_significant`, `significance_reason`, model, and confidence.
 
 ## Embeddings and summary generation
 

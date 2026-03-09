@@ -1,4 +1,5 @@
 import {
+  CLASSIFICATION_STATUSES,
   COMPOSE_ANSWER_STYLES,
   COMPOSE_DRAFT_FORMATS,
   type ComposeQueryRequest,
@@ -11,6 +12,8 @@ import {
   type PipelineRunUpsert,
   type PostUpsert,
   type SemanticQueryRequest,
+  type SignificanceClaimRequest,
+  type SignificanceResultUpsert,
   type WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
@@ -87,6 +90,15 @@ function asInteger(value: unknown): number | undefined {
   return undefined;
 }
 
+function asFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 function asIsoTimestamp(value: unknown): string | undefined {
   const text = asString(value);
   if (!text) return undefined;
@@ -138,6 +150,86 @@ export function parsePostUpsert(value: unknown): { ok: true; data: PostUpsert } 
       views: asInteger(value.views) ?? 0,
       discovered_at: discoveredAt,
       last_seen_at: lastSeenAt,
+    },
+  };
+}
+
+export function parseSignificanceClaimRequest(
+  value: unknown
+): { ok: true; data: SignificanceClaimRequest } | { ok: false; error: string } {
+  if (value === undefined || value === null) {
+    return { ok: true, data: {} };
+  }
+  if (!isRecord(value)) return { ok: false, error: "payload must be an object" };
+
+  const limit = asInteger(value.limit);
+  const leaseSeconds = asInteger(value.lease_seconds);
+  const maxAttempts = asInteger(value.max_attempts);
+
+  if (limit !== undefined && limit <= 0) {
+    return { ok: false, error: "limit must be a positive integer" };
+  }
+  if (leaseSeconds !== undefined && leaseSeconds <= 0) {
+    return { ok: false, error: "lease_seconds must be a positive integer" };
+  }
+  if (maxAttempts !== undefined && maxAttempts <= 0) {
+    return { ok: false, error: "max_attempts must be a positive integer" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      limit,
+      lease_seconds: leaseSeconds,
+      max_attempts: maxAttempts,
+    },
+  };
+}
+
+export function parseSignificanceResultUpsert(
+  value: unknown
+): { ok: true; data: SignificanceResultUpsert } | { ok: false; error: string } {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const statusId = asString(value.status_id);
+  const classificationStatus = asString(value.classification_status)?.toLowerCase();
+  const classifiedAt = value.classified_at === null ? null : asIsoTimestamp(value.classified_at);
+  const confidence = value.classification_confidence === null
+    ? null
+    : asFiniteNumber(value.classification_confidence);
+
+  if (!statusId || !classificationStatus) {
+    return { ok: false, error: "status_id and classification_status are required" };
+  }
+  if (classificationStatus !== "classified" && classificationStatus !== "failed") {
+    return { ok: false, error: "classification_status must be one of classified, failed" };
+  }
+  if (confidence !== null && confidence !== undefined && (confidence < 0 || confidence > 1)) {
+    return { ok: false, error: "classification_confidence must be between 0 and 1" };
+  }
+  if (classifiedAt === undefined && value.classified_at !== undefined && value.classified_at !== null) {
+    return { ok: false, error: "classified_at must be a valid ISO timestamp" };
+  }
+
+  const normalizedStatus = CLASSIFICATION_STATUSES.includes(classificationStatus as typeof CLASSIFICATION_STATUSES[number])
+    ? classificationStatus as "classified" | "failed"
+    : null;
+  if (!normalizedStatus) {
+    return { ok: false, error: "classification_status is invalid" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      status_id: statusId,
+      classification_status: normalizedStatus,
+      is_significant: asBoolean(value.is_significant) ?? false,
+      significance_reason: asNullableString(value.significance_reason),
+      significance_version: asNullableString(value.significance_version) ?? "ai_v1",
+      classification_model: asNullableString(value.classification_model),
+      classification_confidence: confidence ?? null,
+      classification_error: asNullableString(value.classification_error),
+      classified_at: classifiedAt ?? null,
     },
   };
 }

@@ -115,7 +115,8 @@ export default async function PostPage({ params }: PostPageProps) {
         <div className="feed-tags">
           <span className="pill">status_id: {detail.post.status_id}</span>
           <span className="pill">tier: {detail.post.watch_tier || "-"}</span>
-          <span className="pill">significant: {detail.post.is_significant ? "true" : "false"}</span>
+          <span className="pill">classification: {detail.post.classification_status}</span>
+          <span className="pill">significant: {detail.post.classification_status === "classified" ? String(detail.post.is_significant) : "-"}</span>
           <span className="pill">likes: {detail.post.likes}</span>
           <span className="pill">reposts: {detail.post.reposts}</span>
           <span className="pill">replies: {detail.post.replies}</span>

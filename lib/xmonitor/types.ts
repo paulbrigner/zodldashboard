@@ -4,6 +4,9 @@ export type WatchTier = (typeof WATCH_TIERS)[number];
 export const RUN_MODES = ["priority", "discovery", "both", "manual"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
 
+export const CLASSIFICATION_STATUSES = ["pending", "processing", "classified", "failed"] as const;
+export type ClassificationStatus = (typeof CLASSIFICATION_STATUSES)[number];
+
 export const COMPOSE_ANSWER_STYLES = ["brief", "balanced", "detailed"] as const;
 export type ComposeAnswerStyle = (typeof COMPOSE_ANSWER_STYLES)[number];
 
@@ -38,6 +41,47 @@ export type PostUpsert = {
   views?: number;
   discovered_at: string;
   last_seen_at: string;
+};
+
+export type SignificanceClaimRequest = {
+  limit?: number;
+  lease_seconds?: number;
+  max_attempts?: number;
+};
+
+export type SignificanceCandidate = {
+  status_id: string;
+  author_handle: string;
+  author_display: string | null;
+  body_text: string | null;
+  source_query: string | null;
+  watch_tier: WatchTier | null;
+  discovered_at: string;
+  last_seen_at: string;
+  classification_attempts: number;
+};
+
+export type SignificanceClaimResponse = {
+  items: SignificanceCandidate[];
+};
+
+export type SignificanceResultUpsert = {
+  status_id: string;
+  classification_status: Extract<ClassificationStatus, "classified" | "failed">;
+  is_significant?: boolean;
+  significance_reason?: string | null;
+  significance_version?: string | null;
+  classification_model?: string | null;
+  classification_confidence?: number | null;
+  classification_error?: string | null;
+  classified_at?: string | null;
+};
+
+export type SignificanceBatchResult = {
+  received: number;
+  updated: number;
+  skipped: number;
+  errors: Array<{ index: number; message: string }>;
 };
 
 export type PipelineRunUpsert = {
@@ -171,6 +215,10 @@ export type FeedItem = {
   url: string;
   is_significant: boolean;
   significance_reason: string | null;
+  classification_status: ClassificationStatus;
+  classified_at?: string | null;
+  classification_model?: string | null;
+  classification_confidence?: number | null;
   likes: number;
   reposts: number;
   replies: number;

@@ -480,6 +480,8 @@ function isIngestPath(path) {
   return (
     path === "/v1/ingest/runs" ||
     path === "/v1/ingest/query-state/lookup" ||
+    path === "/v1/ingest/significance/claim" ||
+    path === "/v1/ingest/significance/batch" ||
     /^\/v1\/ingest\/[^/]+\/batch$/.test(path)
   );
 }
@@ -641,6 +643,15 @@ function asInteger(value) {
   return undefined;
 }
 
+function asFiniteFloatValue(value) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
+  }
+  return undefined;
+}
+
 function asIsoTimestamp(value) {
   const text = asString(value);
   if (!text) return undefined;
@@ -709,12 +720,22 @@ function rowToFeedItem(row) {
     url: String(row.url),
     is_significant: Boolean(row.is_significant),
     significance_reason: row.significance_reason ? String(row.significance_reason) : null,
+    classification_status: row.classification_status ? String(row.classification_status) : "pending",
+    classified_at: toIso(row.classified_at),
+    classification_model: row.classification_model ? String(row.classification_model) : null,
+    classification_confidence: row.classification_confidence === undefined || row.classification_confidence === null
+      ? null
+      : Number(row.classification_confidence),
     likes: Number(row.likes || 0),
     reposts: Number(row.reposts || 0),
     replies: Number(row.replies || 0),
     views: Number(row.views || 0),
     score: row.score !== undefined && row.score !== null ? Number(row.score) : null,
   };
+}
+
+function classifiedSignificantPredicate(postAlias = "p") {
+  return `${postAlias}.classification_status = 'classified' AND ${postAlias}.is_significant`;
 }
 
 function rowToWindowSummary(row) {
@@ -1099,13 +1120,82 @@ function parsePostUpsert(value) {
       watch_tier: watchTier,
       is_significant: asBoolean(value.is_significant) ?? false,
       significance_reason: asNullableString(value.significance_reason),
-      significance_version: asNullableString(value.significance_version) ?? "v1",
+      significance_version: asNullableString(value.significance_version) ?? "ai_v1",
       likes: asInteger(value.likes) ?? 0,
       reposts: asInteger(value.reposts) ?? 0,
       replies: asInteger(value.replies) ?? 0,
       views: asInteger(value.views) ?? 0,
       discovered_at: discoveredAt,
       last_seen_at: lastSeenAt,
+    },
+  };
+}
+
+function parseSignificanceClaimRequest(value) {
+  if (value === undefined || value === null) {
+    return { ok: true, data: {} };
+  }
+  if (!isRecord(value)) return { ok: false, error: "payload must be an object" };
+
+  const limit = asInteger(value.limit);
+  const leaseSeconds = asInteger(value.lease_seconds);
+  const maxAttempts = asInteger(value.max_attempts);
+
+  if (limit !== undefined && limit <= 0) {
+    return { ok: false, error: "limit must be a positive integer" };
+  }
+  if (leaseSeconds !== undefined && leaseSeconds <= 0) {
+    return { ok: false, error: "lease_seconds must be a positive integer" };
+  }
+  if (maxAttempts !== undefined && maxAttempts <= 0) {
+    return { ok: false, error: "max_attempts must be a positive integer" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      limit,
+      lease_seconds: leaseSeconds,
+      max_attempts: maxAttempts,
+    },
+  };
+}
+
+function parseSignificanceResultUpsert(value) {
+  if (!isRecord(value)) return { ok: false, error: "item must be an object" };
+
+  const statusId = asString(value.status_id);
+  const classificationStatus = asString(value.classification_status)?.toLowerCase();
+  const classifiedAt = value.classified_at === null ? null : asIsoTimestamp(value.classified_at);
+  const confidence = value.classification_confidence === null
+    ? null
+    : asFiniteFloatValue(value.classification_confidence);
+
+  if (!statusId || !classificationStatus) {
+    return { ok: false, error: "status_id and classification_status are required" };
+  }
+  if (classificationStatus !== "classified" && classificationStatus !== "failed") {
+    return { ok: false, error: "classification_status must be one of classified, failed" };
+  }
+  if (confidence !== null && confidence !== undefined && (confidence < 0 || confidence > 1)) {
+    return { ok: false, error: "classification_confidence must be between 0 and 1" };
+  }
+  if (classifiedAt === undefined && value.classified_at !== undefined && value.classified_at !== null) {
+    return { ok: false, error: "classified_at must be a valid ISO timestamp" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      status_id: statusId,
+      classification_status: classificationStatus,
+      is_significant: asBoolean(value.is_significant) ?? false,
+      significance_reason: asNullableString(value.significance_reason),
+      significance_version: asNullableString(value.significance_version) ?? "ai_v1",
+      classification_model: asNullableString(value.classification_model),
+      classification_confidence: confidence ?? null,
+      classification_error: asNullableString(value.classification_error),
+      classified_at: classifiedAt ?? null,
     },
   };
 }
@@ -1379,8 +1469,7 @@ function buildFeedWhereClause(query, options = {}) {
   }
 
   if (query.significant !== undefined) {
-    params.push(query.significant);
-    where.push(`p.is_significant = $${params.length}`);
+    where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
   if (options.includeTextQuery !== false && query.q) {
@@ -1906,6 +1995,12 @@ async function upsertPosts(items) {
   result.inserted_status_ids = [];
   result.updated_status_ids = [];
   const omitHandles = ingestOmitHandleSet();
+  const classificationResetSql = [
+    "posts.body_text IS DISTINCT FROM EXCLUDED.body_text",
+    "posts.author_handle IS DISTINCT FROM EXCLUDED.author_handle",
+    "posts.source_query IS DISTINCT FROM EXCLUDED.source_query",
+    "posts.watch_tier IS DISTINCT FROM EXCLUDED.watch_tier",
+  ].join("\n        OR ");
   const sql = `
     INSERT INTO posts(
       status_id,
@@ -1919,6 +2014,7 @@ async function upsertPosts(items) {
       is_significant,
       significance_reason,
       significance_version,
+      classification_status,
       likes,
       reposts,
       replies,
@@ -1928,8 +2024,8 @@ async function upsertPosts(items) {
     )
     VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-      $12, $13, $14, $15,
-      $16, $17
+      $12, $13, $14, $15, $16,
+      $17, $18
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
@@ -1939,9 +2035,46 @@ async function upsertPosts(items) {
       posted_relative = EXCLUDED.posted_relative,
       source_query = EXCLUDED.source_query,
       watch_tier = EXCLUDED.watch_tier,
-      is_significant = EXCLUDED.is_significant,
-      significance_reason = EXCLUDED.significance_reason,
-      significance_version = EXCLUDED.significance_version,
+      is_significant = CASE
+        WHEN ${classificationResetSql} THEN FALSE
+        ELSE posts.is_significant
+      END,
+      significance_reason = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.significance_reason
+      END,
+      significance_version = CASE
+        WHEN ${classificationResetSql} THEN 'ai_v1'
+        ELSE COALESCE(posts.significance_version, 'ai_v1')
+      END,
+      classification_status = CASE
+        WHEN ${classificationResetSql} THEN 'pending'
+        ELSE posts.classification_status
+      END,
+      classified_at = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classified_at
+      END,
+      classification_model = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_model
+      END,
+      classification_confidence = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_confidence
+      END,
+      classification_attempts = CASE
+        WHEN ${classificationResetSql} THEN 0
+        ELSE posts.classification_attempts
+      END,
+      classification_error = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_error
+      END,
+      classification_leased_at = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_leased_at
+      END,
       likes = EXCLUDED.likes,
       reposts = EXCLUDED.reposts,
       replies = EXCLUDED.replies,
@@ -1975,9 +2108,10 @@ async function upsertPosts(items) {
         item.posted_relative || null,
         item.source_query || null,
         item.watch_tier || null,
-        item.is_significant ?? false,
-        item.significance_reason || null,
-        item.significance_version || "v1",
+        false,
+        null,
+        "ai_v1",
+        "pending",
         item.likes ?? 0,
         item.reposts ?? 0,
         item.replies ?? 0,
@@ -1996,6 +2130,123 @@ async function upsertPosts(items) {
     } catch (error) {
       result.errors.push({ index, message: errorMessage(error) });
       result.skipped += 1;
+    }
+  }
+
+  return result;
+}
+
+async function claimPostsForClassification(request = {}) {
+  const db = getPool();
+  const limit = Math.min(Math.max(request.limit || 12, 1), 200);
+  const leaseSeconds = Math.min(Math.max(request.lease_seconds || 300, 30), 3600);
+  const maxAttempts = Math.min(Math.max(request.max_attempts || 3, 1), 10);
+  const sql = `
+    WITH candidates AS (
+      SELECT p.status_id
+      FROM posts p
+      WHERE p.classification_attempts < $3
+        AND (
+          p.classification_status = 'pending'
+          OR p.classification_status = 'failed'
+          OR (
+            p.classification_status = 'processing'
+            AND (
+              p.classification_leased_at IS NULL
+              OR p.classification_leased_at < now() - make_interval(secs => $2)
+            )
+          )
+        )
+      ORDER BY p.discovered_at DESC, p.status_id DESC
+      LIMIT $1
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE posts p
+    SET
+      classification_status = 'processing',
+      classification_leased_at = now(),
+      classification_attempts = p.classification_attempts + 1,
+      classification_error = NULL,
+      updated_at = now()
+    FROM candidates c
+    WHERE p.status_id = c.status_id
+    RETURNING
+      p.status_id,
+      p.author_handle,
+      p.author_display,
+      p.body_text,
+      p.source_query,
+      p.watch_tier,
+      p.discovered_at,
+      p.last_seen_at,
+      p.classification_attempts
+  `;
+  const result = await db.query(sql, [limit, leaseSeconds, maxAttempts]);
+  return {
+    items: result.rows.map((row) => ({
+      status_id: String(row.status_id),
+      author_handle: String(row.author_handle),
+      author_display: row.author_display ? String(row.author_display) : null,
+      body_text: row.body_text ? String(row.body_text) : null,
+      source_query: row.source_query ? String(row.source_query) : null,
+      watch_tier: row.watch_tier ? String(row.watch_tier) : null,
+      discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
+      last_seen_at: toIso(row.last_seen_at) || new Date(0).toISOString(),
+      classification_attempts: Number(row.classification_attempts || 0),
+    })),
+  };
+}
+
+async function applySignificanceResults(items) {
+  const db = getPool();
+  const result = {
+    received: items.length,
+    updated: 0,
+    skipped: 0,
+    errors: [],
+  };
+  const sql = `
+    UPDATE posts
+    SET
+      is_significant = $2,
+      significance_reason = $3,
+      significance_version = $4,
+      classification_status = $5,
+      classified_at = CASE
+        WHEN $5 = 'classified' THEN COALESCE($6::timestamptz, now())
+        ELSE NULL
+      END,
+      classification_model = $7,
+      classification_confidence = $8,
+      classification_error = $9,
+      classification_leased_at = NULL,
+      updated_at = now()
+    WHERE status_id = $1
+    RETURNING status_id
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const dbResult = await db.query(sql, [
+        item.status_id,
+        item.classification_status === "classified" ? Boolean(item.is_significant) : false,
+        item.classification_status === "classified" ? item.significance_reason || null : null,
+        item.significance_version || "ai_v1",
+        item.classification_status,
+        item.classified_at || null,
+        item.classification_model || null,
+        item.classification_confidence ?? null,
+        item.classification_status === "failed" ? item.classification_error || "classification_failed" : null,
+      ]);
+      if (dbResult.rowCount === 0) {
+        result.skipped += 1;
+        result.errors.push({ index, message: `unknown status_id: ${item.status_id}` });
+        continue;
+      }
+      result.updated += 1;
+    } catch (error) {
+      result.skipped += 1;
+      result.errors.push({ index, message: errorMessage(error) });
     }
   }
 
@@ -2526,8 +2777,7 @@ async function querySemanticFeed(query, embeddingVector) {
   }
 
   if (query.significant !== undefined) {
-    params.push(query.significant);
-    where.push(`p.is_significant = $${params.length}`);
+    where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
   const requestedLimit = query.limit || semanticDefaultLimit();
@@ -2567,6 +2817,10 @@ async function querySemanticFeed(query, embeddingVector) {
       p.url,
       p.is_significant,
       p.significance_reason,
+      p.classification_status,
+      p.classified_at,
+      p.classification_model,
+      p.classification_confidence,
       p.likes,
       p.reposts,
       p.replies,
@@ -2615,8 +2869,7 @@ function addStandardPostFilters(query, params, where, postAlias) {
   }
 
   if (query.significant !== undefined) {
-    params.push(query.significant);
-    where.push(`${postAlias}.is_significant = $${params.length}`);
+    where.push(`${postAlias}.classification_status = 'classified' AND ${postAlias}.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 }
 
@@ -2700,17 +2953,21 @@ async function queryComposeEvidence(query, embeddingVector) {
       p.body_text,
       p.url,
       p.is_significant,
-          p.significance_reason,
-          p.likes,
-          p.reposts,
-          p.replies,
-          p.views,
-          c.score
-        FROM semantic_candidates c
-        JOIN posts p ON p.status_id = c.status_id
-        ${semanticWhereClause}
-        ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
-      `;
+      p.significance_reason,
+      p.classification_status,
+      p.classified_at,
+      p.classification_model,
+      p.classification_confidence,
+      p.likes,
+      p.reposts,
+      p.replies,
+      p.views,
+      c.score
+    FROM semantic_candidates c
+    JOIN posts p ON p.status_id = c.status_id
+    ${semanticWhereClause}
+    ORDER BY c.score DESC, p.discovered_at DESC, p.status_id DESC
+  `;
 
   const semanticResult = await db.query(semanticSql, semanticParams);
   const semanticItems = semanticResult.rows.map(rowToFeedItem);
@@ -2754,6 +3011,10 @@ async function queryComposeEvidence(query, embeddingVector) {
           p.url,
           p.is_significant,
           p.significance_reason,
+          p.classification_status,
+          p.classified_at,
+          p.classification_model,
+          p.classification_confidence,
           p.likes,
           p.reposts,
           p.replies,
@@ -4660,6 +4921,10 @@ async function getFeed(query) {
       p.url,
       p.is_significant,
       p.significance_reason,
+      p.classification_status,
+      p.classified_at,
+      p.classification_model,
+      p.classification_confidence,
       p.likes,
       p.reposts,
       p.replies,
@@ -4709,7 +4974,7 @@ async function getEngagement(query, options = {}) {
     )
     SELECT
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COALESCE(SUM(likes), 0)::bigint AS likes,
       COALESCE(SUM(reposts), 0)::bigint AS reposts,
       COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -4728,7 +4993,7 @@ async function getEngagement(query, options = {}) {
       SELECT
         to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
         COUNT(*)::bigint AS post_count,
-        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
         COALESCE(SUM(likes), 0)::bigint AS likes,
         COALESCE(SUM(reposts), 0)::bigint AS reposts,
         COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -4760,7 +5025,7 @@ async function getEngagement(query, options = {}) {
     SELECT
       COALESCE(watch_tier, 'other') AS watch_tier,
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COALESCE(SUM(likes), 0)::bigint AS likes,
       COALESCE(SUM(reposts), 0)::bigint AS reposts,
       COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -4780,7 +5045,7 @@ async function getEngagement(query, options = {}) {
     SELECT
       author_handle,
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COALESCE(SUM(likes), 0)::bigint AS likes,
       COALESCE(SUM(reposts), 0)::bigint AS reposts,
       COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -4924,7 +5189,7 @@ async function getTrends(query, options = {}) {
     )
     SELECT
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
       COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
       COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
@@ -4945,7 +5210,7 @@ async function getTrends(query, options = {}) {
       SELECT
         to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
         COUNT(*)::bigint AS post_count,
-        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
         COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
         COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
         COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
@@ -5061,11 +5326,15 @@ async function getPostDetail(statusId) {
         p.author_handle,
         p.watch_tier,
         p.body_text,
-        p.url,
-        p.is_significant,
-        p.significance_reason,
-        p.likes,
-        p.reposts,
+      p.url,
+      p.is_significant,
+      p.significance_reason,
+      p.classification_status,
+      p.classified_at,
+      p.classification_model,
+      p.classification_confidence,
+      p.likes,
+      p.reposts,
         p.replies,
         p.views
       FROM posts p
@@ -5750,6 +6019,84 @@ async function handleIngestQueryStateLookup(event) {
   }
 }
 
+async function handleIngestSignificanceClaim(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  const rawBody = parsedBody.ok ? parsedBody.body : {};
+  const parsed = parseSignificanceClaimRequest(rawBody);
+  if (!parsed.ok) {
+    return jsonError(parsed.error, 400);
+  }
+
+  try {
+    return jsonOk(await claimPostsForClassification(parsed.data));
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to claim posts for classification", 503);
+  }
+}
+
+async function handleIngestSignificanceBatch(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsedBatch = parseBatchItems(parsedBody.body);
+  if (!parsedBatch.ok) {
+    return jsonError(parsedBatch.error, 400);
+  }
+
+  const validItems = [];
+  const validIndices = [];
+  const baseResult = {
+    received: parsedBatch.items.length,
+    updated: 0,
+    skipped: 0,
+    errors: [],
+  };
+
+  parsedBatch.items.forEach((item, index) => {
+    const parsed = parseSignificanceResultUpsert(item);
+    if (!parsed.ok) {
+      baseResult.skipped += 1;
+      baseResult.errors.push({ index, message: parsed.error });
+      return;
+    }
+
+    validItems.push(parsed.data);
+    validIndices.push(index);
+  });
+
+  if (validItems.length === 0) {
+    return jsonOk(baseResult);
+  }
+
+  try {
+    const dbResult = await applySignificanceResults(validItems);
+    return jsonOk({
+      received: baseResult.received,
+      updated: dbResult.updated,
+      skipped: baseResult.skipped + dbResult.skipped,
+      errors: [
+        ...baseResult.errors,
+        ...dbResult.errors.map((error) => ({
+          index: validIndices[error.index] ?? error.index,
+          message: error.message,
+        })),
+      ],
+    });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to apply significance results", 503);
+  }
+}
+
 export async function sqsHandler(event) {
   const records = Array.isArray(event?.Records) ? event.Records : [];
   const failures = [];
@@ -5966,6 +6313,14 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/ingest/runs") {
     return handleIngestRuns(event);
+  }
+
+  if (method === "POST" && path === "/v1/ingest/significance/claim") {
+    return handleIngestSignificanceClaim(event);
+  }
+
+  if (method === "POST" && path === "/v1/ingest/significance/batch") {
+    return handleIngestSignificanceBatch(event);
   }
 
   if (method === "POST" && path === "/v1/ingest/query-state/lookup") {

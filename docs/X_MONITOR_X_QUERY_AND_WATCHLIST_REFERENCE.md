@@ -93,11 +93,13 @@ Applied in collector runtime before ingest:
    - `XMONITOR_INGEST_OMIT_HANDLES`
    - applies to keyword/discovery-origin posts
    - watchlist-tier posts are preserved
-3. Discovery noise gate:
-   - blocks common signal-spam patterns (for example trading signals/ticker blasts)
-   - rejects posts with `discovery_noise:*` reasons
-4. Significance scoring:
-   - assigns `is_significant` and reason labels based on watchlist tier, substance, keyword hits, and engagement thresholds
+3. Base-term relevance gate:
+   - requires configured Zcash base terms for discovery posts and base-term-constrained priority families
+4. Empty/stub hard reject:
+   - drops empty, URL-only, or media-stub posts before ingest
+5. Async significance classification:
+   - accepted posts are ingested as `classification_status=pending`
+   - a separate scheduled classifier assigns `is_significant` and reason labels after ingest
 
 ## 4) Watchlist defaults in collector code
 

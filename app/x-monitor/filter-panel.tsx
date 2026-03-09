@@ -116,9 +116,8 @@ export function FilterPanel({
                   </summary>
                   <div className="field-help-popover">
                     <p>
-                      Significant posts are scored as higher-signal: watchlist posts with enough substance, posts with
-                      material keywords, or strong engagement. Low-signal/spam-like posts are usually marked not
-                      significant unless engagement is very strong.
+                      Significant posts are classified asynchronously by AI after capture. Pending posts are excluded
+                      from both the true and false filters until classification completes.
                     </p>
                   </div>
                 </details>

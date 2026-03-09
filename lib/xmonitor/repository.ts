@@ -14,6 +14,7 @@ import type {
   ActivityTrendBucket,
   ActivityTrendTotals,
   BatchUpsertResult,
+  ClassificationStatus,
   DeletePostsByHandleResult,
   EngagementHandleBreakdown,
   EngagementResponse,
@@ -32,6 +33,11 @@ import type {
   PostDetail,
   PostUpsert,
   ReconcileCounts,
+  SignificanceBatchResult,
+  SignificanceCandidate,
+  SignificanceClaimRequest,
+  SignificanceClaimResponse,
+  SignificanceResultUpsert,
   TrendsResponse,
   WindowSummary,
   WindowSummaryUpsert,
@@ -83,11 +89,30 @@ function rowToFeedItem(row: QueryResultRow): FeedItem {
     url: String(row.url),
     is_significant: Boolean(row.is_significant),
     significance_reason: row.significance_reason ? String(row.significance_reason) : null,
+    classification_status: (row.classification_status ? String(row.classification_status) : "pending") as ClassificationStatus,
+    classified_at: toIso(row.classified_at),
+    classification_model: row.classification_model ? String(row.classification_model) : null,
+    classification_confidence: row.classification_confidence === null || row.classification_confidence === undefined
+      ? null
+      : Number(row.classification_confidence),
     likes: Number(row.likes || 0),
     reposts: Number(row.reposts || 0),
     replies: Number(row.replies || 0),
     views: Number(row.views || 0),
   };
+}
+
+function classifiedSignificantPredicate(postAlias = "p"): string {
+  return `${postAlias}.classification_status = 'classified' AND ${postAlias}.is_significant`;
+}
+
+function isClassificationRelevantChangeSql(): string {
+  return [
+    "posts.body_text IS DISTINCT FROM EXCLUDED.body_text",
+    "posts.author_handle IS DISTINCT FROM EXCLUDED.author_handle",
+    "posts.source_query IS DISTINCT FROM EXCLUDED.source_query",
+    "posts.watch_tier IS DISTINCT FROM EXCLUDED.watch_tier",
+  ].join("\n        OR ");
 }
 
 function rowToWindowSummary(row: QueryResultRow): WindowSummary {
@@ -156,6 +181,7 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
   result.inserted_status_ids = [];
   result.updated_status_ids = [];
   const omitHandles = ingestOmitHandleSet();
+  const classificationResetSql = isClassificationRelevantChangeSql();
   const sql = `
     INSERT INTO posts(
       status_id,
@@ -169,6 +195,7 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
       is_significant,
       significance_reason,
       significance_version,
+      classification_status,
       likes,
       reposts,
       replies,
@@ -178,8 +205,8 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
     )
     VALUES (
       $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-      $12, $13, $14, $15,
-      $16, $17
+      $12, $13, $14, $15, $16,
+      $17, $18
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
@@ -189,9 +216,46 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
       posted_relative = EXCLUDED.posted_relative,
       source_query = EXCLUDED.source_query,
       watch_tier = EXCLUDED.watch_tier,
-      is_significant = EXCLUDED.is_significant,
-      significance_reason = EXCLUDED.significance_reason,
-      significance_version = EXCLUDED.significance_version,
+      is_significant = CASE
+        WHEN ${classificationResetSql} THEN FALSE
+        ELSE posts.is_significant
+      END,
+      significance_reason = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.significance_reason
+      END,
+      significance_version = CASE
+        WHEN ${classificationResetSql} THEN 'ai_v1'
+        ELSE COALESCE(posts.significance_version, 'ai_v1')
+      END,
+      classification_status = CASE
+        WHEN ${classificationResetSql} THEN 'pending'
+        ELSE posts.classification_status
+      END,
+      classified_at = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classified_at
+      END,
+      classification_model = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_model
+      END,
+      classification_confidence = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_confidence
+      END,
+      classification_attempts = CASE
+        WHEN ${classificationResetSql} THEN 0
+        ELSE posts.classification_attempts
+      END,
+      classification_error = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_error
+      END,
+      classification_leased_at = CASE
+        WHEN ${classificationResetSql} THEN NULL
+        ELSE posts.classification_leased_at
+      END,
       likes = EXCLUDED.likes,
       reposts = EXCLUDED.reposts,
       replies = EXCLUDED.replies,
@@ -225,9 +289,10 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
         item.posted_relative || null,
         item.source_query || null,
         item.watch_tier || null,
-        item.is_significant ?? false,
-        item.significance_reason || null,
-        item.significance_version || "v1",
+        false,
+        null,
+        "ai_v1",
+        "pending",
         item.likes ?? 0,
         item.reposts ?? 0,
         item.replies ?? 0,
@@ -246,6 +311,124 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
     } catch (error) {
       result.errors.push({ index, message: errorMessage(error) });
       result.skipped += 1;
+    }
+  }
+
+  return result;
+}
+
+export async function claimPostsForClassification(
+  request: SignificanceClaimRequest
+): Promise<SignificanceClaimResponse> {
+  const pool = getDbPool();
+  const limit = Math.min(Math.max(request.limit || 12, 1), 200);
+  const leaseSeconds = Math.min(Math.max(request.lease_seconds || 300, 30), 3600);
+  const maxAttempts = Math.min(Math.max(request.max_attempts || 3, 1), 10);
+  const sql = `
+    WITH candidates AS (
+      SELECT p.status_id
+      FROM posts p
+      WHERE p.classification_attempts < $3
+        AND (
+          p.classification_status = 'pending'
+          OR p.classification_status = 'failed'
+          OR (
+            p.classification_status = 'processing'
+            AND (
+              p.classification_leased_at IS NULL
+              OR p.classification_leased_at < now() - make_interval(secs => $2)
+            )
+          )
+        )
+      ORDER BY p.discovered_at DESC, p.status_id DESC
+      LIMIT $1
+      FOR UPDATE SKIP LOCKED
+    )
+    UPDATE posts p
+    SET
+      classification_status = 'processing',
+      classification_leased_at = now(),
+      classification_attempts = p.classification_attempts + 1,
+      classification_error = NULL,
+      updated_at = now()
+    FROM candidates c
+    WHERE p.status_id = c.status_id
+    RETURNING
+      p.status_id,
+      p.author_handle,
+      p.author_display,
+      p.body_text,
+      p.source_query,
+      p.watch_tier,
+      p.discovered_at,
+      p.last_seen_at,
+      p.classification_attempts
+  `;
+  const result = await pool.query(sql, [limit, leaseSeconds, maxAttempts]);
+  const items: SignificanceCandidate[] = result.rows.map((row) => ({
+    status_id: String(row.status_id),
+    author_handle: String(row.author_handle),
+    author_display: row.author_display ? String(row.author_display) : null,
+    body_text: row.body_text ? String(row.body_text) : null,
+    source_query: row.source_query ? String(row.source_query) : null,
+    watch_tier: row.watch_tier ? String(row.watch_tier) as SignificanceCandidate["watch_tier"] : null,
+    discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
+    last_seen_at: toIso(row.last_seen_at) || new Date(0).toISOString(),
+    classification_attempts: Number(row.classification_attempts || 0),
+  }));
+  return { items };
+}
+
+export async function applySignificanceResults(items: SignificanceResultUpsert[]): Promise<SignificanceBatchResult> {
+  const pool = getDbPool();
+  const result: SignificanceBatchResult = {
+    received: items.length,
+    updated: 0,
+    skipped: 0,
+    errors: [],
+  };
+  const sql = `
+    UPDATE posts
+    SET
+      is_significant = $2,
+      significance_reason = $3,
+      significance_version = $4,
+      classification_status = $5,
+      classified_at = CASE
+        WHEN $5 = 'classified' THEN COALESCE($6::timestamptz, now())
+        ELSE NULL
+      END,
+      classification_model = $7,
+      classification_confidence = $8,
+      classification_error = $9,
+      classification_leased_at = NULL,
+      updated_at = now()
+    WHERE status_id = $1
+    RETURNING status_id
+  `;
+
+  for (const [index, item] of items.entries()) {
+    try {
+      const dbResult = await pool.query(sql, [
+        item.status_id,
+        item.classification_status === "classified" ? Boolean(item.is_significant) : false,
+        item.classification_status === "classified" ? item.significance_reason || null : null,
+        item.significance_version || "ai_v1",
+        item.classification_status,
+        item.classified_at || null,
+        item.classification_model || null,
+        item.classification_confidence ?? null,
+        item.classification_status === "failed" ? item.classification_error || "classification_failed" : null,
+      ]);
+      if (dbResult.rowCount === 0) {
+        result.skipped += 1;
+        result.errors.push({ index, message: `unknown status_id: ${item.status_id}` });
+        continue;
+      }
+      result.updated += 1;
+    } catch (error) {
+      result.skipped += 1;
+      result.errors.push({ index, message: errorMessage(error) });
     }
   }
 
@@ -701,8 +884,7 @@ function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions =
   }
 
   if (query.significant !== undefined) {
-    params.push(query.significant);
-    where.push(`p.is_significant = $${params.length}`);
+    where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
   if (options.includeTextQuery !== false && query.q) {
@@ -804,6 +986,10 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
       p.url,
       p.is_significant,
       p.significance_reason,
+      p.classification_status,
+      p.classified_at,
+      p.classification_model,
+      p.classification_confidence,
       p.likes,
       p.reposts,
       p.replies,
@@ -857,7 +1043,7 @@ export async function getTrends(
     )
     SELECT
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
       COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
       COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
@@ -878,7 +1064,7 @@ export async function getTrends(
       SELECT
         to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
         COUNT(*)::bigint AS post_count,
-        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
         COUNT(*) FILTER (WHERE watch_tier IS NOT NULL)::bigint AS watchlist_count,
         COUNT(*) FILTER (WHERE collector_lane = 'priority')::bigint AS priority_count,
         COUNT(*) FILTER (WHERE collector_lane = 'discovery')::bigint AS discovery_count,
@@ -972,7 +1158,7 @@ export async function getEngagement(
     )
     SELECT
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COALESCE(SUM(likes), 0)::bigint AS likes,
       COALESCE(SUM(reposts), 0)::bigint AS reposts,
       COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -991,7 +1177,7 @@ export async function getEngagement(
       SELECT
         to_timestamp(floor(extract(epoch from discovered_at) / $${params.length + 1}) * $${params.length + 1}) AS bucket_start,
         COUNT(*)::bigint AS post_count,
-        COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+        COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
         COALESCE(SUM(likes), 0)::bigint AS likes,
         COALESCE(SUM(reposts), 0)::bigint AS reposts,
         COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -1023,7 +1209,7 @@ export async function getEngagement(
     SELECT
       COALESCE(watch_tier, 'other') AS watch_tier,
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COALESCE(SUM(likes), 0)::bigint AS likes,
       COALESCE(SUM(reposts), 0)::bigint AS reposts,
       COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -1043,7 +1229,7 @@ export async function getEngagement(
     SELECT
       author_handle,
       COUNT(*)::bigint AS post_count,
-      COUNT(*) FILTER (WHERE is_significant)::bigint AS significant_count,
+      COUNT(*) FILTER (WHERE ${classifiedSignificantPredicate("filtered")})::bigint AS significant_count,
       COALESCE(SUM(likes), 0)::bigint AS likes,
       COALESCE(SUM(reposts), 0)::bigint AS reposts,
       COALESCE(SUM(replies), 0)::bigint AS replies,
@@ -1175,6 +1361,10 @@ export async function getPostDetail(statusId: string): Promise<PostDetail | null
         p.url,
         p.is_significant,
         p.significance_reason,
+        p.classification_status,
+        p.classified_at,
+        p.classification_model,
+        p.classification_confidence,
         p.likes,
         p.reposts,
         p.replies,
