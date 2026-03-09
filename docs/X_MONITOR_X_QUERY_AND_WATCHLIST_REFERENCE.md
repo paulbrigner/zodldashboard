@@ -105,7 +105,7 @@ Applied in collector runtime before ingest:
 
 Total default watchlist handles: **56**
 
-### Teammate (9)
+### Teammate (10)
 - @bostonzcash
 - @jwihart
 - @lukaskorba
@@ -114,6 +114,7 @@ Total default watchlist handles: **56**
 - @peacemongerz
 - @tonymargarit
 - @txds_
+- @zodl_co
 - @zodl_app
 
 ### Influencer (40)
@@ -158,14 +159,13 @@ Total default watchlist handles: **56**
 - @zooko
 - @zpartanll7
 
-### Ecosystem (7)
+### Ecosystem (6)
 - @cypherpunk
 - @genzcash
 - @shieldedlabs
 - @zcashcommgrants
 - @zcashfoundation
 - @zechub
-- @zodl_co
 
 Override options:
 - `XMON_X_API_WATCHLIST_TIERS_JSON` (full map override)

@@ -13,6 +13,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   peacemongerz: "teammate",
   tonymargarit: "teammate",
   txds_: "teammate",
+  zodl_co: "teammate",
   zodl_app: "teammate",
   _tomhoward: "influencer",
   agzt_111: "influencer",
@@ -60,7 +61,6 @@ const DEFAULT_WATCHLIST_TIERS = {
   zcashcommgrants: "ecosystem",
   zcashfoundation: "ecosystem",
   zechub: "ecosystem",
-  zodl_co: "ecosystem",
 };
 
 const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";

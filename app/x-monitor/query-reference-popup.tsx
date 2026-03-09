@@ -34,6 +34,7 @@ const WATCHLIST_BY_TIER = {
     "peacemongerz",
     "tonymargarit",
     "txds_",
+    "zodl_co",
     "zodl_app",
   ],
   influencer: [
@@ -78,7 +79,7 @@ const WATCHLIST_BY_TIER = {
     "zooko",
     "zpartanll7",
   ],
-  ecosystem: ["cypherpunk", "genzcash", "shieldedlabs", "zcashcommgrants", "zcashfoundation", "zechub", "zodl_co"],
+  ecosystem: ["cypherpunk", "genzcash", "shieldedlabs", "zcashcommgrants", "zcashfoundation", "zechub"],
 } as const;
 
 const WATCHLIST_TIER_LABELS: Record<keyof typeof WATCHLIST_BY_TIER, string> = {
