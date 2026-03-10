@@ -10,6 +10,11 @@ const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"])
 const RUN_MODES = new Set(["priority", "discovery", "both", "manual"]);
 const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
 const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread", "email"]);
+const SCHEDULE_KINDS = new Set(["interval", "weekly"]);
+const SCHEDULE_VISIBILITIES = new Set(["personal", "shared"]);
+const SCHEDULE_DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+const SCHEDULE_DAY_CODE_SET = new Set(SCHEDULE_DAY_CODES);
+const WORKSPACE_EMAIL_DOMAIN = normalizeDomain(process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com");
 
 const DEFAULT_SERVICE_NAME = "xmonitor-api";
 const DEFAULT_API_VERSION = "v1";
@@ -108,6 +113,7 @@ let emailSchemaEnsured = false;
 let queryCheckpointSchemaEnsured = false;
 let sqsClient;
 let sesClient;
+const zonedDateFormatterCache = new Map();
 
 function parsePositiveInt(value, fallback) {
   const parsed = Number.parseInt(String(value ?? ""), 10);
@@ -1046,6 +1052,205 @@ function withLengthLimit(value, maxChars) {
   return text.slice(0, maxChars).trim();
 }
 
+function normalizeDomain(value) {
+  return String(value || "").trim().toLowerCase().replace(/^@+/, "");
+}
+
+function normalizeEmail(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
+function isWorkspaceViewerEmail(email) {
+  const normalized = normalizeEmail(email);
+  const atIndex = normalized.lastIndexOf("@");
+  if (atIndex <= 0 || atIndex === normalized.length - 1) return false;
+  return normalized.slice(atIndex + 1) === WORKSPACE_EMAIL_DOMAIN;
+}
+
+function asValidTimeZone(value, fallback = null) {
+  const candidate = withLengthLimit(asString(value) || "", 64);
+  const next = candidate || fallback;
+  if (!next) return null;
+  try {
+    new Intl.DateTimeFormat("en-US", { timeZone: next }).format(new Date());
+    return next;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeScheduleDayCodes(value) {
+  const rawValues = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  if (rawValues.length === 0) return undefined;
+  const normalized = rawValues
+    .flatMap((item) => {
+      const text = asString(item);
+      return text ? text.split(",") : [];
+    })
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item && SCHEDULE_DAY_CODE_SET.has(item));
+  if (normalized.length === 0) return [];
+  return [...new Set(normalized)].sort(
+    (left, right) => SCHEDULE_DAY_CODES.indexOf(left) - SCHEDULE_DAY_CODES.indexOf(right)
+  );
+}
+
+function parseScheduleTimeLocal(value) {
+  const text = asString(value);
+  if (!text) return undefined;
+  const match = text.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) return null;
+  return `${match[1]}:${match[2]}`;
+}
+
+function approxWeeklyIntervalMinutes(scheduleDays) {
+  if (!Array.isArray(scheduleDays) || scheduleDays.length === 0) return 1440;
+  if (scheduleDays.length === 1) return 10080;
+  return 1440;
+}
+
+function zonedDateFormatter(timeZone) {
+  let formatter = zonedDateFormatterCache.get(timeZone);
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+    zonedDateFormatterCache.set(timeZone, formatter);
+  }
+  return formatter;
+}
+
+function zonedDateParts(value, timeZone) {
+  const date = value instanceof Date ? value : new Date(value);
+  const rawParts = zonedDateFormatter(timeZone).formatToParts(date);
+  const parts = Object.create(null);
+  for (const part of rawParts) {
+    if (part.type !== "literal") {
+      parts[part.type] = part.value;
+    }
+  }
+  const weekdayText = String(parts.weekday || "").slice(0, 3).toLowerCase();
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+    weekday: weekdayText === "thu" ? "thu" : weekdayText,
+  };
+}
+
+function addUtcDays(year, month, day, offset) {
+  const date = new Date(Date.UTC(year, month - 1, day + offset));
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    weekday: SCHEDULE_DAY_CODES[date.getUTCDay()],
+  };
+}
+
+function resolveUtcForLocalDateTime({ year, month, day, hour, minute }, timeZone) {
+  let guessMs = Date.UTC(year, month - 1, day, hour, minute);
+  const targetLocalMs = Date.UTC(year, month - 1, day, hour, minute);
+
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const observed = zonedDateParts(new Date(guessMs), timeZone);
+    const observedLocalMs = Date.UTC(
+      observed.year,
+      observed.month - 1,
+      observed.day,
+      observed.hour,
+      observed.minute
+    );
+    const diffMs = targetLocalMs - observedLocalMs;
+    if (diffMs === 0) {
+      return new Date(guessMs).toISOString();
+    }
+    guessMs += diffMs;
+  }
+
+  for (let deltaMinutes = 0; deltaMinutes <= 180; deltaMinutes += 1) {
+    for (const direction of [-1, 1]) {
+      const candidateMs = guessMs + direction * deltaMinutes * 60 * 1000;
+      const observed = zonedDateParts(new Date(candidateMs), timeZone);
+      if (
+        observed.year === year &&
+        observed.month === month &&
+        observed.day === day &&
+        observed.hour === hour &&
+        observed.minute === minute
+      ) {
+        return new Date(candidateMs).toISOString();
+      }
+    }
+  }
+
+  return new Date(guessMs).toISOString();
+}
+
+function computeWeeklyNextRunAtIso(referenceIso, scheduleDays, scheduleTimeLocal, timeZone, nowMs = Date.now()) {
+  const normalizedTimeZone = asValidTimeZone(timeZone, "UTC") || "UTC";
+  const normalizedDays = normalizeScheduleDayCodes(scheduleDays) || [];
+  const normalizedTime = parseScheduleTimeLocal(scheduleTimeLocal);
+  if (normalizedDays.length === 0 || !normalizedTime) {
+    return computeNextRunAtIso(referenceIso, 1440, nowMs);
+  }
+
+  const [hourText, minuteText] = normalizedTime.split(":");
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const referenceMs = new Date(referenceIso || nowIso()).getTime();
+  const thresholdMs = Math.max(Number.isFinite(referenceMs) ? referenceMs : nowMs, nowMs);
+  const startParts = zonedDateParts(new Date(thresholdMs), normalizedTimeZone);
+
+  for (let offset = 0; offset < 14; offset += 1) {
+    const localDate = addUtcDays(startParts.year, startParts.month, startParts.day, offset);
+    if (!normalizedDays.includes(localDate.weekday)) continue;
+    const candidateIso = resolveUtcForLocalDateTime(
+      {
+        year: localDate.year,
+        month: localDate.month,
+        day: localDate.day,
+        hour,
+        minute,
+      },
+      normalizedTimeZone
+    );
+    const candidateMs = new Date(candidateIso).getTime();
+    if (Number.isFinite(candidateMs) && candidateMs > thresholdMs) {
+      return candidateIso;
+    }
+  }
+
+  return computeNextRunAtIso(referenceIso, approxWeeklyIntervalMinutes(normalizedDays), nowMs);
+}
+
+function computeScheduledEmailNextRunAtIso(schedule, referenceIso, nowMs = Date.now()) {
+  if (schedule?.schedule_kind === "weekly") {
+    return computeWeeklyNextRunAtIso(
+      referenceIso,
+      schedule.schedule_days_json ?? schedule.schedule_days,
+      schedule.schedule_time_local,
+      schedule.timezone,
+      nowMs
+    );
+  }
+  return computeNextRunAtIso(referenceIso, schedule?.schedule_interval_minutes, nowMs);
+}
+
+function scheduleVisibilityValue(value, fallback = "personal") {
+  const normalized = asString(value)?.toLowerCase() || fallback;
+  return SCHEDULE_VISIBILITIES.has(normalized) ? normalized : null;
+}
+
 function requireViewerContext(event, { oauthOnly = false } = {}) {
   const expectedSecret = emailProxySecret();
   if (!expectedSecret) {
@@ -1077,6 +1282,7 @@ function requireViewerContext(event, { oauthOnly = false } = {}) {
     viewer: {
       email,
       auth_mode: authMode,
+      is_workspace: isWorkspaceViewerEmail(email),
     },
   };
 }
@@ -1094,6 +1300,7 @@ function optionalViewerContext(event) {
   return {
     email,
     auth_mode: asString(headerValue(headers, VIEWER_MODE_HEADER)) || "oauth",
+    is_workspace: isWorkspaceViewerEmail(email),
   };
 }
 
@@ -1871,9 +2078,13 @@ async function ensureEmailSchema() {
       owner_email CITEXT NOT NULL,
       name TEXT NOT NULL,
       enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      visibility TEXT NOT NULL DEFAULT 'personal',
       compose_request_json JSONB NOT NULL,
       recipients_json JSONB NOT NULL DEFAULT '[]'::jsonb,
       subject_override TEXT,
+      schedule_kind TEXT NOT NULL DEFAULT 'interval',
+      schedule_days_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      schedule_time_local TEXT,
       schedule_interval_minutes INTEGER NOT NULL CHECK (schedule_interval_minutes >= 15 AND schedule_interval_minutes <= 10080),
       lookback_hours INTEGER NOT NULL DEFAULT 24 CHECK (lookback_hours >= 1 AND lookback_hours <= 336),
       timezone TEXT NOT NULL DEFAULT 'UTC',
@@ -1885,13 +2096,22 @@ async function ensureEmailSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
       CHECK (jsonb_typeof(compose_request_json) = 'object'),
-      CHECK (jsonb_typeof(recipients_json) = 'array')
+      CHECK (jsonb_typeof(recipients_json) = 'array'),
+      CHECK (jsonb_typeof(schedule_days_json) = 'array')
     );
+
+    ALTER TABLE scheduled_email_jobs
+      ADD COLUMN IF NOT EXISTS visibility TEXT NOT NULL DEFAULT 'personal',
+      ADD COLUMN IF NOT EXISTS schedule_kind TEXT NOT NULL DEFAULT 'interval',
+      ADD COLUMN IF NOT EXISTS schedule_days_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+      ADD COLUMN IF NOT EXISTS schedule_time_local TEXT;
 
     CREATE INDEX IF NOT EXISTS idx_scheduled_email_jobs_owner_created_at
       ON scheduled_email_jobs (owner_email, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_scheduled_email_jobs_enabled_next_run
       ON scheduled_email_jobs (enabled, next_run_at);
+    CREATE INDEX IF NOT EXISTS idx_scheduled_email_jobs_visibility_enabled_next_run
+      ON scheduled_email_jobs (visibility, enabled, next_run_at);
 
     DROP TRIGGER IF EXISTS trg_scheduled_email_jobs_set_updated_at ON scheduled_email_jobs;
     CREATE TRIGGER trg_scheduled_email_jobs_set_updated_at
@@ -4104,22 +4324,63 @@ function parseScheduledEmailJobCreateBody(value) {
     return { ok: false, error: "name is required" };
   }
 
+  const visibility = scheduleVisibilityValue(
+    value.visibility ?? (asBoolean(value.shared) ? "shared" : "personal")
+  );
+  if (!visibility) {
+    return { ok: false, error: "visibility must be one of personal or shared" };
+  }
+
   const subjectOverrideRaw = asNullableString(value.subject_override);
   const subjectOverride = subjectOverrideRaw === null ? null : withLengthLimit(subjectOverrideRaw || "", 240) || null;
-  const scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes) ?? 1440;
-  if (scheduleIntervalMinutes < 15 || scheduleIntervalMinutes > 10080) {
-    return { ok: false, error: "schedule_interval_minutes must be between 15 and 10080" };
-  }
   const lookbackHours = asInteger(value.lookback_hours) ?? 24;
   if (lookbackHours < 1 || lookbackHours > 336) {
     return { ok: false, error: "lookback_hours must be between 1 and 336" };
   }
-  const timezone = withLengthLimit(asString(value.timezone) || "UTC", 64);
+  const timezone = asValidTimeZone(value.timezone, "UTC");
+  if (!timezone) {
+    return { ok: false, error: "timezone must be a valid IANA timezone" };
+  }
   const enabled = asBoolean(value.enabled) ?? true;
   const requestedNextRunAt = asIsoTimestamp(value.next_run_at);
-  const nextRunAt = computeNextRunAtIso(
-    requestedNextRunAt || new Date(Date.now() + scheduleIntervalMinutes * 60 * 1000).toISOString(),
-    scheduleIntervalMinutes
+  const scheduleKindRaw = asString(value.schedule_kind)?.toLowerCase();
+  const inferredWeekly = value.schedule_days !== undefined || value.schedule_time_local !== undefined;
+  const scheduleKind = scheduleKindRaw || (inferredWeekly ? "weekly" : "interval");
+  if (!SCHEDULE_KINDS.has(scheduleKind)) {
+    return { ok: false, error: "schedule_kind must be one of interval or weekly" };
+  }
+
+  let scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes) ?? 1440;
+  let scheduleDaysJson = [];
+  let scheduleTimeLocal = null;
+
+  if (scheduleKind === "weekly") {
+    const scheduleDays = normalizeScheduleDayCodes(value.schedule_days);
+    if (!scheduleDays || scheduleDays.length === 0) {
+      return { ok: false, error: "schedule_days must include at least one day" };
+    }
+    const parsedTime = parseScheduleTimeLocal(value.schedule_time_local);
+    if (!parsedTime) {
+      return { ok: false, error: "schedule_time_local must be in HH:MM format" };
+    }
+    scheduleDaysJson = scheduleDays;
+    scheduleTimeLocal = parsedTime;
+    scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes) ?? approxWeeklyIntervalMinutes(scheduleDays);
+  }
+
+  if (scheduleIntervalMinutes < 15 || scheduleIntervalMinutes > 10080) {
+    return { ok: false, error: "schedule_interval_minutes must be between 15 and 10080" };
+  }
+
+  const nextRunAt = computeScheduledEmailNextRunAtIso(
+    {
+      schedule_kind: scheduleKind,
+      schedule_days_json: scheduleDaysJson,
+      schedule_time_local: scheduleTimeLocal,
+      schedule_interval_minutes: scheduleIntervalMinutes,
+      timezone,
+    },
+    requestedNextRunAt || nowIso()
   );
 
   return {
@@ -4127,9 +4388,13 @@ function parseScheduledEmailJobCreateBody(value) {
     data: {
       name,
       enabled,
+      visibility,
       compose_request_json: composeRequest,
       recipients_json: recipients.data,
       subject_override: subjectOverride,
+      schedule_kind: scheduleKind,
+      schedule_days_json: scheduleDaysJson,
+      schedule_time_local: scheduleTimeLocal,
       schedule_interval_minutes: scheduleIntervalMinutes,
       lookback_hours: lookbackHours,
       timezone,
@@ -4165,12 +4430,13 @@ function parseScheduledEmailJobPatchBody(value) {
     patch.subject_override = subjectOverrideRaw === null ? null : withLengthLimit(subjectOverrideRaw || "", 240) || null;
   }
 
-  if (value.schedule_interval_minutes !== undefined) {
-    const scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes);
-    if (!scheduleIntervalMinutes || scheduleIntervalMinutes < 15 || scheduleIntervalMinutes > 10080) {
-      return { ok: false, error: "schedule_interval_minutes must be between 15 and 10080" };
-    }
-    patch.schedule_interval_minutes = scheduleIntervalMinutes;
+  if (value.visibility !== undefined || value.shared !== undefined) {
+    const visibility = scheduleVisibilityValue(
+      value.visibility ?? (asBoolean(value.shared) ? "shared" : "personal"),
+      null
+    );
+    if (!visibility) return { ok: false, error: "visibility must be one of personal or shared" };
+    patch.visibility = visibility;
   }
 
   if (value.lookback_hours !== undefined) {
@@ -4182,9 +4448,56 @@ function parseScheduledEmailJobPatchBody(value) {
   }
 
   if (value.timezone !== undefined) {
-    const timezone = withLengthLimit(asString(value.timezone) || "", 64);
-    if (!timezone) return { ok: false, error: "timezone cannot be empty" };
+    const timezone = asValidTimeZone(value.timezone, null);
+    if (!timezone) return { ok: false, error: "timezone must be a valid IANA timezone" };
     patch.timezone = timezone;
+  }
+
+  const scheduleKindRaw = asString(value.schedule_kind)?.toLowerCase();
+  const wantsWeekly = value.schedule_days !== undefined || value.schedule_time_local !== undefined;
+  if (scheduleKindRaw || wantsWeekly) {
+    const scheduleKind = scheduleKindRaw || "weekly";
+    if (!SCHEDULE_KINDS.has(scheduleKind)) {
+      return { ok: false, error: "schedule_kind must be one of interval or weekly" };
+    }
+    patch.schedule_kind = scheduleKind;
+    if (scheduleKind === "interval") {
+      patch.schedule_days_json = [];
+      patch.schedule_time_local = null;
+    }
+  }
+
+  if (value.schedule_days !== undefined) {
+    const scheduleDays = normalizeScheduleDayCodes(value.schedule_days);
+    if (!scheduleDays || scheduleDays.length === 0) {
+      return { ok: false, error: "schedule_days must include at least one day" };
+    }
+    patch.schedule_days_json = scheduleDays;
+  }
+
+  if (value.schedule_time_local !== undefined) {
+    const scheduleTimeLocal = parseScheduleTimeLocal(value.schedule_time_local);
+    if (!scheduleTimeLocal) {
+      return { ok: false, error: "schedule_time_local must be in HH:MM format" };
+    }
+    patch.schedule_time_local = scheduleTimeLocal;
+  }
+
+  if (value.schedule_interval_minutes !== undefined) {
+    const scheduleIntervalMinutes = asInteger(value.schedule_interval_minutes);
+    if (!scheduleIntervalMinutes || scheduleIntervalMinutes < 15 || scheduleIntervalMinutes > 10080) {
+      return { ok: false, error: "schedule_interval_minutes must be between 15 and 10080" };
+    }
+    patch.schedule_interval_minutes = scheduleIntervalMinutes;
+  }
+
+  if (
+    patch.schedule_kind === "weekly" &&
+    value.schedule_kind !== undefined &&
+    patch.schedule_days_json === undefined &&
+    patch.schedule_time_local === undefined
+  ) {
+    return { ok: false, error: "weekly schedules require schedule_days and schedule_time_local" };
   }
 
   if (value.next_run_at !== undefined) {
@@ -4214,6 +4527,11 @@ function rowToScheduledEmailJob(row) {
   const composeRequest = asObject(row.compose_request_json) || {};
   const recipientsRaw = asArray(row.recipients_json) || [];
   const recipients = recipientsRaw.map((item) => validateEmailAddress(item)).filter(Boolean);
+  const visibility = scheduleVisibilityValue(row.visibility, "personal") || "personal";
+  const scheduleKindRaw = asString(row.schedule_kind)?.toLowerCase();
+  const scheduleKind = SCHEDULE_KINDS.has(scheduleKindRaw) ? scheduleKindRaw : "interval";
+  const scheduleDays = normalizeScheduleDayCodes(row.schedule_days_json) || [];
+  const scheduleTimeLocal = parseScheduleTimeLocal(row.schedule_time_local) || null;
   return {
     job_id: String(row.job_id),
     owner_email: String(row.owner_email || ""),
@@ -4221,6 +4539,10 @@ function rowToScheduledEmailJob(row) {
     enabled: Boolean(row.enabled),
     recipients,
     subject_override: row.subject_override ? String(row.subject_override) : null,
+    visibility,
+    schedule_kind: scheduleKind,
+    schedule_days: scheduleKind === "weekly" ? scheduleDays : [],
+    schedule_time_local: scheduleKind === "weekly" ? scheduleTimeLocal : null,
     schedule_interval_minutes: Number(row.schedule_interval_minutes || 0),
     lookback_hours: Number(row.lookback_hours || 0),
     timezone: String(row.timezone || "UTC"),
@@ -4242,6 +4564,85 @@ function mapEmailErrorCode(error) {
   if (message.includes("sandbox")) return "ses_sandbox";
   if (message.includes("unauthorized") || message.includes("not authorized")) return "ses_auth";
   return "ses_send_failed";
+}
+
+function createStatusError(status, message) {
+  const error = new Error(message);
+  error.status = status;
+  return error;
+}
+
+function statusCodeForError(error, fallback = 503) {
+  return Number.isInteger(error?.status) ? error.status : fallback;
+}
+
+function scheduleConfigRequiresNextRunRecompute(patch) {
+  if (patch.enabled === false && Object.keys(patch).length === 1) {
+    return false;
+  }
+  return [
+    "schedule_kind",
+    "schedule_days_json",
+    "schedule_time_local",
+    "schedule_interval_minutes",
+    "timezone",
+    "enabled",
+  ].some((key) => Object.prototype.hasOwnProperty.call(patch, key));
+}
+
+function normalizeScheduledEmailRow(row) {
+  return {
+    ...row,
+    visibility: scheduleVisibilityValue(row.visibility, "personal") || "personal",
+    schedule_kind: SCHEDULE_KINDS.has(asString(row.schedule_kind)?.toLowerCase())
+      ? asString(row.schedule_kind).toLowerCase()
+      : "interval",
+    schedule_days_json: normalizeScheduleDayCodes(row.schedule_days_json) || [],
+    schedule_time_local: parseScheduleTimeLocal(row.schedule_time_local) || null,
+    schedule_interval_minutes: Number(row.schedule_interval_minutes || 0),
+    timezone: asValidTimeZone(row.timezone, "UTC") || "UTC",
+  };
+}
+
+function mergedScheduleJobState(existingRow, patch) {
+  const current = normalizeScheduledEmailRow(existingRow);
+  const merged = {
+    ...current,
+    ...patch,
+  };
+  if (!Object.prototype.hasOwnProperty.call(merged, "schedule_days_json")) {
+    merged.schedule_days_json = current.schedule_days_json;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, "schedule_time_local")) {
+    merged.schedule_time_local = current.schedule_time_local;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, "timezone")) {
+    merged.timezone = current.timezone;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, "schedule_interval_minutes")) {
+    merged.schedule_interval_minutes = current.schedule_interval_minutes;
+  }
+  if (!Object.prototype.hasOwnProperty.call(merged, "schedule_kind")) {
+    merged.schedule_kind = current.schedule_kind;
+  }
+  return merged;
+}
+
+function ensureSharedSchedulePermission(viewer, visibility) {
+  if (visibility === "shared" && !viewer.is_workspace) {
+    throw createStatusError(403, "shared schedules require a zodl.com workspace account");
+  }
+}
+
+function ensureManageScheduledEmailPermission(viewer, jobRow) {
+  const current = normalizeScheduledEmailRow(jobRow);
+  if (current.visibility === "shared" && !viewer.is_workspace) {
+    throw createStatusError(403, "shared schedules are only available to zodl.com workspace users");
+  }
+  if (normalizeEmail(current.owner_email) !== normalizeEmail(viewer.email)) {
+    throw createStatusError(403, "only the schedule owner can modify this job");
+  }
+  return current;
 }
 
 async function sendEmailDelivery({
@@ -4397,7 +4798,21 @@ async function sendEmailDelivery({
   }
 }
 
-async function listScheduledEmailJobs(ownerEmail) {
+async function fetchScheduledEmailJobById(jobId) {
+  await ensureEmailSchema();
+  const result = await getPool().query(
+    `
+      SELECT *
+      FROM scheduled_email_jobs
+      WHERE job_id = $1::uuid
+      LIMIT 1
+    `,
+    [jobId]
+  );
+  return result.rows[0] || null;
+}
+
+async function listScheduledEmailJobs(viewer) {
   await ensureEmailSchema();
   const db = getPool();
   const result = await db.query(
@@ -4410,6 +4825,10 @@ async function listScheduledEmailJobs(ownerEmail) {
         compose_request_json,
         recipients_json,
         subject_override,
+        visibility,
+        schedule_kind,
+        schedule_days_json,
+        schedule_time_local,
         schedule_interval_minutes,
         lookback_hours,
         timezone,
@@ -4422,15 +4841,20 @@ async function listScheduledEmailJobs(ownerEmail) {
         updated_at
       FROM scheduled_email_jobs
       WHERE owner_email = $1::citext
-      ORDER BY created_at DESC
+         OR ($2::boolean = TRUE AND visibility = 'shared')
+      ORDER BY
+        CASE WHEN owner_email = $1::citext THEN 0 ELSE 1 END,
+        CASE WHEN visibility = 'shared' THEN 0 ELSE 1 END,
+        created_at DESC
     `,
-    [ownerEmail]
+    [viewer.email, viewer.is_workspace]
   );
   return result.rows.map(rowToScheduledEmailJob);
 }
 
-async function createScheduledEmailJob(ownerEmail, payload) {
+async function createScheduledEmailJob(viewer, payload) {
   await ensureEmailSchema();
+  ensureSharedSchedulePermission(viewer, payload.visibility);
   const db = getPool();
   const countResult = await db.query(
     `
@@ -4438,7 +4862,7 @@ async function createScheduledEmailJob(ownerEmail, payload) {
       FROM scheduled_email_jobs
       WHERE owner_email = $1::citext
     `,
-    [ownerEmail]
+    [viewer.email]
   );
   const jobCount = Number(countResult.rows[0]?.count || 0);
   if (jobCount >= emailMaxJobsPerUser()) {
@@ -4454,21 +4878,44 @@ async function createScheduledEmailJob(ownerEmail, payload) {
         compose_request_json,
         recipients_json,
         subject_override,
+        visibility,
+        schedule_kind,
+        schedule_days_json,
+        schedule_time_local,
         schedule_interval_minutes,
         lookback_hours,
         timezone,
         next_run_at
       )
-      VALUES ($1::citext, $2, $3, $4::jsonb, $5::jsonb, $6, $7, $8, $9, $10::timestamptz)
+      VALUES (
+        $1::citext,
+        $2,
+        $3,
+        $4::jsonb,
+        $5::jsonb,
+        $6,
+        $7,
+        $8,
+        $9::jsonb,
+        $10,
+        $11,
+        $12,
+        $13,
+        $14::timestamptz
+      )
       RETURNING *
     `,
     [
-      ownerEmail,
+      viewer.email,
       payload.name,
       payload.enabled,
       asJson(payload.compose_request_json),
       asJson(payload.recipients_json),
       payload.subject_override,
+      payload.visibility,
+      payload.schedule_kind,
+      asJson(payload.schedule_days_json ?? []),
+      payload.schedule_time_local,
       payload.schedule_interval_minutes,
       payload.lookback_hours,
       payload.timezone,
@@ -4478,14 +4925,20 @@ async function createScheduledEmailJob(ownerEmail, payload) {
   return rowToScheduledEmailJob(result.rows[0]);
 }
 
-async function updateScheduledEmailJob(ownerEmail, jobId, patch) {
+async function updateScheduledEmailJob(viewer, jobId, patch) {
   await ensureEmailSchema();
+  const existingRow = await fetchScheduledEmailJobById(jobId);
+  if (!existingRow) return null;
+  const current = ensureManageScheduledEmailPermission(viewer, existingRow);
+  const merged = mergedScheduleJobState(current, patch);
+  ensureSharedSchedulePermission(viewer, merged.visibility);
+
   const fields = [];
-  const params = [jobId, ownerEmail];
+  const params = [jobId];
 
   for (const [key, rawValue] of Object.entries(patch)) {
     let value = rawValue;
-    if (key === "compose_request_json" || key === "recipients_json") {
+    if (key === "compose_request_json" || key === "recipients_json" || key === "schedule_days_json") {
       value = asJson(rawValue);
       fields.push(`${key} = $${params.length + 1}::jsonb`);
     } else if (key === "next_run_at") {
@@ -4496,9 +4949,9 @@ async function updateScheduledEmailJob(ownerEmail, jobId, patch) {
     params.push(value);
   }
 
-  if (patch.schedule_interval_minutes && !patch.next_run_at) {
+  if (scheduleConfigRequiresNextRunRecompute(patch) && !patch.next_run_at) {
     fields.push(`next_run_at = $${params.length + 1}::timestamptz`);
-    params.push(computeNextRunAtIso(nowIso(), patch.schedule_interval_minutes));
+    params.push(computeScheduledEmailNextRunAtIso(merged, nowIso()));
   }
 
   fields.push("updated_at = now()");
@@ -4506,22 +4959,23 @@ async function updateScheduledEmailJob(ownerEmail, jobId, patch) {
     UPDATE scheduled_email_jobs
     SET ${fields.join(", ")}
     WHERE job_id = $1::uuid
-      AND owner_email = $2::citext
     RETURNING *
   `;
   const result = await getPool().query(sql, params);
   return result.rows[0] ? rowToScheduledEmailJob(result.rows[0]) : null;
 }
 
-async function deleteScheduledEmailJob(ownerEmail, jobId) {
+async function deleteScheduledEmailJob(viewer, jobId) {
   await ensureEmailSchema();
+  const existingRow = await fetchScheduledEmailJobById(jobId);
+  if (!existingRow) return false;
+  ensureManageScheduledEmailPermission(viewer, existingRow);
   const result = await getPool().query(
     `
       DELETE FROM scheduled_email_jobs
       WHERE job_id = $1::uuid
-        AND owner_email = $2::citext
     `,
-    [jobId, ownerEmail]
+    [jobId]
   );
   return result.rowCount > 0;
 }
@@ -4540,20 +4994,12 @@ async function enqueueScheduledEmailRun(runId, delaySeconds = 0) {
   );
 }
 
-async function createRunNowForScheduledJob(ownerEmail, jobId) {
+async function createRunNowForScheduledJob(viewer, jobId) {
   await ensureEmailSchema();
   const db = getPool();
-  const job = await db.query(
-    `
-      SELECT job_id, owner_email
-      FROM scheduled_email_jobs
-      WHERE job_id = $1::uuid
-        AND owner_email = $2::citext
-      LIMIT 1
-    `,
-    [jobId, ownerEmail]
-  );
-  if (job.rowCount === 0) return null;
+  const jobRow = await fetchScheduledEmailJobById(jobId);
+  if (!jobRow) return null;
+  const job = ensureManageScheduledEmailPermission(viewer, jobRow);
 
   const scheduledFor = nowIso();
   const inserted = await db.query(
@@ -4567,7 +5013,7 @@ async function createRunNowForScheduledJob(ownerEmail, jobId) {
       VALUES ($1::uuid, $2::citext, $3::timestamptz, 'queued')
       RETURNING run_id
     `,
-    [jobId, ownerEmail, scheduledFor]
+    [jobId, job.owner_email, scheduledFor]
   );
   const runId = String(inserted.rows[0].run_id);
   await enqueueScheduledEmailRun(runId, 0);
@@ -4587,7 +5033,11 @@ async function dispatchDueScheduledEmailRuns(requestId) {
           job_id,
           owner_email,
           next_run_at,
-          schedule_interval_minutes
+          schedule_kind,
+          schedule_days_json,
+          schedule_time_local,
+          schedule_interval_minutes,
+          timezone
         FROM scheduled_email_jobs
         WHERE enabled = TRUE
           AND next_run_at <= now()
@@ -4615,10 +5065,7 @@ async function dispatchDueScheduledEmailRuns(requestId) {
         [row.job_id, row.owner_email, scheduledForIso]
       );
 
-      const nextRunAt = computeNextRunAtIso(
-        scheduledForIso,
-        Number(row.schedule_interval_minutes || 60)
-      );
+      const nextRunAt = computeScheduledEmailNextRunAtIso(row, scheduledForIso);
       await client.query(
         `
           UPDATE scheduled_email_jobs
@@ -5676,10 +6123,13 @@ async function handleEmailSchedulesList(event) {
   }
 
   try {
-    const items = await listScheduledEmailJobs(viewer.viewer.email);
+    const items = await listScheduledEmailJobs(viewer.viewer);
     return jsonOk({ items });
   } catch (error) {
-    return jsonError(errorMessage(error) || "failed to list scheduled email jobs", 503);
+    return jsonError(
+      errorMessage(error) || "failed to list scheduled email jobs",
+      statusCodeForError(error, 503)
+    );
   }
 }
 
@@ -5702,10 +6152,13 @@ async function handleEmailSchedulesCreate(event) {
   if (!parsed.ok) return jsonError(parsed.error, 400);
 
   try {
-    const created = await createScheduledEmailJob(viewer.viewer.email, parsed.data);
+    const created = await createScheduledEmailJob(viewer.viewer, parsed.data);
     return jsonOk(created, 201);
   } catch (error) {
-    return jsonError(errorMessage(error) || "failed to create scheduled email job", 503);
+    return jsonError(
+      errorMessage(error) || "failed to create scheduled email job",
+      statusCodeForError(error, 503)
+    );
   }
 }
 
@@ -5734,11 +6187,14 @@ async function handleEmailSchedulePatch(event, path) {
   if (!parsed.ok) return jsonError(parsed.error, 400);
 
   try {
-    const updated = await updateScheduledEmailJob(viewer.viewer.email, jobId, parsed.data);
+    const updated = await updateScheduledEmailJob(viewer.viewer, jobId, parsed.data);
     if (!updated) return jsonError("scheduled email job not found", 404);
     return jsonOk(updated);
   } catch (error) {
-    return jsonError(errorMessage(error) || "failed to update scheduled email job", 503);
+    return jsonError(
+      errorMessage(error) || "failed to update scheduled email job",
+      statusCodeForError(error, 503)
+    );
   }
 }
 
@@ -5762,11 +6218,14 @@ async function handleEmailScheduleDelete(event, path) {
   }
 
   try {
-    const deleted = await deleteScheduledEmailJob(viewer.viewer.email, jobId);
+    const deleted = await deleteScheduledEmailJob(viewer.viewer, jobId);
     if (!deleted) return jsonError("scheduled email job not found", 404);
     return jsonOk({ deleted: true, job_id: jobId });
   } catch (error) {
-    return jsonError(errorMessage(error) || "failed to delete scheduled email job", 503);
+    return jsonError(
+      errorMessage(error) || "failed to delete scheduled email job",
+      statusCodeForError(error, 503)
+    );
   }
 }
 
@@ -5790,11 +6249,14 @@ async function handleEmailScheduleRunNow(event, path) {
   }
 
   try {
-    const run = await createRunNowForScheduledJob(viewer.viewer.email, jobId);
+    const run = await createRunNowForScheduledJob(viewer.viewer, jobId);
     if (!run) return jsonError("scheduled email job not found", 404);
     return jsonOk({ queued: true, ...run }, 202);
   } catch (error) {
-    return jsonError(errorMessage(error) || "failed to enqueue run-now", 503);
+    return jsonError(
+      errorMessage(error) || "failed to enqueue run-now",
+      statusCodeForError(error, 503)
+    );
   }
 }
 

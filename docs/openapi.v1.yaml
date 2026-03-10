@@ -720,10 +720,11 @@ components:
 
     ScheduledEmailJobCreateRequest:
       type: object
-      required: [compose_request, recipients, schedule_interval_minutes, lookback_hours]
+      required: [compose_request, recipients]
       properties:
         name: { type: string }
         enabled: { type: boolean, default: true }
+        visibility: { type: string, enum: [personal, shared], default: personal }
         compose_request:
           $ref: '#/components/schemas/ComposeQueryRequest'
         recipients:
@@ -732,7 +733,14 @@ components:
             - type: array
               items: { type: string, format: email }
         subject_override: { type: string, nullable: true }
+        schedule_kind: { type: string, enum: [interval, weekly], default: weekly }
         schedule_interval_minutes: { type: integer, minimum: 15, maximum: 10080 }
+        schedule_days:
+          type: array
+          items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+        schedule_time_local:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
         lookback_hours: { type: integer, minimum: 1, maximum: 336 }
         timezone: { type: string, default: UTC }
         next_run_at: { type: string, format: date-time, nullable: true }
@@ -742,6 +750,7 @@ components:
       properties:
         name: { type: string }
         enabled: { type: boolean }
+        visibility: { type: string, enum: [personal, shared] }
         compose_request:
           $ref: '#/components/schemas/ComposeQueryRequest'
         recipients:
@@ -750,7 +759,14 @@ components:
             - type: array
               items: { type: string, format: email }
         subject_override: { type: string, nullable: true }
+        schedule_kind: { type: string, enum: [interval, weekly] }
         schedule_interval_minutes: { type: integer, minimum: 15, maximum: 10080 }
+        schedule_days:
+          type: array
+          items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+        schedule_time_local:
+          type: string
+          pattern: '^([01][0-9]|2[0-3]):[0-5][0-9]$'
         lookback_hours: { type: integer, minimum: 1, maximum: 336 }
         timezone: { type: string }
         next_run_at: { type: string, format: date-time }
@@ -762,7 +778,11 @@ components:
         - owner_email
         - name
         - enabled
+        - visibility
         - recipients
+        - schedule_kind
+        - schedule_days
+        - schedule_time_local
         - schedule_interval_minutes
         - lookback_hours
         - timezone
@@ -776,10 +796,16 @@ components:
         owner_email: { type: string, format: email }
         name: { type: string }
         enabled: { type: boolean }
+        visibility: { type: string, enum: [personal, shared] }
         recipients:
           type: array
           items: { type: string, format: email }
         subject_override: { type: string, nullable: true }
+        schedule_kind: { type: string, enum: [interval, weekly] }
+        schedule_days:
+          type: array
+          items: { type: string, enum: [sun, mon, tue, wed, thu, fri, sat] }
+        schedule_time_local: { type: string, nullable: true }
         schedule_interval_minutes: { type: integer }
         lookback_hours: { type: integer }
         timezone: { type: string }

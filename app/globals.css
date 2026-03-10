@@ -701,6 +701,11 @@ p {
   font-size: 1rem;
 }
 
+.compose-section h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
 .compose-section-header {
   display: flex;
   align-items: center;
@@ -845,6 +850,17 @@ p {
   gap: 0.6rem;
 }
 
+.scheduled-jobs-columns {
+  display: grid;
+  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+
+.scheduled-jobs-group {
+  display: grid;
+  gap: 0.6rem;
+}
+
 .scheduled-job-item {
   border: 1px solid var(--border);
   border-radius: 0.62rem;
@@ -859,6 +875,53 @@ p {
   font-size: 0.95rem;
   font-weight: 700;
   line-height: 1.3;
+}
+
+.schedule-day-picker {
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  padding: 0.65rem;
+  margin: 0;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.schedule-day-picker legend {
+  padding: 0 0.2rem;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #3358aa;
+  font-weight: 700;
+}
+
+.schedule-day-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.schedule-day-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text-primary);
+  padding: 0.4rem 0.65rem;
+  cursor: pointer;
+}
+
+.schedule-day-chip input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.schedule-day-chip-active {
+  border-color: #21488f;
+  background: #edf4ff;
+  color: #173a79;
 }
 
 .filter-panel {

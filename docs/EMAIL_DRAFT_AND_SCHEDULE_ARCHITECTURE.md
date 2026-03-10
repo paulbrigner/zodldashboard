@@ -1,6 +1,6 @@
 # Email Draft + Scheduled Delivery Architecture
 
-This document describes the X Monitor "Draft Format: Email" feature, immediate email send, and per-user scheduled email jobs.
+This document describes the X Monitor "Draft Format: Email" feature, immediate email send, and scheduled email jobs.
 
 ## Scope
 
@@ -16,6 +16,9 @@ This document describes the X Monitor "Draft Format: Email" feature, immediate e
   - enable/disable
   - run-now
   - delete
+- Support two schedule scopes:
+  - personal schedules visible only to the owner
+  - shared schedules visible to all signed-in `zodl.com` workspace users
 
 ## Auth model
 
@@ -31,10 +34,18 @@ This document describes the X Monitor "Draft Format: Email" feature, immediate e
 
 Migration: `db/migrations/005_email_schedules_and_deliveries.sql`
 
+Time/day scheduling extension: `db/migrations/010_shared_and_time_based_email_schedules.sql`
+
 - `scheduled_email_jobs`
-  - per-user persisted schedule definitions
-  - compose request template + recipients + subject override + schedule interval + lookback
+  - persisted schedule definitions with owner-scoped or shared visibility
+  - compose request template + recipients + subject override + recurrence + lookback
   - lifecycle state (`enabled`, `next_run_at`, `last_status`, `last_error`, `run_count`)
+  - recurrence fields:
+    - `visibility`
+    - `schedule_kind`
+    - `schedule_days_json`
+    - `schedule_time_local`
+    - legacy-compatible `schedule_interval_minutes`
 
 - `scheduled_email_runs`
   - one execution row per scheduled run
@@ -78,6 +89,12 @@ Migration: `db/migrations/005_email_schedules_and_deliveries.sql`
 - `PATCH /email/schedules/{jobId}`
 - `DELETE /email/schedules/{jobId}`
 - `POST /email/schedules/{jobId}/run-now`
+
+Shared schedule rules:
+
+- Shared schedules require a `zodl.com` workspace account.
+- Shared schedules are visible to all signed-in workspace users.
+- Only the schedule owner can edit, delete, enable/disable, or run-now a shared schedule.
 
 OpenAPI: `docs/openapi.v1.yaml`
 

@@ -13,6 +13,15 @@ export type ComposeAnswerStyle = (typeof COMPOSE_ANSWER_STYLES)[number];
 export const COMPOSE_DRAFT_FORMATS = ["none", "x_post", "thread", "email"] as const;
 export type ComposeDraftFormat = (typeof COMPOSE_DRAFT_FORMATS)[number];
 
+export const SCHEDULE_KINDS = ["interval", "weekly"] as const;
+export type ScheduleKind = (typeof SCHEDULE_KINDS)[number];
+
+export const SCHEDULE_DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const;
+export type ScheduleDayCode = (typeof SCHEDULE_DAY_CODES)[number];
+
+export const SCHEDULE_VISIBILITIES = ["personal", "shared"] as const;
+export type ScheduleVisibility = (typeof SCHEDULE_VISIBILITIES)[number];
+
 export type BatchUpsertResult = {
   received: number;
   inserted: number;
@@ -459,8 +468,12 @@ export type ScheduledEmailJob = {
   owner_email: string;
   name: string;
   enabled: boolean;
+  visibility: ScheduleVisibility;
   recipients: string[];
   subject_override?: string | null;
+  schedule_kind: ScheduleKind;
+  schedule_days: ScheduleDayCode[];
+  schedule_time_local?: string | null;
   schedule_interval_minutes: number;
   lookback_hours: number;
   timezone: string;

@@ -524,6 +524,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           initialSince={query.since}
           initialTiers={query.tiers}
           initialUntil={query.until}
+          viewerAccessLevel={viewer.accessLevel}
+          viewerEmail={viewer.email}
           unavailableReason={composeUnavailableReason}
         />
 
