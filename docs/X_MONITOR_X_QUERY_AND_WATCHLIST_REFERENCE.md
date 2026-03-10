@@ -103,7 +103,7 @@ Applied in collector runtime before ingest:
 
 ## 4) Watchlist defaults in collector code
 
-Total default watchlist handles: **62**
+Total default watchlist handles: **63**
 
 ### Teammate (10)
 - @bostonzcash
@@ -168,9 +168,10 @@ Total default watchlist handles: **62**
 - @zooko
 - @zpartanll7
 
-### Ecosystem (5)
+### Ecosystem (6)
 - @genzcash
 - @shieldedlabs
+- @zcash
 - @zcashcommgrants
 - @zcashfoundation
 - @zechub
