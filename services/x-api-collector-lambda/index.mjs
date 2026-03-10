@@ -22,6 +22,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   cypherpunk: "investor",
   friedberg: "investor",
   hosseeb: "investor",
+  jmj: "investor",
   maelstromfund: "investor",
   paradigm: "investor",
   winklevosscap: "investor",

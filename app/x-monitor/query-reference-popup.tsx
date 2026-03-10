@@ -45,6 +45,7 @@ const WATCHLIST_BY_TIER = {
     "cypherpunk",
     "friedberg",
     "hosseeb",
+    "jmj",
     "maelstromfund",
     "paradigm",
     "winklevosscap",
