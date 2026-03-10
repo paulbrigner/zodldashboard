@@ -42,6 +42,12 @@ function asString(value: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+function asStrings(value: string | string[] | undefined): string[] {
+  if (typeof value === "string") return value ? [value] : [];
+  if (Array.isArray(value)) return value.filter((item) => Boolean(item));
+  return [];
+}
+
 function qsValue(value: string | undefined): string {
   return value ?? "";
 }
@@ -89,9 +95,20 @@ function buildQuery(
   ];
 
   keys.forEach((key) => {
-    const value = key === "trend_range"
-      ? asString(params.trend_range ?? params.engagement_range)
-      : asString(params[key]);
+    if (key === "trend_range") {
+      const value = asString(params.trend_range ?? params.engagement_range);
+      if (value) {
+        query.set(String(key), value);
+      }
+      return;
+    }
+    if (key === "tier") {
+      for (const value of asStrings(params[key])) {
+        query.append("tier", value);
+      }
+      return;
+    }
+    const value = asString(params[key]);
     if (value) {
       query.set(String(key), value);
     }
@@ -106,7 +123,7 @@ function buildFilterSearchParams(query: ReturnType<typeof parseFeedQuery>, limit
 
   if (query.since) params.set("since", query.since);
   if (query.until) params.set("until", query.until);
-  if (query.tier) params.set("tier", query.tier);
+  query.tiers?.forEach((tier) => params.append("tier", tier));
   if (query.handle) params.set("handle", query.handle);
   if (query.significant !== undefined) params.set("significant", String(query.significant));
   if (query.q) params.set("q", query.q);
@@ -138,7 +155,7 @@ function buildFeedApiUrl(baseUrl: string, query: ReturnType<typeof parseFeedQuer
 
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
-  if (query.tier) url.searchParams.set("tier", query.tier);
+  query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
   if (query.handle) url.searchParams.set("handle", query.handle);
   if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
   if (query.q) url.searchParams.set("q", query.q);
@@ -164,7 +181,7 @@ function buildTrendsApiUrl(
 
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
-  if (query.tier) url.searchParams.set("tier", query.tier);
+  query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
   if (query.handle) url.searchParams.set("handle", query.handle);
   if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
   if (query.q) url.searchParams.set("q", query.q);
@@ -181,6 +198,12 @@ function buildTrendRangeUrl(
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (key === "cursor" || key === "engagement_range") continue;
+    if (key === "tier") {
+      for (const text of asStrings(value)) {
+        query.append(key, text);
+      }
+      continue;
+    }
     const text = asString(value);
     if (text) {
       query.set(key, text);
@@ -242,7 +265,7 @@ async function fetchSemanticViaApi(baseUrl: string, query: ReturnType<typeof par
       query_vector: vector,
       since: query.since,
       until: query.until,
-      tier: query.tier,
+      tiers: query.tiers,
       handle: query.handle,
       significant: query.significant,
       limit: query.limit,
@@ -406,7 +429,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const initialLatestKey = latestItem ? `${latestItem.discovered_at}|${latestItem.status_id}` : null;
   const summariesByType = new Map(summaries.map((summary) => [summary.window_type, summary]));
   const keywordHasActiveFilters = Boolean(
-    query.tier ||
+    (query.tiers && query.tiers.length > 0) ||
       query.handle ||
       query.significant !== undefined ||
       query.since ||
@@ -499,7 +522,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           initialRetrievalLimit={composeDefaultRetrievalLimit}
           initialSignificant={query.significant}
           initialSince={query.since}
-          initialTier={query.tier}
+          initialTiers={query.tiers}
           initialUntil={query.until}
           unavailableReason={composeUnavailableReason}
         />
@@ -512,7 +535,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           initialSearchMode={searchMode}
           initialSignificant={query.significant}
           initialSince={query.since}
-          initialTier={query.tier}
+          initialTiers={query.tiers}
           initialUntil={query.until}
         />
 

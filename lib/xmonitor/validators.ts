@@ -476,13 +476,28 @@ function firstValue(value: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+function tierValues(value: unknown): FeedQuery["tiers"] {
+  const rawValues = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  if (rawValues.length === 0) return undefined;
+
+  const normalized = rawValues
+    .flatMap((item) => {
+      const text = asString(item);
+      return text ? text.split(",") : [];
+    })
+    .map((item) => item.trim().toLowerCase())
+    .filter((item): item is (typeof WATCH_TIERS)[number] =>
+      WATCH_TIERS.includes(item as (typeof WATCH_TIERS)[number])
+    );
+
+  if (normalized.length === 0) return undefined;
+  return [...new Set(normalized)];
+}
+
 export function parseFeedQuery(input: Record<string, string | string[] | undefined>): FeedQuery {
   const since = asIsoTimestamp(firstValue(input.since));
   const until = asIsoTimestamp(firstValue(input.until));
-  const tierRaw = asString(firstValue(input.tier))?.toLowerCase();
-  const tier = WATCH_TIERS.includes(tierRaw as (typeof WATCH_TIERS)[number])
-    ? (tierRaw as (typeof WATCH_TIERS)[number])
-    : undefined;
+  const tiers = tierValues(input.tier);
 
   const significant = asBoolean(firstValue(input.significant));
 
@@ -498,7 +513,7 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
   return {
     since,
     until,
-    tier,
+    tiers,
     handle: normalizedHandle || undefined,
     significant,
     q: asString(firstValue(input.q)),
@@ -519,10 +534,7 @@ export function parseSemanticQueryRequest(
 
   const since = asIsoTimestamp(value.since);
   const until = asIsoTimestamp(value.until);
-  const tierRaw = asString(value.tier)?.toLowerCase();
-  const tier = WATCH_TIERS.includes(tierRaw as (typeof WATCH_TIERS)[number])
-    ? (tierRaw as (typeof WATCH_TIERS)[number])
-    : undefined;
+  const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
 
   const limitValue = asInteger(value.limit);
@@ -541,7 +553,7 @@ export function parseSemanticQueryRequest(
       query_text: queryText,
       since,
       until,
-      tier,
+      tiers,
       handle: normalizedHandle || undefined,
       significant,
       limit: finalLimit,
@@ -561,10 +573,7 @@ export function parseComposeQueryRequest(
 
   const since = asIsoTimestamp(value.since);
   const until = asIsoTimestamp(value.until);
-  const tierRaw = asString(value.tier)?.toLowerCase();
-  const tier = WATCH_TIERS.includes(tierRaw as (typeof WATCH_TIERS)[number])
-    ? (tierRaw as (typeof WATCH_TIERS)[number])
-    : undefined;
+  const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
 
   const retrievalLimitRaw = asInteger(value.retrieval_limit);
@@ -612,7 +621,7 @@ export function parseComposeQueryRequest(
       task_text: taskText,
       since,
       until,
-      tier,
+      tiers,
       handle: normalizedHandle || undefined,
       significant,
       retrieval_limit: retrievalLimit,

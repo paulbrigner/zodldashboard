@@ -876,7 +876,7 @@ export async function executeComposeQuery(
         query_vector: vector,
         since: input.since,
         until: input.until,
-        tier: input.tier,
+        tiers: input.tiers,
         handle: input.handle,
         significant: input.significant,
         retrieval_limit: input.retrieval_limit,

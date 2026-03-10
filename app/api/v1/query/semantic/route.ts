@@ -41,7 +41,7 @@ export async function POST(request: Request) {
         query_vector: vector,
         since: parsed.data.since,
         until: parsed.data.until,
-        tier: parsed.data.tier,
+        tiers: parsed.data.tiers,
         handle: parsed.data.handle,
         significant: parsed.data.significant,
         limit: parsed.data.limit,

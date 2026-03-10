@@ -686,6 +686,22 @@ function firstValue(value) {
   return undefined;
 }
 
+function tierValues(value) {
+  const rawValues = Array.isArray(value) ? value : value === undefined ? [] : [value];
+  if (rawValues.length === 0) return undefined;
+
+  const normalized = rawValues
+    .flatMap((item) => {
+      const text = asString(item);
+      return text ? text.split(",") : [];
+    })
+    .map((item) => item.trim().toLowerCase())
+    .filter((item) => item && WATCH_TIERS.has(item));
+
+  if (normalized.length === 0) return undefined;
+  return [...new Set(normalized)];
+}
+
 function encodeFeedCursor(cursor) {
   return Buffer.from(JSON.stringify(cursor), "utf8").toString("base64url");
 }
@@ -1416,8 +1432,7 @@ function parseEmbeddingUpsert(value) {
 function parseFeedQuery(input) {
   const since = asIsoTimestamp(firstValue(input.since));
   const until = asIsoTimestamp(firstValue(input.until));
-  const tierRaw = asString(firstValue(input.tier))?.toLowerCase();
-  const tier = tierRaw && WATCH_TIERS.has(tierRaw) ? tierRaw : undefined;
+  const tiers = tierValues(input.tier);
   const significant = asBoolean(firstValue(input.significant));
 
   const limitValue = asInteger(firstValue(input.limit));
@@ -1428,7 +1443,7 @@ function parseFeedQuery(input) {
   return {
     since,
     until,
-    tier,
+    tiers,
     handle: asString(firstValue(input.handle))?.toLowerCase(),
     significant,
     q: asString(firstValue(input.q)),
@@ -1451,9 +1466,9 @@ function buildFeedWhereClause(query, options = {}) {
     where.push(`p.discovered_at <= $${params.length}`);
   }
 
-  if (query.tier) {
-    params.push(query.tier);
-    where.push(`p.watch_tier = $${params.length}`);
+  if (query.tiers && query.tiers.length > 0) {
+    params.push(query.tiers);
+    where.push(`p.watch_tier = ANY($${params.length}::text[])`);
   }
 
   if (query.handle) {
@@ -1575,8 +1590,7 @@ function parseSemanticQueryBody(value) {
 
   const since = asIsoTimestamp(value.since);
   const until = asIsoTimestamp(value.until);
-  const tierRaw = asString(value.tier)?.toLowerCase();
-  const tier = tierRaw && WATCH_TIERS.has(tierRaw) ? tierRaw : undefined;
+  const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
 
   const limitValue = asInteger(value.limit);
@@ -1597,7 +1611,7 @@ function parseSemanticQueryBody(value) {
       query_vector: queryVector,
       since,
       until,
-      tier,
+      tiers,
       handle: normalizedHandle || undefined,
       significant,
       limit: finalLimit,
@@ -1621,8 +1635,7 @@ function parseComposeQueryBody(value) {
 
   const since = asIsoTimestamp(value.since);
   const until = asIsoTimestamp(value.until);
-  const tierRaw = asString(value.tier)?.toLowerCase();
-  const tier = tierRaw && WATCH_TIERS.has(tierRaw) ? tierRaw : undefined;
+  const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
 
   const retrievalLimitValue = asInteger(value.retrieval_limit);
@@ -1663,7 +1676,7 @@ function parseComposeQueryBody(value) {
       query_vector: queryVector,
       since,
       until,
-      tier,
+      tiers,
       handle: normalizedHandle || undefined,
       significant,
       retrieval_limit: retrievalLimit,
@@ -2760,9 +2773,9 @@ async function querySemanticFeed(query, embeddingVector) {
     where.push(`p.discovered_at <= $${params.length}`);
   }
 
-  if (query.tier) {
-    params.push(query.tier);
-    where.push(`p.watch_tier = $${params.length}`);
+  if (query.tiers && query.tiers.length > 0) {
+    params.push(query.tiers);
+    where.push(`p.watch_tier = ANY($${params.length}::text[])`);
   }
 
   if (query.handle) {
@@ -2852,9 +2865,9 @@ function addStandardPostFilters(query, params, where, postAlias) {
     where.push(`${postAlias}.discovered_at <= $${params.length}`);
   }
 
-  if (query.tier) {
-    params.push(query.tier);
-    where.push(`${postAlias}.watch_tier = $${params.length}`);
+  if (query.tiers && query.tiers.length > 0) {
+    params.push(query.tiers);
+    where.push(`${postAlias}.watch_tier = ANY($${params.length}::text[])`);
   }
 
   if (query.handle) {

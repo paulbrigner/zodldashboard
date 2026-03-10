@@ -20,7 +20,7 @@ type ComposePanelProps = {
   unavailableReason?: string | null;
   initialSince?: string;
   initialUntil?: string;
-  initialTier?: string;
+  initialTiers?: string[];
   initialHandle?: string;
   initialSignificant?: boolean;
   initialRetrievalLimit?: number;
@@ -44,7 +44,7 @@ function summarizeScope(props: ComposePanelProps): string {
   const parts: string[] = [];
   if (props.initialSince) parts.push(`since ${new Date(props.initialSince).toLocaleString()}`);
   if (props.initialUntil) parts.push(`until ${new Date(props.initialUntil).toLocaleString()}`);
-  if (props.initialTier) parts.push(`tier ${props.initialTier}`);
+  if (props.initialTiers && props.initialTiers.length > 0) parts.push(`tiers ${props.initialTiers.join(", ")}`);
   if (props.initialHandle) parts.push(`handle ${props.initialHandle}`);
   if (props.initialSignificant !== undefined) parts.push(`significant=${String(props.initialSignificant)}`);
   if (parts.length === 0) return "Scope: all posts in current corpus.";
@@ -404,7 +404,7 @@ export function ComposePanel(props: ComposePanelProps) {
       draft_format: "email" as const,
       retrieval_limit: retrieval,
       context_limit: context,
-      tier: props.initialTier,
+      tiers: props.initialTiers,
       handle: props.initialHandle,
       significant: props.initialSignificant,
     };
@@ -562,7 +562,7 @@ export function ComposePanel(props: ComposePanelProps) {
       context_limit: context,
       since: props.initialSince,
       until: props.initialUntil,
-      tier: props.initialTier,
+      tiers: props.initialTiers,
       handle: props.initialHandle,
       significant: props.initialSignificant,
     };

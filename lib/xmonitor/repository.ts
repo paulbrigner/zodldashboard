@@ -866,9 +866,9 @@ function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions =
     where.push(`p.discovered_at <= $${params.length}`);
   }
 
-  if (query.tier) {
-    params.push(query.tier);
-    where.push(`p.watch_tier = $${params.length}`);
+  if (query.tiers && query.tiers.length > 0) {
+    params.push(query.tiers);
+    where.push(`p.watch_tier = ANY($${params.length}::text[])`);
   }
 
   if (query.handle) {

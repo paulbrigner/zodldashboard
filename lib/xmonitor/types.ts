@@ -343,7 +343,7 @@ export type PostDetail = {
 export type FeedQuery = {
   since?: string;
   until?: string;
-  tier?: WatchTier;
+  tiers?: WatchTier[];
   handle?: string;
   significant?: boolean;
   q?: string;
@@ -355,7 +355,7 @@ export type SemanticQueryRequest = {
   query_text: string;
   since?: string;
   until?: string;
-  tier?: WatchTier;
+  tiers?: WatchTier[];
   handle?: string;
   significant?: boolean;
   limit?: number;
@@ -371,7 +371,7 @@ export type ComposeQueryRequest = {
   task_text: string;
   since?: string;
   until?: string;
-  tier?: WatchTier;
+  tiers?: WatchTier[];
   handle?: string;
   significant?: boolean;
   retrieval_limit?: number;

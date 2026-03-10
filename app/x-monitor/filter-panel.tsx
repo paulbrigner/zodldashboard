@@ -8,7 +8,7 @@ type SearchMode = "keyword" | "semantic";
 
 type FilterPanelProps = {
   initialSearchMode: SearchMode;
-  initialTier?: string;
+  initialTiers?: string[];
   initialHandle?: string;
   initialSignificant?: boolean;
   initialSince?: string;
@@ -20,7 +20,7 @@ type FilterPanelProps = {
 
 export function FilterPanel({
   initialSearchMode,
-  initialTier,
+  initialTiers,
   initialHandle,
   initialSignificant,
   initialSince,
@@ -93,9 +93,8 @@ export function FilterPanel({
         ) : (
           <>
             <label>
-              <span>Tier</span>
-              <select name="tier" defaultValue={initialTier || ""}>
-                <option value="">All tiers</option>
+              <span>Tiers</span>
+              <select multiple name="tier" defaultValue={initialTiers || []} size={4}>
                 <option value="teammate">Teammate</option>
                 <option value="investor">Investors</option>
                 <option value="influencer">Influencer</option>
