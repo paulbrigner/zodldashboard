@@ -933,7 +933,6 @@ function buildWindowSummaryPrompt({
     + "Use plain English and 1-2 short paragraphs.\n"
     + "Do not use bullet points, section labels, or markdown.\n"
     + "Focus on narrative momentum, notable voices, and where debate is intensifying or cooling.\n"
-    + "If evidence is thin, say that explicitly.\n\n"
     + `Target length: about ${targetWords} words.\n`
     + `Window: ${windowType} from ${windowStartIso} to ${windowEndIso}\n`
     + `Posts observed: ${postCount}\n`
