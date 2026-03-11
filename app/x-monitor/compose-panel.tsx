@@ -226,6 +226,24 @@ async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+async function copyHtmlToClipboard(html: string, plainText: string): Promise<boolean> {
+  try {
+    if (typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plainText], { type: "text/plain" }),
+        }),
+      ]);
+      return true;
+    }
+    await navigator.clipboard.writeText(html);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function normalizeRecipientsText(value: string): string[] {
   return value
     .split(/[,\n;]+/)
@@ -345,6 +363,12 @@ function MarkdownText({ text }: { text: string }) {
   );
 }
 
+function defaultAnswerEmailSubject(taskText: string): string {
+  const trimmedTask = taskText.trim();
+  if (!trimmedTask) return "X Monitor answer";
+  return `X Monitor answer: ${trimmedTask.slice(0, 120)}`;
+}
+
 export function ComposePanel(props: ComposePanelProps) {
   const initialRetrievalLimit =
     typeof props.initialRetrievalLimit === "number" && props.initialRetrievalLimit > 0
@@ -388,7 +412,10 @@ export function ComposePanel(props: ComposePanelProps) {
   const [scheduleLookbackUnit, setScheduleLookbackUnit] = useState<LookbackUnit>("days");
   const [scheduleTimeZone, setScheduleTimeZone] = useState("UTC");
   const [scheduleEnabled, setScheduleEnabled] = useState(true);
+  const [answerEmailOpen, setAnswerEmailOpen] = useState(false);
   const runTokenRef = useRef(0);
+  const answerContentRef = useRef<HTMLDivElement | null>(null);
+  const answerEmailSectionRef = useRef<HTMLElement | null>(null);
 
   const scopeSummary = useMemo(() => summarizeScope(props), [props]);
   const personalSchedules = useMemo(
@@ -467,6 +494,33 @@ export function ComposePanel(props: ComposePanelProps) {
     }
     setCopyState(kind);
     setTimeout(() => setCopyState((current) => (current === kind ? null : current)), 1500);
+  }
+
+  async function handleCopyAnswerHtml() {
+    const html = answerContentRef.current?.innerHTML || "";
+    const plainText = answerContentRef.current?.innerText || result?.answer_text || "";
+    if (!html.trim()) {
+      setErrorText("Answer HTML is not available yet.");
+      return;
+    }
+    const ok = await copyHtmlToClipboard(html, plainText);
+    if (!ok) {
+      setErrorText("Copy failed in this browser context.");
+      return;
+    }
+    setCopyState("answer");
+    setTimeout(() => setCopyState((current) => (current === "answer" ? null : current)), 1500);
+  }
+
+  function handleEmailAnswer() {
+    if (!result) return;
+    setAnswerEmailOpen(true);
+    setEmailStatusText(null);
+    setEmailSubject((current) => (current.trim() ? current : defaultAnswerEmailSubject(taskText)));
+    setEmailBodyMarkdown(result.answer_text);
+    setTimeout(() => {
+      answerEmailSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 0);
   }
 
   async function reloadSchedules() {
@@ -996,6 +1050,7 @@ export function ComposePanel(props: ComposePanelProps) {
                 setEmailSubject("");
                 setEmailBodyMarkdown("");
                 setEmailTo("");
+                setAnswerEmailOpen(false);
                 resetScheduleEditor();
               }}
               type="button"
@@ -1308,11 +1363,20 @@ export function ComposePanel(props: ComposePanelProps) {
             <section className="compose-section">
               <div className="compose-section-header">
                 <h3>Answer</h3>
-                <button className="button button-secondary button-small" onClick={() => handleCopy("answer", result.answer_text)} type="button">
-                  {copyState === "answer" ? "Copied" : "Copy answer"}
-                </button>
+                <div className="compose-actions">
+                  <button className="button button-secondary button-small" onClick={handleCopyAnswerHtml} type="button">
+                    {copyState === "answer" ? "Copied" : "Copy answer"}
+                  </button>
+                  {props.emailEnabled ? (
+                    <button className="button button-secondary button-small" onClick={handleEmailAnswer} type="button">
+                      Email answer
+                    </button>
+                  ) : null}
+                </div>
               </div>
-              <MarkdownText text={result.answer_text} />
+              <div ref={answerContentRef}>
+                <MarkdownText text={result.answer_text} />
+              </div>
             </section>
 
             {result.draft_text ? (
@@ -1331,10 +1395,10 @@ export function ComposePanel(props: ComposePanelProps) {
               </section>
             ) : null}
 
-            {props.emailEnabled && draftFormat === "email" ? (
-              <section className="compose-section">
+            {props.emailEnabled && (draftFormat === "email" || answerEmailOpen) ? (
+              <section className="compose-section" ref={answerEmailSectionRef}>
                 <div className="compose-section-header">
-                  <h3>Email draft</h3>
+                  <h3>{answerEmailOpen && draftFormat !== "email" ? "Email answer" : "Email draft"}</h3>
                 </div>
                 <label className="compose-task-field">
                   <span>To</span>
@@ -1367,6 +1431,20 @@ export function ComposePanel(props: ComposePanelProps) {
                   <button className="button" disabled={isSendingEmail} onClick={handleSendEmail} type="button">
                     {isSendingEmail ? "Sending..." : "Send email"}
                   </button>
+                  {answerEmailOpen ? (
+                    <button
+                      className="button button-secondary"
+                      onClick={() => {
+                        setAnswerEmailOpen(false);
+                        if (draftFormat !== "email") {
+                          setEmailBodyMarkdown("");
+                        }
+                      }}
+                      type="button"
+                    >
+                      Close
+                    </button>
+                  ) : null}
                 </div>
                 {emailStatusText ? <p className="subtle-text">{emailStatusText}</p> : null}
               </section>
