@@ -1201,12 +1201,75 @@ p {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  flex-wrap: wrap;
 }
 
 .update-inline-text {
   margin: 0;
   font-size: 0.86rem;
   white-space: nowrap;
+}
+
+.inline-switch {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #21488f;
+  cursor: pointer;
+  font: inherit;
+}
+
+.inline-switch-track {
+  width: 2.2rem;
+  height: 1.28rem;
+  border-radius: 999px;
+  background: #d9e5fb;
+  border: 1px solid var(--border);
+  position: relative;
+  transition: background 0.16s ease, border-color 0.16s ease;
+}
+
+.inline-switch-thumb {
+  width: 0.92rem;
+  height: 0.92rem;
+  border-radius: 999px;
+  background: #ffffff;
+  position: absolute;
+  top: 50%;
+  left: 0.14rem;
+  transform: translateY(-50%);
+  box-shadow: 0 1px 3px rgba(23, 40, 74, 0.18);
+  transition: transform 0.16s ease;
+}
+
+.inline-switch-label {
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.inline-switch-active .inline-switch-track {
+  background: #21488f;
+  border-color: #21488f;
+}
+
+.inline-switch-active .inline-switch-thumb {
+  transform: translate(0.92rem, -50%);
+}
+
+.inline-switch:hover .inline-switch-label,
+.inline-switch:focus-visible .inline-switch-label {
+  text-decoration: underline;
+}
+
+.inline-switch:focus-visible {
+  outline: 2px solid #21488f;
+  outline-offset: 3px;
+  border-radius: 999px;
 }
 
 .update-dot {

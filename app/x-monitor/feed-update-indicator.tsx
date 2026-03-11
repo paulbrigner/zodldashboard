@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 type FeedUpdateIndicatorProps = {
   pollUrl: string;
   refreshUrl: string;
+  significantOnly: boolean;
+  significantToggleUrl: string;
   initialLatestKey: string | null;
 };
 
@@ -25,7 +27,13 @@ function latestKeyFromPayload(payload: FeedPollResponse): string | null {
   return `${item.discovered_at}|${item.status_id}`;
 }
 
-export function FeedUpdateIndicator({ pollUrl, refreshUrl, initialLatestKey }: FeedUpdateIndicatorProps) {
+export function FeedUpdateIndicator({
+  pollUrl,
+  refreshUrl,
+  significantOnly,
+  significantToggleUrl,
+  initialLatestKey,
+}: FeedUpdateIndicatorProps) {
   const [hasUpdate, setHasUpdate] = useState(false);
   const [isChecking, setIsChecking] = useState(false);
 
@@ -75,6 +83,20 @@ export function FeedUpdateIndicator({ pollUrl, refreshUrl, initialLatestKey }: F
 
   return (
     <div className="update-inline" aria-live="polite">
+      <button
+        aria-checked={significantOnly}
+        className={`inline-switch${significantOnly ? " inline-switch-active" : ""}`}
+        onClick={() => {
+          window.location.assign(significantToggleUrl);
+        }}
+        role="switch"
+        type="button"
+      >
+        <span aria-hidden="true" className="inline-switch-track">
+          <span className="inline-switch-thumb" />
+        </span>
+        <span className="inline-switch-label">Significant</span>
+      </button>
       <span aria-hidden="true" className={hasUpdate ? "update-dot update-dot-live" : "update-dot"} />
       <p className="subtle-text update-inline-text">
         {hasUpdate ? "New data available" : isChecking ? "Checking..." : "Up to date"}

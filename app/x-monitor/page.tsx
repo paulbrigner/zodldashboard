@@ -141,6 +141,18 @@ function buildRefreshUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: S
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
+function buildSignificantToggleUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: SearchMode): string {
+  const params = buildFilterSearchParams(query);
+  if (query.significant === true) {
+    params.delete("significant");
+  } else {
+    params.set("significant", "true");
+  }
+  if (searchMode === "semantic") params.set("search_mode", "semantic");
+  const serialized = params.toString();
+  return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
+}
+
 function buildPollUrl(query: ReturnType<typeof parseFeedQuery>, useSemanticRetrieval: boolean): string {
   if (useSemanticRetrieval) {
     return "";
@@ -359,6 +371,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const useSemanticRetrieval = searchMode === "semantic" && Boolean(query.q);
   const apiBaseUrl = readApiBaseUrl();
   const refreshUrl = buildRefreshUrl(query, searchMode);
+  const significantToggleUrl = buildSignificantToggleUrl(query, searchMode);
   const pollUrl = buildPollUrl(query, useSemanticRetrieval);
 
   let feed: FeedResponse = { items: [], next_cursor: null };
@@ -549,6 +562,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               initialLatestKey={initialLatestKey}
               pollUrl={pollUrl}
               refreshUrl={refreshUrl}
+              significantOnly={query.significant === true}
+              significantToggleUrl={significantToggleUrl}
             />
           ) : null}
         </div>
