@@ -638,9 +638,9 @@ p {
 .field-help-popover {
   position: absolute;
   top: calc(100% + 0.35rem);
-  right: 0;
+  left: 0;
   z-index: 20;
-  width: min(300px, 70vw);
+  width: min(300px, calc(100vw - 2rem));
   border: 1px solid var(--border);
   border-radius: 0.62rem;
   background: #ffffff;

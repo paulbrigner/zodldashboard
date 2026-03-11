@@ -25,7 +25,7 @@ export default function SignInClient({ error, guestOauthEnabled }: SignInClientP
         <p>Use your company Google account to continue. Guest Google sign-in may also be available when enabled.</p>
         <div className="button-row">
           <button className="button" onClick={() => signIn("google", { callbackUrl: "/" })} type="button">
-            Continue with Google
+            Continue with Google (zodl.com)
           </button>
           {guestOauthEnabled ? (
             <button className="button button-secondary" onClick={() => signIn("google-guest", { callbackUrl: "/" })} type="button">
