@@ -1057,7 +1057,7 @@ p {
 
 .mode-toggle {
   display: inline-flex;
-  width: clamp(280px, 32vw, 380px);
+  width: min(300px, 100%);
   max-width: 100%;
   padding: 0.2rem;
   border: 1px solid var(--border);
@@ -1083,9 +1083,8 @@ p {
 }
 
 .search-mode-field {
-  justify-self: start;
+  grid-column: 1 / -1;
   width: 100%;
-  max-width: 380px;
 }
 
 .filter-grid span {
