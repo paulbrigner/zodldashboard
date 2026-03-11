@@ -369,6 +369,10 @@ function defaultAnswerEmailSubject(taskText: string): string {
   return `X Monitor answer: ${trimmedTask.slice(0, 120)}`;
 }
 
+function buildXStatusUrl(authorHandle: string, statusId: string): string {
+  return `https://x.com/${authorHandle}/status/${statusId}`;
+}
+
 export function ComposePanel(props: ComposePanelProps) {
   const initialRetrievalLimit =
     typeof props.initialRetrievalLimit === "number" && props.initialRetrievalLimit > 0
@@ -1468,7 +1472,14 @@ export function ComposePanel(props: ComposePanelProps) {
                   <li className="compose-citation-item" key={citation.status_id}>
                     <p className="compose-citation-top">
                       <strong>@{citation.author_handle}</strong>
-                      <span className="subtle-text">status {citation.status_id}</span>
+                      <a
+                        className="compose-citation-link subtle-text"
+                        href={buildXStatusUrl(citation.author_handle, citation.status_id)}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        status {citation.status_id}
+                      </a>
                     </p>
                     <p className="compose-citation-excerpt">{citation.excerpt}</p>
                   </li>

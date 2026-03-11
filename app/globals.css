@@ -856,6 +856,15 @@ p {
   line-height: 1.45;
 }
 
+.compose-citation-link {
+  text-decoration: none;
+}
+
+.compose-citation-link:hover,
+.compose-citation-link:focus-visible {
+  text-decoration: underline;
+}
+
 .email-schedule-block {
   margin-top: 0.25rem;
   border-top: 1px solid var(--border);
