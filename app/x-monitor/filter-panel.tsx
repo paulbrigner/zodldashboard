@@ -59,22 +59,27 @@ export function FilterPanel({
       </summary>
 
       <form className={`filter-grid${searchMode === "semantic" ? " filter-grid-semantic" : ""}`} method="GET">
+        <input name="search_mode" type="hidden" value={searchMode} />
         <label>
           <span>Search mode</span>
-          <select
-            name="search_mode"
-            onChange={(event) => {
-              const nextMode = event.target.value === "semantic" ? "semantic" : "keyword";
-              setSearchMode(nextMode);
-              if (nextMode === "semantic") {
-                setQueryText("");
-              }
-            }}
-            value={searchMode}
-          >
-            <option value="keyword">Keyword</option>
-            <option value="semantic">Semantic</option>
-          </select>
+          <div aria-label="Search mode" className="mode-toggle" role="group">
+            {(["keyword", "semantic"] as const).map((mode) => (
+              <button
+                aria-pressed={searchMode === mode}
+                className={`mode-toggle-button${searchMode === mode ? " mode-toggle-button-active" : ""}`}
+                key={mode}
+                onClick={() => {
+                  setSearchMode(mode);
+                  if (mode === "semantic") {
+                    setQueryText("");
+                  }
+                }}
+                type="button"
+              >
+                {mode === "keyword" ? "Keyword" : "Semantic"}
+              </button>
+            ))}
+          </div>
         </label>
 
         {searchMode === "semantic" ? (

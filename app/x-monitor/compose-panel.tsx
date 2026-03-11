@@ -1011,245 +1011,201 @@ export function ComposePanel(props: ComposePanelProps) {
         ) : null}
 
         {props.emailSchedulesEnabled ? (
-          <section className="compose-section">
-            <div className="compose-section-header">
-              <h3>Email schedules</h3>
-              {isLoadingSchedules ? <span className="subtle-text">Loading...</span> : null}
-            </div>
+          <details className="compose-section email-schedules-panel">
+            <summary className="email-schedules-summary">
+              <span className="compose-panel-title-wrap">
+                <span className="compose-panel-title">Email schedules</span>
+                <span aria-hidden className="disclosure-caret">
+                  ▾
+                </span>
+              </span>
+              <span className="summary-panel-state">
+                {isLoadingSchedules ? "Loading..." : `${personalSchedules.length + sharedSchedules.length} saved`}
+              </span>
+            </summary>
 
-            <label className="compose-task-field">
-              <span>Recipients</span>
-              <textarea
-                onChange={(event) => setEmailTo(event.target.value)}
-                placeholder="recipient1@example.com, recipient2@example.com"
-                rows={2}
-                value={emailTo}
-              />
-            </label>
-
-            <label className="compose-task-field">
-              <span>Subject override (optional)</span>
-              <input
-                onChange={(event) => setEmailSubject(event.target.value)}
-                placeholder="Optional subject override for scheduled runs"
-                type="text"
-                value={emailSubject}
-              />
-            </label>
-
-            <div className="compose-controls">
-              <label>
-                <span>Schedule name</span>
-                <input onChange={(event) => setScheduleName(event.target.value)} type="text" value={scheduleName} />
+            <div className="email-schedules-body">
+              <label className="compose-task-field">
+                <span>Recipients</span>
+                <textarea
+                  onChange={(event) => setEmailTo(event.target.value)}
+                  placeholder="recipient1@example.com, recipient2@example.com"
+                  rows={2}
+                  value={emailTo}
+                />
               </label>
 
-              <label>
-                <span>Availability</span>
-                {shareEnabled ? (
-                  <select
-                    onChange={(event) => setScheduleVisibility(event.target.value as ScheduleVisibility)}
-                    value={scheduleVisibility}
-                  >
-                    <option value="personal">Only me</option>
-                    <option value="shared">All signed-in zodl.com users</option>
-                  </select>
-                ) : (
-                  <input disabled type="text" value="Only me" />
-                )}
+              <label className="compose-task-field">
+                <span>Subject override (optional)</span>
+                <input
+                  onChange={(event) => setEmailSubject(event.target.value)}
+                  placeholder="Optional subject override for scheduled runs"
+                  type="text"
+                  value={emailSubject}
+                />
               </label>
 
-              <label>
-                <span>Delivery cadence</span>
-                <select onChange={(event) => setScheduleMode(event.target.value as ScheduleEditorMode)} value={scheduleMode}>
-                  <option value="daily">Daily</option>
-                  <option value="weekdays">Weekdays</option>
-                  <option value="selected_days">Selected days</option>
-                  <option value="interval">Custom interval</option>
-                </select>
-              </label>
-
-              {scheduleMode === "interval" ? (
-                <>
-                  <label>
-                    <span>Repeat every</span>
-                    <input
-                      min={1}
-                      onChange={(event) => setScheduleIntervalValue(event.target.value)}
-                      step={1}
-                      type="number"
-                      value={scheduleIntervalValue}
-                    />
-                  </label>
-                  <label>
-                    <span>Interval unit</span>
-                    <select
-                      onChange={(event) => setScheduleIntervalUnit(event.target.value as ScheduleIntervalUnit)}
-                      value={scheduleIntervalUnit}
-                    >
-                      <option value="hours">Hours</option>
-                      <option value="days">Days</option>
-                      <option value="weeks">Weeks</option>
-                      <option value="minutes">Minutes (advanced)</option>
-                    </select>
-                  </label>
-                </>
-              ) : (
+              <div className="compose-controls">
                 <label>
-                  <span>Send time</span>
-                  <input onChange={(event) => setScheduleTimeLocal(event.target.value)} type="time" value={scheduleTimeLocal} />
+                  <span>Schedule name</span>
+                  <input onChange={(event) => setScheduleName(event.target.value)} type="text" value={scheduleName} />
                 </label>
-              )}
 
-              <label>
-                <div className="compose-label-row">
-                  <span>Lookback window</span>
-                  <FieldHelp
-                    label="Lookback window"
-                    text="Each scheduled run looks back from its run time by this amount before collecting posts for the answer. For example, 3 days at 9:00 AM means each email covers the trailing 3-day window ending at 9:00 AM."
-                  />
-                </div>
-                <input
-                  min={1}
-                  onChange={(event) => setScheduleLookbackValue(event.target.value)}
-                  step={1}
-                  type="number"
-                  value={scheduleLookbackValue}
-                />
-              </label>
+                <label>
+                  <span>Availability</span>
+                  {shareEnabled ? (
+                    <select
+                      onChange={(event) => setScheduleVisibility(event.target.value as ScheduleVisibility)}
+                      value={scheduleVisibility}
+                    >
+                      <option value="personal">Only me</option>
+                      <option value="shared">All signed-in zodl.com users</option>
+                    </select>
+                  ) : (
+                    <input disabled type="text" value="Only me" />
+                  )}
+                </label>
 
-              <label>
-                <span>Lookback unit</span>
-                <select
-                  onChange={(event) => setScheduleLookbackUnit(event.target.value as LookbackUnit)}
-                  value={scheduleLookbackUnit}
-                >
-                  <option value="hours">Hours</option>
-                  <option value="days">Days</option>
-                  <option value="weeks">Weeks</option>
-                </select>
-              </label>
+                <label>
+                  <span>Delivery cadence</span>
+                  <select onChange={(event) => setScheduleMode(event.target.value as ScheduleEditorMode)} value={scheduleMode}>
+                    <option value="daily">Daily</option>
+                    <option value="weekdays">Weekdays</option>
+                    <option value="selected_days">Selected days</option>
+                    <option value="interval">Custom interval</option>
+                  </select>
+                </label>
 
-              <label className="schedule-enabled-label">
-                <span>Enabled</span>
-                <input
-                  checked={scheduleEnabled}
-                  onChange={(event) => setScheduleEnabled(event.target.checked)}
-                  type="checkbox"
-                />
-              </label>
-            </div>
-
-            {scheduleMode === "selected_days" ? (
-              <fieldset className="schedule-day-picker">
-                <legend>Days</legend>
-                <div className="schedule-day-grid">
-                  {SCHEDULE_DAY_CODES.map((day) => {
-                    const active = scheduleSelectedDays.includes(day);
-                    return (
-                      <label className={`schedule-day-chip${active ? " schedule-day-chip-active" : ""}`} key={day}>
-                        <input
-                          checked={active}
-                          onChange={() => toggleSelectedDay(day)}
-                          type="checkbox"
-                        />
-                        <span>{DAY_LABELS[day]}</span>
-                      </label>
-                    );
-                  })}
-                </div>
-              </fieldset>
-            ) : null}
-
-            <p className="subtle-text">
-              {scheduleMode === "interval"
-                ? "Custom interval schedules repeat based on elapsed time."
-                : "Choose the local time and days when this email should be generated."}
-            </p>
-            <p className="subtle-text">Runs use your local timezone: {scheduleTimeZone}</p>
-            <p className="subtle-text">Schedules use the current Task and answer settings, and always send Email draft format.</p>
-
-            <div className="compose-actions">
-              <button className="button" disabled={isSavingSchedule} onClick={handleSaveSchedule} type="button">
-                {isSavingSchedule ? "Saving..." : editingScheduleId ? "Update schedule" : "Create schedule"}
-              </button>
-              {editingScheduleId ? (
-                <button className="button button-secondary" onClick={resetScheduleEditor} type="button">
-                  Cancel edit
-                </button>
-              ) : null}
-            </div>
-            {scheduleStatusText ? <p className="subtle-text">{scheduleStatusText}</p> : null}
-
-            <div className="scheduled-jobs-columns">
-              <section className="scheduled-jobs-group">
-                <div className="compose-section-header">
-                  <h4>My schedules</h4>
-                  <span className="subtle-text">{personalSchedules.length}</span>
-                </div>
-                {personalSchedules.length > 0 ? (
-                  <ul className="scheduled-jobs-list">
-                    {personalSchedules.map((job) => (
-                      <li className="scheduled-job-item" key={job.job_id}>
-                        <p className="scheduled-job-title">{job.name}</p>
-                        <p className="subtle-text">
-                          {formatScheduleSummary(job)} • Lookback {formatLookback(job.lookback_hours)}
-                        </p>
-                        <p className="subtle-text">
-                          {job.enabled ? "Enabled" : "Disabled"} • Next {new Date(job.next_run_at).toLocaleString()}
-                        </p>
-                        <p className="subtle-text">Last status {job.last_status || "n/a"}</p>
-                        {canManageScheduledJob(job, props.viewerEmail) ? (
-                          <div className="compose-actions">
-                            <button className="button button-secondary" onClick={() => handleEditSchedule(job)} type="button">
-                              Edit
-                            </button>
-                            <button className="button button-secondary" onClick={() => handleToggleSchedule(job)} type="button">
-                              {job.enabled ? "Disable" : "Enable"}
-                            </button>
-                            <button
-                              className="button button-secondary"
-                              onClick={() => handleRunScheduleNow(job.job_id)}
-                              type="button"
-                            >
-                              Run now
-                            </button>
-                            <button
-                              className="button button-secondary"
-                              onClick={() => handleDeleteSchedule(job.job_id)}
-                              type="button"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
+                {scheduleMode === "interval" ? (
+                  <>
+                    <label>
+                      <span>Repeat every</span>
+                      <input
+                        min={1}
+                        onChange={(event) => setScheduleIntervalValue(event.target.value)}
+                        step={1}
+                        type="number"
+                        value={scheduleIntervalValue}
+                      />
+                    </label>
+                    <label>
+                      <span>Interval unit</span>
+                      <select
+                        onChange={(event) => setScheduleIntervalUnit(event.target.value as ScheduleIntervalUnit)}
+                        value={scheduleIntervalUnit}
+                      >
+                        <option value="hours">Hours</option>
+                        <option value="days">Days</option>
+                        <option value="weeks">Weeks</option>
+                        <option value="minutes">Minutes (advanced)</option>
+                      </select>
+                    </label>
+                  </>
                 ) : (
-                  <p className="subtle-text">No personal schedules yet.</p>
+                  <label>
+                    <span>Send time</span>
+                    <input onChange={(event) => setScheduleTimeLocal(event.target.value)} type="time" value={scheduleTimeLocal} />
+                  </label>
                 )}
-              </section>
 
-              {shareEnabled ? (
+                <label>
+                  <div className="compose-label-row">
+                    <span>Lookback window</span>
+                    <FieldHelp
+                      label="Lookback window"
+                      text="Each scheduled run looks back from its run time by this amount before collecting posts for the answer. For example, 3 days at 9:00 AM means each email covers the trailing 3-day window ending at 9:00 AM."
+                    />
+                  </div>
+                  <input
+                    min={1}
+                    onChange={(event) => setScheduleLookbackValue(event.target.value)}
+                    step={1}
+                    type="number"
+                    value={scheduleLookbackValue}
+                  />
+                </label>
+
+                <label>
+                  <span>Lookback unit</span>
+                  <select
+                    onChange={(event) => setScheduleLookbackUnit(event.target.value as LookbackUnit)}
+                    value={scheduleLookbackUnit}
+                  >
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                    <option value="weeks">Weeks</option>
+                  </select>
+                </label>
+
+                <label className="schedule-enabled-label">
+                  <span>Enabled</span>
+                  <input
+                    checked={scheduleEnabled}
+                    onChange={(event) => setScheduleEnabled(event.target.checked)}
+                    type="checkbox"
+                  />
+                </label>
+              </div>
+
+              {scheduleMode === "selected_days" ? (
+                <fieldset className="schedule-day-picker">
+                  <legend>Days</legend>
+                  <div className="schedule-day-grid">
+                    {SCHEDULE_DAY_CODES.map((day) => {
+                      const active = scheduleSelectedDays.includes(day);
+                      return (
+                        <label className={`schedule-day-chip${active ? " schedule-day-chip-active" : ""}`} key={day}>
+                          <input
+                            checked={active}
+                            onChange={() => toggleSelectedDay(day)}
+                            type="checkbox"
+                          />
+                          <span>{DAY_LABELS[day]}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+              ) : null}
+
+              <p className="subtle-text">
+                {scheduleMode === "interval"
+                  ? "Custom interval schedules repeat based on elapsed time."
+                  : "Choose the local time and days when this email should be generated."}
+              </p>
+              <p className="subtle-text">Runs use your local timezone: {scheduleTimeZone}</p>
+              <p className="subtle-text">Schedules use the current Task and answer settings, and always send Email draft format.</p>
+
+              <div className="compose-actions">
+                <button className="button" disabled={isSavingSchedule} onClick={handleSaveSchedule} type="button">
+                  {isSavingSchedule ? "Saving..." : editingScheduleId ? "Update schedule" : "Create schedule"}
+                </button>
+                {editingScheduleId ? (
+                  <button className="button button-secondary" onClick={resetScheduleEditor} type="button">
+                    Cancel edit
+                  </button>
+                ) : null}
+              </div>
+              {scheduleStatusText ? <p className="subtle-text">{scheduleStatusText}</p> : null}
+
+              <div className="scheduled-jobs-columns">
                 <section className="scheduled-jobs-group">
                   <div className="compose-section-header">
-                    <h4>Shared schedules</h4>
-                    <span className="subtle-text">{sharedSchedules.length}</span>
+                    <h4>My schedules</h4>
+                    <span className="subtle-text">{personalSchedules.length}</span>
                   </div>
-                  {sharedSchedules.length > 0 ? (
+                  {personalSchedules.length > 0 ? (
                     <ul className="scheduled-jobs-list">
-                      {sharedSchedules.map((job) => (
+                      {personalSchedules.map((job) => (
                         <li className="scheduled-job-item" key={job.job_id}>
                           <p className="scheduled-job-title">{job.name}</p>
                           <p className="subtle-text">
                             {formatScheduleSummary(job)} • Lookback {formatLookback(job.lookback_hours)}
                           </p>
                           <p className="subtle-text">
-                            Shared by {job.owner_email} • Next {new Date(job.next_run_at).toLocaleString()}
+                            {job.enabled ? "Enabled" : "Disabled"} • Next {new Date(job.next_run_at).toLocaleString()}
                           </p>
-                          <p className="subtle-text">
-                            {job.enabled ? "Enabled" : "Disabled"} • Last status {job.last_status || "n/a"}
-                          </p>
+                          <p className="subtle-text">Last status {job.last_status || "n/a"}</p>
                           {canManageScheduledJob(job, props.viewerEmail) ? (
                             <div className="compose-actions">
                               <button className="button button-secondary" onClick={() => handleEditSchedule(job)} type="button">
@@ -1273,19 +1229,72 @@ export function ComposePanel(props: ComposePanelProps) {
                                 Delete
                               </button>
                             </div>
-                          ) : (
-                            <p className="subtle-text">Shared schedules are viewable by all signed-in zodl.com users.</p>
-                          )}
+                          ) : null}
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <p className="subtle-text">No shared schedules yet.</p>
+                    <p className="subtle-text">No personal schedules yet.</p>
                   )}
                 </section>
-              ) : null}
+
+                {shareEnabled ? (
+                  <section className="scheduled-jobs-group">
+                    <div className="compose-section-header">
+                      <h4>Shared schedules</h4>
+                      <span className="subtle-text">{sharedSchedules.length}</span>
+                    </div>
+                    {sharedSchedules.length > 0 ? (
+                      <ul className="scheduled-jobs-list">
+                        {sharedSchedules.map((job) => (
+                          <li className="scheduled-job-item" key={job.job_id}>
+                            <p className="scheduled-job-title">{job.name}</p>
+                            <p className="subtle-text">
+                              {formatScheduleSummary(job)} • Lookback {formatLookback(job.lookback_hours)}
+                            </p>
+                            <p className="subtle-text">
+                              Shared by {job.owner_email} • Next {new Date(job.next_run_at).toLocaleString()}
+                            </p>
+                            <p className="subtle-text">
+                              {job.enabled ? "Enabled" : "Disabled"} • Last status {job.last_status || "n/a"}
+                            </p>
+                            {canManageScheduledJob(job, props.viewerEmail) ? (
+                              <div className="compose-actions">
+                                <button className="button button-secondary" onClick={() => handleEditSchedule(job)} type="button">
+                                  Edit
+                                </button>
+                                <button className="button button-secondary" onClick={() => handleToggleSchedule(job)} type="button">
+                                  {job.enabled ? "Disable" : "Enable"}
+                                </button>
+                                <button
+                                  className="button button-secondary"
+                                  onClick={() => handleRunScheduleNow(job.job_id)}
+                                  type="button"
+                                >
+                                  Run now
+                                </button>
+                                <button
+                                  className="button button-secondary"
+                                  onClick={() => handleDeleteSchedule(job.job_id)}
+                                  type="button"
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            ) : (
+                              <p className="subtle-text">Shared schedules are viewable by all signed-in zodl.com users.</p>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="subtle-text">No shared schedules yet.</p>
+                    )}
+                  </section>
+                ) : null}
+              </div>
             </div>
-          </section>
+          </details>
         ) : null}
 
         {result ? (
