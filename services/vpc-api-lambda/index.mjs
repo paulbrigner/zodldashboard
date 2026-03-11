@@ -7,6 +7,7 @@ import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
 
 const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
+const WATCH_TIER_FILTERS = new Set(["teammate", "investor", "influencer", "ecosystem", "other"]);
 const RUN_MODES = new Set(["priority", "discovery", "both", "manual"]);
 const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
 const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread", "email"]);
@@ -702,10 +703,31 @@ function tierValues(value) {
       return text ? text.split(",") : [];
     })
     .map((item) => item.trim().toLowerCase())
-    .filter((item) => item && WATCH_TIERS.has(item));
+    .filter((item) => item && WATCH_TIER_FILTERS.has(item));
 
   if (normalized.length === 0) return undefined;
   return [...new Set(normalized)];
+}
+
+function addWatchTierFilter(query, params, where, postAlias = "p") {
+  if (!query.tiers || query.tiers.length === 0) return;
+
+  const includeOther = query.tiers.includes("other");
+  const namedTiers = query.tiers.filter((tier) => tier !== "other");
+
+  if (namedTiers.length > 0 && includeOther) {
+    params.push(namedTiers);
+    where.push(`(${postAlias}.watch_tier = ANY($${params.length}::text[]) OR ${postAlias}.watch_tier IS NULL)`);
+    return;
+  }
+
+  if (namedTiers.length > 0) {
+    params.push(namedTiers);
+    where.push(`${postAlias}.watch_tier = ANY($${params.length}::text[])`);
+    return;
+  }
+
+  where.push(`${postAlias}.watch_tier IS NULL`);
 }
 
 function encodeFeedCursor(cursor) {
@@ -1673,10 +1695,7 @@ function buildFeedWhereClause(query, options = {}) {
     where.push(`p.discovered_at <= $${params.length}`);
   }
 
-  if (query.tiers && query.tiers.length > 0) {
-    params.push(query.tiers);
-    where.push(`p.watch_tier = ANY($${params.length}::text[])`);
-  }
+  addWatchTierFilter(query, params, where, "p");
 
   if (query.handle) {
     const handles = parseHandleFilter(query.handle);
@@ -2993,10 +3012,7 @@ async function querySemanticFeed(query, embeddingVector) {
     where.push(`p.discovered_at <= $${params.length}`);
   }
 
-  if (query.tiers && query.tiers.length > 0) {
-    params.push(query.tiers);
-    where.push(`p.watch_tier = ANY($${params.length}::text[])`);
-  }
+  addWatchTierFilter(query, params, where, "p");
 
   if (query.handle) {
     const handles = parseHandleFilter(query.handle);
@@ -3085,10 +3101,7 @@ function addStandardPostFilters(query, params, where, postAlias) {
     where.push(`${postAlias}.discovered_at <= $${params.length}`);
   }
 
-  if (query.tiers && query.tiers.length > 0) {
-    params.push(query.tiers);
-    where.push(`${postAlias}.watch_tier = ANY($${params.length}::text[])`);
-  }
+  addWatchTierFilter(query, params, where, postAlias);
 
   if (query.handle) {
     const handles = parseHandleFilter(query.handle);

@@ -1,5 +1,7 @@
 export const WATCH_TIERS = ["teammate", "investor", "influencer", "ecosystem"] as const;
 export type WatchTier = (typeof WATCH_TIERS)[number];
+export const WATCH_TIER_FILTERS = [...WATCH_TIERS, "other"] as const;
+export type WatchTierFilter = (typeof WATCH_TIER_FILTERS)[number];
 
 export const RUN_MODES = ["priority", "discovery", "both", "manual"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
@@ -352,7 +354,7 @@ export type PostDetail = {
 export type FeedQuery = {
   since?: string;
   until?: string;
-  tiers?: WatchTier[];
+  tiers?: WatchTierFilter[];
   handle?: string;
   significant?: boolean;
   q?: string;
@@ -364,7 +366,7 @@ export type SemanticQueryRequest = {
   query_text: string;
   since?: string;
   until?: string;
-  tiers?: WatchTier[];
+  tiers?: WatchTierFilter[];
   handle?: string;
   significant?: boolean;
   limit?: number;
@@ -380,7 +382,7 @@ export type ComposeQueryRequest = {
   task_text: string;
   since?: string;
   until?: string;
-  tiers?: WatchTier[];
+  tiers?: WatchTierFilter[];
   handle?: string;
   significant?: boolean;
   retrieval_limit?: number;

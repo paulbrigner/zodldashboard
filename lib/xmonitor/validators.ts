@@ -7,6 +7,7 @@ import {
   type IngestQueryCheckpointUpsert,
   RUN_MODES,
   WATCH_TIERS,
+  WATCH_TIER_FILTERS,
   type FeedQuery,
   type NarrativeShiftUpsert,
   type PipelineRunUpsert,
@@ -486,8 +487,8 @@ function tierValues(value: unknown): FeedQuery["tiers"] {
       return text ? text.split(",") : [];
     })
     .map((item) => item.trim().toLowerCase())
-    .filter((item): item is (typeof WATCH_TIERS)[number] =>
-      WATCH_TIERS.includes(item as (typeof WATCH_TIERS)[number])
+    .filter((item): item is (typeof WATCH_TIER_FILTERS)[number] =>
+      WATCH_TIER_FILTERS.includes(item as (typeof WATCH_TIER_FILTERS)[number])
     );
 
   if (normalized.length === 0) return undefined;

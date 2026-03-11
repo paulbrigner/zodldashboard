@@ -79,6 +79,27 @@ function parseHandleFilter(value: string | undefined): string[] {
   return parseNormalizedHandleList(value);
 }
 
+function addWatchTierFilter(query: FeedQuery, params: unknown[], where: string[], postAlias = "p"): void {
+  if (!query.tiers || query.tiers.length === 0) return;
+
+  const includeOther = query.tiers.includes("other");
+  const namedTiers = query.tiers.filter((tier) => tier !== "other");
+
+  if (namedTiers.length > 0 && includeOther) {
+    params.push(namedTiers);
+    where.push(`(${postAlias}.watch_tier = ANY($${params.length}::text[]) OR ${postAlias}.watch_tier IS NULL)`);
+    return;
+  }
+
+  if (namedTiers.length > 0) {
+    params.push(namedTiers);
+    where.push(`${postAlias}.watch_tier = ANY($${params.length}::text[])`);
+    return;
+  }
+
+  where.push(`${postAlias}.watch_tier IS NULL`);
+}
+
 function rowToFeedItem(row: QueryResultRow): FeedItem {
   return {
     status_id: String(row.status_id),
@@ -866,10 +887,7 @@ function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions =
     where.push(`p.discovered_at <= $${params.length}`);
   }
 
-  if (query.tiers && query.tiers.length > 0) {
-    params.push(query.tiers);
-    where.push(`p.watch_tier = ANY($${params.length}::text[])`);
-  }
+  addWatchTierFilter(query, params, where, "p");
 
   if (query.handle) {
     const handles = parseHandleFilter(query.handle);
