@@ -50,6 +50,7 @@ const WATCHLIST_BY_TIER = {
     "jmj",
     "maelstromfund",
     "paradigm",
+    "will_mcevoy",
     "winklevosscap",
   ],
   influencer: [
@@ -87,7 +88,6 @@ const WATCHLIST_BY_TIER = {
     "thortorrens",
     "tipz_cash",
     "valkenburgh",
-    "will_mcevoy",
     "zcashme",
     "zerodartz",
     "zooko",
