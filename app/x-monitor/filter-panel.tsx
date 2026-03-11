@@ -60,7 +60,7 @@ export function FilterPanel({
 
       <form className={`filter-grid${searchMode === "semantic" ? " filter-grid-semantic" : ""}`} method="GET">
         <input name="search_mode" type="hidden" value={searchMode} />
-        <label>
+        <label className="search-mode-field">
           <span>Search mode</span>
           <div aria-label="Search mode" className="mode-toggle" role="group">
             {(["keyword", "semantic"] as const).map((mode) => (

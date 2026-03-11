@@ -1081,6 +1081,11 @@ p {
   color: #ffffff;
 }
 
+.search-mode-field {
+  justify-self: start;
+  width: min(100%, 360px);
+}
+
 .filter-grid span {
   font-size: 0.76rem;
   text-transform: uppercase;
