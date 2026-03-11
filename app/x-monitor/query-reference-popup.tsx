@@ -40,6 +40,7 @@ const WATCHLIST_BY_TIER = {
     "zodl_app",
   ],
   investor: [
+    "akshat_hk",
     "a16zcrypto",
     "balajis",
     "cbventures",

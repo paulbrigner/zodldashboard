@@ -25,6 +25,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   friedberg: "investor",
   hosseeb: "investor",
   jmj: "investor",
+  akshat_hk: "investor",
   maelstromfund: "investor",
   paradigm: "investor",
   will_mcevoy: "investor",
