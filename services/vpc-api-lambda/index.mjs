@@ -5,7 +5,6 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
-import { buildSummaryTrends } from "../../shared/xmonitor/summary-trends.mjs";
 
 const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
 const WATCH_TIER_FILTERS = new Set(["teammate", "investor", "influencer", "ecosystem", "other"]);
@@ -91,6 +90,10 @@ async function importSharedModule(relativeCandidates) {
   }
   throw lastError || new Error(`missing shared module: ${relativeCandidates.join(" or ")}`);
 }
+
+const {
+  buildSummaryTrends,
+} = await importSharedModule(["../../shared/xmonitor/summary-trends.mjs", "./shared/xmonitor/summary-trends.mjs"]);
 
 const {
   buildOmitHandleSet,

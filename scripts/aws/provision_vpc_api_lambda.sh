@@ -548,6 +548,7 @@ popd >/dev/null
 
 mkdir -p "$BUILD_DIR/shared/xmonitor" "$BUILD_DIR/config/xmonitor" "$BUILD_DIR/db/migrations"
 cp "$ROOT_DIR/shared/xmonitor/ingest-policy.mjs" "$BUILD_DIR/shared/xmonitor/ingest-policy.mjs"
+cp "$ROOT_DIR/shared/xmonitor/summary-trends.mjs" "$BUILD_DIR/shared/xmonitor/summary-trends.mjs"
 cp "$ROOT_DIR/config/xmonitor/omit-handles.json" "$BUILD_DIR/config/xmonitor/omit-handles.json"
 cp "$ROOT_DIR"/db/migrations/*.sql "$BUILD_DIR/db/migrations/"
 
