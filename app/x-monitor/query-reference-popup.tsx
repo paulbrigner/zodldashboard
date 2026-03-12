@@ -101,6 +101,7 @@ const WATCHLIST_BY_TIER = {
   ecosystem: [
     "cipherscan_app",
     "cipherpay_app",
+    "zkav_club",
     "genzcash",
     "shieldedlabs",
     "zcash",

@@ -76,6 +76,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   shieldedlabs: "ecosystem",
   cipherscan_app: "ecosystem",
   cipherpay_app: "ecosystem",
+  zkav_club: "ecosystem",
   zcash: "ecosystem",
   zcashcommgrants: "ecosystem",
   zcashfoundation: "ecosystem",
