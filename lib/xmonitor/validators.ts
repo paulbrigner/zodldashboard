@@ -608,7 +608,7 @@ export function parseComposeQueryRequest(
   }
   const draftFormat = draftFormatRaw
     ? (draftFormatRaw as (typeof COMPOSE_DRAFT_FORMATS)[number])
-    : COMPOSE_DRAFT_FORMATS[0];
+    : "email";
 
   const normalizedHandle = asString(value.handle)
     ?.toLowerCase()

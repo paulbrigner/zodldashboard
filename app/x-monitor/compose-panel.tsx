@@ -371,10 +371,11 @@ function buildXStatusUrl(authorHandle: string, statusId: string): string {
 
 export function ComposePanel(props: ComposePanelProps) {
   const shareEnabled = props.viewerAccessLevel === "workspace";
+  const defaultDraftFormat: ComposeDraftFormat = props.emailEnabled ? "email" : "thread";
 
   const [taskText, setTaskText] = useState("");
   const [answerStyle, setAnswerStyle] = useState<ComposeAnswerStyle>("balanced");
-  const [draftFormat, setDraftFormat] = useState<ComposeDraftFormat>("none");
+  const [draftFormat, setDraftFormat] = useState<ComposeDraftFormat>(defaultDraftFormat);
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeQueryResponse | null>(null);
@@ -424,6 +425,10 @@ export function ComposePanel(props: ComposePanelProps) {
     if (shareEnabled) return;
     setScheduleVisibility("personal");
   }, [shareEnabled]);
+
+  useEffect(() => {
+    setDraftFormat(defaultDraftFormat);
+  }, [defaultDraftFormat]);
 
   useEffect(() => {
     if (!result?.email_draft) return;
@@ -962,7 +967,6 @@ export function ComposePanel(props: ComposePanelProps) {
             <label>
               <span>Draft format</span>
               <select onChange={(event) => setDraftFormat(event.target.value as ComposeDraftFormat)} value={draftFormat}>
-                <option value="none">None</option>
                 <option value="x_post">X post</option>
                 <option value="thread">Thread</option>
                 {props.emailEnabled ? <option value="email">Email</option> : null}
@@ -986,6 +990,7 @@ export function ComposePanel(props: ComposePanelProps) {
                 setErrorText(null);
                 setActiveJob(null);
                 setIsLoading(false);
+                setDraftFormat(defaultDraftFormat);
                 setEmailStatusText(null);
                 setEmailSubject("");
                 setEmailBodyMarkdown("");

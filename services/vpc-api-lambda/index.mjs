@@ -1887,7 +1887,7 @@ function parseComposeQueryBody(value) {
   if (draftFormatRaw && !COMPOSE_DRAFT_FORMATS.has(draftFormatRaw)) {
     return { ok: false, error: "draft_format must be one of none, x_post, thread, email" };
   }
-  const draftFormat = draftFormatRaw || "none";
+  const draftFormat = draftFormatRaw || "email";
 
   const normalizedHandle = asString(value.handle)
     ?.toLowerCase()
@@ -3617,7 +3617,7 @@ function answerStyleInstruction(style) {
 
 function buildComposePrompt(input, evidence) {
   const answerStyle = input.answer_style || "balanced";
-  const draftFormat = input.draft_format || "none";
+  const draftFormat = input.draft_format || "email";
 
   const evidenceLines = evidence.citations
     .map((citation, index) => {

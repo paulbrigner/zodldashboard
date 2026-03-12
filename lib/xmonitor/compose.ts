@@ -549,8 +549,9 @@ function buildComposePrompt(
   input: ComposeQueryRequest,
   evidence: ComposeQueryResponse
 ): { systemPrompt: string; userPrompt: string; projected_max_cost_usd: number } {
-  const draftEnabled = input.draft_format && input.draft_format !== "none" && composeDraftsEnabled();
-  const draftFormat: ComposeDraftFormat = draftEnabled ? (input.draft_format as ComposeDraftFormat) : "none";
+  const requestedDraftFormat = (input.draft_format || "email") as ComposeDraftFormat;
+  const draftEnabled = requestedDraftFormat !== "none" && composeDraftsEnabled();
+  const draftFormat: ComposeDraftFormat = draftEnabled ? requestedDraftFormat : "none";
   const answerStyle: ComposeAnswerStyle = (input.answer_style || "balanced") as ComposeAnswerStyle;
 
   const evidenceLines = evidence.citations
@@ -985,7 +986,7 @@ export async function executeComposeQuery(
           usage: modelReply.usage,
           estimated_cost_usd: estimatedCostUsd,
           answer_style: input.answer_style || "balanced",
-          draft_format: input.draft_format || "none",
+          draft_format: input.draft_format || "email",
         })
       );
 
