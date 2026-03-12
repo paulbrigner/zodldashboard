@@ -350,6 +350,16 @@ p {
   white-space: pre-wrap;
 }
 
+.summary-handle-link {
+  color: #2f56a6;
+  text-decoration: none;
+}
+
+.summary-handle-link:hover,
+.summary-handle-link:focus-visible {
+  text-decoration: underline;
+}
+
 .summary-error {
   margin: 0 0.95rem 0.95rem;
 }

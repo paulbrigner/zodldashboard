@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
@@ -30,6 +31,7 @@ type HomePageProps = {
 const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
 type SearchMode = "keyword" | "semantic";
 type TrendRangeKey = "24h" | "7d" | "30d";
+type SignificantFilterMode = "default_true" | "any" | "true" | "false";
 
 const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
   rolling_2h: "2-hour rolling summary",
@@ -50,6 +52,73 @@ function asStrings(value: string | string[] | undefined): string[] {
 
 function qsValue(value: string | undefined): string {
   return value ?? "";
+}
+
+function appendSignificantParam(params: URLSearchParams, mode: SignificantFilterMode): void {
+  if (mode === "default_true" || mode === "true") {
+    params.set("significant", "true");
+    return;
+  }
+  if (mode === "false") {
+    params.set("significant", "false");
+    return;
+  }
+  params.set("significant", "");
+}
+
+function deriveSignificantFilterMode(
+  params: Record<string, string | string[] | undefined>,
+  significant: boolean | undefined
+): SignificantFilterMode {
+  if (params.significant === undefined) return "default_true";
+  if (significant === true) return "true";
+  if (significant === false) return "false";
+  return "any";
+}
+
+function applyDefaultSignificant(
+  query: ReturnType<typeof parseFeedQuery>,
+  mode: SignificantFilterMode
+): ReturnType<typeof parseFeedQuery> {
+  if (mode !== "default_true") return query;
+  return {
+    ...query,
+    significant: true,
+  };
+}
+
+function renderSummaryTextWithHandleLinks(text: string) {
+  const handlePattern = /@([A-Za-z0-9_]{1,15})\b/g;
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+  let match: RegExpExecArray | null = null;
+
+  while ((match = handlePattern.exec(text)) !== null) {
+    const start = match.index;
+    const end = handlePattern.lastIndex;
+    if (start > lastIndex) {
+      nodes.push(text.slice(lastIndex, start));
+    }
+    const handle = match[1];
+    nodes.push(
+      <a
+        className="summary-handle-link"
+        href={`https://x.com/${handle}`}
+        key={`${handle}-${start}`}
+        rel="noreferrer"
+        target="_blank"
+      >
+        @{handle}
+      </a>
+    );
+    lastIndex = end;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
 }
 
 function envFlag(value: string | undefined, fallback = false): boolean {
@@ -74,7 +143,8 @@ function parseTrendRange(value: string | string[] | undefined): TrendRangeKey {
 
 function buildQuery(
   params: Record<string, string | string[] | undefined>,
-  nextCursor: string
+  nextCursor: string,
+  significantMode: SignificantFilterMode
 ): string {
   const query = new URLSearchParams();
   const keys: Array<keyof typeof params> = [
@@ -97,6 +167,9 @@ function buildQuery(
       }
       return;
     }
+    if (key === "significant") {
+      return;
+    }
     if (key === "tier") {
       for (const value of asStrings(params[key])) {
         query.append("tier", value);
@@ -109,18 +182,23 @@ function buildQuery(
     }
   });
 
+  appendSignificantParam(query, significantMode);
   query.set("cursor", nextCursor);
   return query.toString();
 }
 
-function buildFilterSearchParams(query: ReturnType<typeof parseFeedQuery>, limitOverride?: number): URLSearchParams {
+function buildFilterSearchParams(
+  query: ReturnType<typeof parseFeedQuery>,
+  significantMode: SignificantFilterMode,
+  limitOverride?: number
+): URLSearchParams {
   const params = new URLSearchParams();
 
   if (query.since) params.set("since", query.since);
   if (query.until) params.set("until", query.until);
   query.tiers?.forEach((tier) => params.append("tier", tier));
   if (query.handle) params.set("handle", query.handle);
-  if (query.significant !== undefined) params.set("significant", String(query.significant));
+  appendSignificantParam(params, significantMode);
   if (query.q) params.set("q", query.q);
 
   const effectiveLimit = limitOverride ?? query.limit;
@@ -129,17 +207,25 @@ function buildFilterSearchParams(query: ReturnType<typeof parseFeedQuery>, limit
   return params;
 }
 
-function buildRefreshUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: SearchMode): string {
-  const params = buildFilterSearchParams(query);
+function buildRefreshUrl(
+  query: ReturnType<typeof parseFeedQuery>,
+  searchMode: SearchMode,
+  significantMode: SignificantFilterMode
+): string {
+  const params = buildFilterSearchParams(query, significantMode);
   if (searchMode === "semantic") params.set("search_mode", "semantic");
   const serialized = params.toString();
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
-function buildSignificantToggleUrl(query: ReturnType<typeof parseFeedQuery>, searchMode: SearchMode): string {
-  const params = buildFilterSearchParams(query);
-  if (query.significant === true) {
-    params.delete("significant");
+function buildSignificantToggleUrl(
+  query: ReturnType<typeof parseFeedQuery>,
+  searchMode: SearchMode,
+  significantMode: SignificantFilterMode
+): string {
+  const params = buildFilterSearchParams(query, significantMode);
+  if (significantMode === "default_true" || significantMode === "true") {
+    params.set("significant", "");
   } else {
     params.set("significant", "true");
   }
@@ -148,15 +234,23 @@ function buildSignificantToggleUrl(query: ReturnType<typeof parseFeedQuery>, sea
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
-function buildPollUrl(query: ReturnType<typeof parseFeedQuery>, useSemanticRetrieval: boolean): string {
+function buildPollUrl(
+  query: ReturnType<typeof parseFeedQuery>,
+  useSemanticRetrieval: boolean,
+  significantMode: SignificantFilterMode
+): string {
   if (useSemanticRetrieval) {
     return "";
   }
-  const params = buildFilterSearchParams(query, 1);
+  const params = buildFilterSearchParams(query, significantMode, 1);
   return `/api/v1/feed?${params.toString()}`;
 }
 
-function buildFeedApiUrl(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): string {
+function buildFeedApiUrl(
+  baseUrl: string,
+  query: ReturnType<typeof parseFeedQuery>,
+  significantMode: SignificantFilterMode
+): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
   const url = new URL(`${normalizedBase}/feed`);
 
@@ -164,7 +258,7 @@ function buildFeedApiUrl(baseUrl: string, query: ReturnType<typeof parseFeedQuer
   if (query.until) url.searchParams.set("until", query.until);
   query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
   if (query.handle) url.searchParams.set("handle", query.handle);
-  if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
+  appendSignificantParam(url.searchParams, significantMode);
   if (query.q) url.searchParams.set("q", query.q);
   if (query.limit) url.searchParams.set("limit", String(query.limit));
   if (query.cursor) url.searchParams.set("cursor", query.cursor);
@@ -181,7 +275,8 @@ function buildTrendsApiUrl(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
   searchMode: SearchMode,
-  trendRange: TrendRangeKey
+  trendRange: TrendRangeKey,
+  significantMode: SignificantFilterMode
 ): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
   const url = new URL(`${normalizedBase}/trends`);
@@ -190,7 +285,7 @@ function buildTrendsApiUrl(
   if (query.until) url.searchParams.set("until", query.until);
   query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
   if (query.handle) url.searchParams.set("handle", query.handle);
-  if (query.significant !== undefined) url.searchParams.set("significant", String(query.significant));
+  appendSignificantParam(url.searchParams, significantMode);
   if (query.q) url.searchParams.set("q", query.q);
   if (searchMode === "semantic") url.searchParams.set("search_mode", "semantic");
   url.searchParams.set("trend_range", trendRange);
@@ -200,11 +295,12 @@ function buildTrendsApiUrl(
 
 function buildTrendRangeUrl(
   params: Record<string, string | string[] | undefined>,
-  targetRange: TrendRangeKey
+  targetRange: TrendRangeKey,
+  significantMode: SignificantFilterMode
 ): string {
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (key === "cursor" || key === "engagement_range") continue;
+    if (key === "cursor" || key === "engagement_range" || key === "significant") continue;
     if (key === "tier") {
       for (const text of asStrings(value)) {
         query.append(key, text);
@@ -216,6 +312,7 @@ function buildTrendRangeUrl(
       query.set(key, text);
     }
   }
+  appendSignificantParam(query, significantMode);
   query.set("trend_range", targetRange);
   const serialized = query.toString();
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
@@ -233,8 +330,12 @@ async function readApiError(response: Response): Promise<string> {
   return `API request failed (${response.status})`;
 }
 
-async function fetchFeedViaApi(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): Promise<FeedResponse> {
-  const response = await fetch(buildFeedApiUrl(baseUrl, query), {
+async function fetchFeedViaApi(
+  baseUrl: string,
+  query: ReturnType<typeof parseFeedQuery>,
+  significantMode: SignificantFilterMode
+): Promise<FeedResponse> {
+  const response = await fetch(buildFeedApiUrl(baseUrl, query, significantMode), {
     cache: "no-store",
   });
 
@@ -315,9 +416,10 @@ async function fetchTrendsViaApi(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
   searchMode: SearchMode,
-  trendRange: TrendRangeKey
+  trendRange: TrendRangeKey,
+  significantMode: SignificantFilterMode
 ): Promise<TrendsResponse> {
-  const response = await fetch(buildTrendsApiUrl(baseUrl, query, searchMode, trendRange), {
+  const response = await fetch(buildTrendsApiUrl(baseUrl, query, searchMode, trendRange, significantMode), {
     cache: "no-store",
   });
 
@@ -341,7 +443,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       : `Signed in as ${viewer.email}`;
 
   const params = (await searchParams) || {};
-  const query = parseFeedQuery(params);
+  const parsedQuery = parseFeedQuery(params);
+  const significantMode = deriveSignificantFilterMode(params, parsedQuery.significant);
+  const query = applyDefaultSignificant(parsedQuery, significantMode);
   const semanticAvailable = semanticEnabled();
   const composeFeatureEnabled = composeEnabled();
   const composeBackendConfigured = Boolean(backendApiBaseUrl());
@@ -360,9 +464,9 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const trendRange = parseTrendRange(params.trend_range ?? params.engagement_range);
   const useSemanticRetrieval = searchMode === "semantic" && Boolean(query.q);
   const apiBaseUrl = readApiBaseUrl();
-  const refreshUrl = buildRefreshUrl(query, searchMode);
-  const significantToggleUrl = buildSignificantToggleUrl(query, searchMode);
-  const pollUrl = buildPollUrl(query, useSemanticRetrieval);
+  const refreshUrl = buildRefreshUrl(query, searchMode, significantMode);
+  const significantToggleUrl = buildSignificantToggleUrl(query, searchMode, significantMode);
+  const pollUrl = buildPollUrl(query, useSemanticRetrieval, significantMode);
 
   let feed: FeedResponse = { items: [], next_cursor: null };
   let feedError: string | null = null;
@@ -380,7 +484,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           feed = await fetchSemanticViaApi(apiBaseUrl, query);
         }
       } else {
-        feed = await fetchFeedViaApi(apiBaseUrl, query);
+        feed = await fetchFeedViaApi(apiBaseUrl, query, significantMode);
       }
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
@@ -393,7 +497,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     }
 
     try {
-      trends = await fetchTrendsViaApi(apiBaseUrl, query, searchMode, trendRange);
+      trends = await fetchTrendsViaApi(apiBaseUrl, query, searchMode, trendRange, significantMode);
     } catch (error) {
       trendsError = error instanceof Error ? error.message : "Failed to load trends";
     }
@@ -434,7 +538,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const keywordHasActiveFilters = Boolean(
     (query.tiers && query.tiers.length > 0) ||
       query.handle ||
-      query.significant !== undefined ||
+      significantMode === "false" ||
+      significantMode === "any" ||
       query.since ||
       query.until ||
       query.q ||
@@ -444,7 +549,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const trendRangeOptions = (["24h", "7d", "30d"] as const).map((range) => ({
     key: range,
     label: range.toUpperCase(),
-    href: buildTrendRangeUrl(params, range),
+    href: buildTrendRangeUrl(params, range, significantMode),
     active: range === trendRange,
   }));
 
@@ -502,7 +607,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
                       <p className="subtle-text summary-counts">
                         {summary.post_count} posts, {summary.significant_count} significant
                       </p>
-                      <p className="summary-text">{summary.summary_text}</p>
+                      <p className="summary-text">{renderSummaryTextWithHandleLinks(summary.summary_text)}</p>
                     </>
                   ) : (
                     <p className="subtle-text summary-empty">No summary available yet for this window.</p>
@@ -589,7 +694,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         {!useSemanticRetrieval && feed.next_cursor ? (
           <div className="pagination-row">
-            <Link className="button" href={`/x-monitor?${buildQuery(params, feed.next_cursor)}`}>
+            <Link className="button" href={`/x-monitor?${buildQuery(params, feed.next_cursor, significantMode)}`}>
               Load older items
             </Link>
           </div>
