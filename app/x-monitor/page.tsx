@@ -68,7 +68,7 @@ function envFlag(value: string | undefined, fallback = false): boolean {
 
 function parseSearchMode(value: string | string[] | undefined): SearchMode {
   const text = asString(value);
-  return text === "keyword" ? "keyword" : "semantic";
+  return text === "semantic" ? "semantic" : "keyword";
 }
 
 function parseTrendRange(value: string | string[] | undefined): TrendRangeKey {
@@ -526,6 +526,18 @@ export default async function HomePage({ searchParams }: HomePageProps) {
 
         <TrendsPanel error={trendsError} payload={trends} rangeOptions={trendRangeOptions} />
 
+        <FilterPanel
+          initialHandle={qsValue(query.handle)}
+          initialHasActiveFilters={hasActiveFilters}
+          initialLimit={query.limit || 50}
+          initialQuery={qsValue(query.q)}
+          initialSearchMode={searchMode}
+          initialSignificant={query.significant}
+          initialSince={query.since}
+          initialTiers={query.tiers}
+          initialUntil={query.until}
+        />
+
         <ComposePanel
           enabled={composePanelEnabled}
           emailEnabled={emailFeatureEnabled}
@@ -540,18 +552,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           viewerAccessLevel={viewer.accessLevel}
           viewerEmail={viewer.email}
           unavailableReason={composeUnavailableReason}
-        />
-
-        <FilterPanel
-          initialHandle={qsValue(query.handle)}
-          initialHasActiveFilters={hasActiveFilters}
-          initialLimit={query.limit || 50}
-          initialQuery={qsValue(query.q)}
-          initialSearchMode={searchMode}
-          initialSignificant={query.significant}
-          initialSince={query.since}
-          initialTiers={query.tiers}
-          initialUntil={query.until}
         />
 
         {feedError ? <p className="error-text">{feedError}</p> : null}

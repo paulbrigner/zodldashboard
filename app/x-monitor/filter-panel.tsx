@@ -37,9 +37,9 @@ export function FilterPanel({
   const hasActiveFilters = searchMode === "semantic" ? semanticActive : initialHasActiveFilters;
 
   const resetFilters = () => {
-    setSearchMode("semantic");
+    setSearchMode("keyword");
     setQueryText("");
-    router.push("/x-monitor?search_mode=semantic");
+    router.push("/x-monitor");
   };
 
   return (

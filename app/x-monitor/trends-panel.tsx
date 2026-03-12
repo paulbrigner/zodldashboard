@@ -103,10 +103,8 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
         { label: "Posts", value: totals.post_count },
         { label: "Significant", value: totals.significant_count },
         { label: "Watchlist", value: totals.watchlist_count },
-        { label: "Priority", value: totals.priority_count },
         { label: "Discovery", value: totals.discovery_count },
         { label: "Unique handles", value: totals.unique_handle_count },
-        ...(totals.other_count > 0 ? [{ label: "Other", value: totals.other_count }] : []),
       ]
     : [];
 
