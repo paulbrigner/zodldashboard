@@ -272,12 +272,62 @@ export type ActivityTrendBucket = {
   unique_handle_count: number;
 };
 
+export type SummaryMixTrendBucket = {
+  bucket_start: string;
+  bucket_end: string;
+  post_count: number;
+  significant_count: number;
+  total_count: number;
+  counts: Record<string, number>;
+};
+
+export type SummaryDebateCounts = {
+  mentions: number;
+  pro: number;
+  contra: number;
+};
+
+export type SummaryDebateTrendBucket = {
+  bucket_start: string;
+  bucket_end: string;
+  post_count: number;
+  significant_count: number;
+  total_mentions: number;
+  issues: Record<string, SummaryDebateCounts>;
+};
+
+export type SummaryTrendScope = {
+  coverage_start: string | null;
+  coverage_end: string | null;
+  source_window_type: string;
+  source_bucket_hours: number;
+  bucket_hours: number;
+  conversation_wide: boolean;
+};
+
+export type SummaryTrends = {
+  scope: SummaryTrendScope;
+  theme_mix: {
+    labels: string[];
+    buckets: SummaryMixTrendBucket[];
+  };
+  debate_trends: {
+    labels: string[];
+    buckets: SummaryDebateTrendBucket[];
+  };
+  tier_mix: {
+    labels: string[];
+    buckets: SummaryMixTrendBucket[];
+  };
+};
+
 export type TrendsResponse = {
   scope: TrendScope;
   activity: {
     totals: ActivityTrendTotals;
     buckets: ActivityTrendBucket[];
   };
+  summary: SummaryTrends;
 };
 
 export type EngagementTotals = {

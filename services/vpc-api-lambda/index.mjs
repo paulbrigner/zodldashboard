@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { buildSummaryTrends } from "../../shared/xmonitor/summary-trends.mjs";
 
 const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
 const WATCH_TIER_FILTERS = new Set(["teammate", "investor", "influencer", "ecosystem", "other"]);
@@ -5671,6 +5672,7 @@ async function getTrends(query, options = {}) {
   });
   const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const bucketSeconds = range.bucket_hours * 60 * 60;
+  const summaryParams = [range.since, range.until];
 
   const totalsSql = `
     WITH filtered AS (
@@ -5726,9 +5728,26 @@ async function getTrends(query, options = {}) {
     ORDER BY bucket_start ASC
   `;
 
-  const [totalsResult, bucketsResult] = await Promise.all([
+  const summaryRowsSql = `
+    SELECT
+      window_start,
+      window_end,
+      post_count,
+      significant_count,
+      tier_counts_json,
+      top_themes_json,
+      debates_json
+    FROM window_summaries
+    WHERE window_type = 'rolling_2h'
+      AND window_end > $1
+      AND window_end <= $2
+    ORDER BY window_end ASC
+  `;
+
+  const [totalsResult, bucketsResult, summaryRowsResult] = await Promise.all([
     db.query(totalsSql, params),
     db.query(bucketsSql, [...params, bucketSeconds]),
+    db.query(summaryRowsSql, summaryParams),
   ]);
 
   const totalsRow = totalsResult.rows[0] || {};
@@ -5754,6 +5773,12 @@ async function getTrends(query, options = {}) {
     unique_handle_count: Number(row.unique_handle_count || 0),
   }));
 
+  const summary = buildSummaryTrends(summaryRowsResult.rows, {
+    rangeKey: range.range_key,
+    since: range.since,
+    until: range.until,
+  });
+
   return {
     scope: {
       since: range.since,
@@ -5766,6 +5791,7 @@ async function getTrends(query, options = {}) {
       totals,
       buckets,
     },
+    summary,
   };
 }
 

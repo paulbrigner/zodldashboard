@@ -10,6 +10,7 @@ import {
   shouldOmitKeywordOriginMissingBaseTerm,
   shouldOmitKeywordOriginPost,
 } from "@/shared/xmonitor/ingest-policy.mjs";
+import { buildSummaryTrends } from "@/shared/xmonitor/summary-trends.mjs";
 import type {
   ActivityTrendBucket,
   ActivityTrendTotals,
@@ -1050,6 +1051,7 @@ export async function getTrends(
   });
   const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
   const bucketSeconds = range.bucketHours * 60 * 60;
+  const summaryParams = [range.since, range.until];
 
   const totalsSql = `
     WITH filtered AS (
@@ -1105,9 +1107,26 @@ export async function getTrends(
     ORDER BY bucket_start ASC
   `;
 
-  const [totalsResult, bucketsResult] = await Promise.all([
+  const summaryRowsSql = `
+    SELECT
+      window_start,
+      window_end,
+      post_count,
+      significant_count,
+      tier_counts_json,
+      top_themes_json,
+      debates_json
+    FROM window_summaries
+    WHERE window_type = 'rolling_2h'
+      AND window_end > $1
+      AND window_end <= $2
+    ORDER BY window_end ASC
+  `;
+
+  const [totalsResult, bucketsResult, summaryRowsResult] = await Promise.all([
     pool.query(totalsSql, params),
     pool.query(bucketsSql, [...params, bucketSeconds]),
+    pool.query(summaryRowsSql, summaryParams),
   ]);
 
   const totalsRow = totalsResult.rows[0] || {};
@@ -1133,6 +1152,12 @@ export async function getTrends(
     unique_handle_count: Number(row.unique_handle_count || 0),
   }));
 
+  const summary = buildSummaryTrends(summaryRowsResult.rows, {
+    rangeKey: range.rangeKey,
+    since: range.since,
+    until: range.until,
+  });
+
   return {
     scope: {
       since: range.since,
@@ -1145,6 +1170,7 @@ export async function getTrends(
       totals,
       buckets,
     },
+    summary,
   };
 }
 

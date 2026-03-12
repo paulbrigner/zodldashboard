@@ -19,6 +19,22 @@ type TrendsPanelProps = {
 const numberFormatter = new Intl.NumberFormat("en-US");
 const MAX_TREND_BUCKETS = 48;
 
+const SUMMARY_THEME_COLORS: Record<string, string> = {
+  "Governance / strategy": "#2f5bb5",
+  "Privacy / freedom narrative": "#2f8f7b",
+  "Market / price": "#9b6b1f",
+  "Product / ecosystem": "#7c4db0",
+  "Community / memes": "#d46a8d",
+};
+
+const SUMMARY_TIER_COLORS: Record<string, string> = {
+  teammate: "#214ea8",
+  investor: "#3a8a74",
+  influencer: "#8b5db8",
+  ecosystem: "#c57f24",
+  other: "#91a0c2",
+};
+
 function formatNumber(value: number): string {
   return numberFormatter.format(Math.round(value));
 }
@@ -88,6 +104,201 @@ function compressTrendBuckets(
   return compressed;
 }
 
+function sumRecordValues(record: Record<string, number>): number {
+  return Object.values(record).reduce((sum, value) => sum + Number(value || 0), 0);
+}
+
+function sumMixTotals(
+  labels: string[],
+  buckets: Array<{ counts: Record<string, number> }>
+): Record<string, number> {
+  const totals: Record<string, number> = {};
+  for (const label of labels) {
+    totals[label] = 0;
+  }
+  for (const bucket of buckets) {
+    for (const label of labels) {
+      totals[label] += Number(bucket.counts[label] || 0);
+    }
+  }
+  return totals;
+}
+
+function sumDebateTotals(
+  labels: string[],
+  buckets: TrendsResponse["summary"]["debate_trends"]["buckets"]
+): Record<string, { mentions: number; pro: number; contra: number }> {
+  const totals: Record<string, { mentions: number; pro: number; contra: number }> = {};
+  for (const label of labels) {
+    totals[label] = { mentions: 0, pro: 0, contra: 0 };
+  }
+  for (const bucket of buckets) {
+    for (const label of labels) {
+      const issue = bucket.issues[label];
+      totals[label].mentions += Number(issue?.mentions || 0);
+      totals[label].pro += Number(issue?.pro || 0);
+      totals[label].contra += Number(issue?.contra || 0);
+    }
+  }
+  return totals;
+}
+
+function formatCountBreakdown(labels: string[], counts: Record<string, number>): string {
+  return labels
+    .map((label) => `${label} ${formatNumber(counts[label] || 0)}`)
+    .join(" | ");
+}
+
+function debateBarColor(issue: { mentions: number; pro: number; contra: number }): string {
+  if (!issue.mentions) return "#d9e4fb";
+  if (issue.pro > issue.contra) return "#2f5bb5";
+  if (issue.contra > issue.pro) return "#b84c67";
+  return "#6d7fa6";
+}
+
+function StackedTrendChart({
+  buckets,
+  labels,
+  colorMap,
+  rangeKey,
+  formatTitle,
+}: {
+  buckets: TrendsResponse["summary"]["theme_mix"]["buckets"] | TrendsResponse["summary"]["tier_mix"]["buckets"];
+  labels: string[];
+  colorMap: Record<string, string>;
+  rangeKey: string | undefined;
+  formatTitle: (bucket: { bucket_start: string; counts: Record<string, number> }) => string;
+}) {
+  const labelIndexes = buildLabelIndexSet(buckets.length, 6);
+  const chartStyle = {
+    gridTemplateColumns: `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`,
+  } as CSSProperties;
+
+  return (
+    <div className="trend-chart-wrap">
+      <div className="stacked-trend-bars" style={chartStyle}>
+        {buckets.map((bucket, index) => {
+          const total = Math.max(0, bucket.total_count);
+          const showLabel = labelIndexes.has(index);
+          return (
+            <div className="stacked-trend-col" key={`${bucket.bucket_start}:${index}`}>
+              <span className="stacked-trend-track" title={formatTitle(bucket)}>
+                {total > 0 ? (
+                  labels.map((label) => {
+                    const value = Number(bucket.counts[label] || 0);
+                    if (value <= 0) return null;
+                    return (
+                      <span
+                        className="stacked-trend-segment"
+                        key={label}
+                        style={{
+                          height: `${(value / total) * 100}%`,
+                          background: colorMap[label] || "#91a0c2",
+                        }}
+                      />
+                    );
+                  })
+                ) : (
+                  <span className="stacked-trend-empty" />
+                )}
+              </span>
+              <span className="trend-label">
+                {showLabel ? formatBucketLabelForRange(bucket.bucket_start, rangeKey) : ""}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DebateTrendCards({
+  buckets,
+  labels,
+  rangeKey,
+}: {
+  buckets: TrendsResponse["summary"]["debate_trends"]["buckets"];
+  labels: string[];
+  rangeKey: string | undefined;
+}) {
+  const labelIndexes = buildLabelIndexSet(buckets.length, 6);
+  const totals = sumDebateTotals(labels, buckets);
+  const issues = labels
+    .map((label) => ({
+      label,
+      totals: totals[label],
+    }))
+    .filter((item) => item.totals.mentions > 0);
+
+  if (issues.length === 0) {
+    return <p className="subtle-text">No tracked debate issues were active in this range.</p>;
+  }
+
+  return (
+    <div className="debate-trend-grid">
+      {issues.map((issue) => {
+        const maxMentions = Math.max(1, ...buckets.map((bucket) => Number(bucket.issues[issue.label]?.mentions || 0)));
+        const chartStyle = {
+          gridTemplateColumns: `repeat(${Math.max(1, buckets.length)}, minmax(0, 1fr))`,
+        } as CSSProperties;
+
+        return (
+          <article className="debate-trend-card" key={issue.label}>
+            <div className="debate-trend-head">
+              <h4>{issue.label}</h4>
+              <p className="subtle-text debate-trend-metrics">
+                {formatNumber(issue.totals.mentions)} mentions | {formatNumber(issue.totals.pro)} pro |{" "}
+                {formatNumber(issue.totals.contra)} contra
+              </p>
+            </div>
+            <div className="debate-trend-bars" style={chartStyle}>
+              {buckets.map((bucket, index) => {
+                const issueCounts = bucket.issues[issue.label] || { mentions: 0, pro: 0, contra: 0 };
+                const mentions = Number(issueCounts.mentions || 0);
+                const showLabel = labelIndexes.has(index);
+                const heightPct = mentions > 0 ? Math.max(8, Math.round((mentions / maxMentions) * 100)) : 0;
+                const title = [
+                  `${formatBucketLabel(bucket.bucket_start)} UTC`,
+                  `mentions ${formatNumber(mentions)}`,
+                  `pro ${formatNumber(issueCounts.pro || 0)}`,
+                  `contra ${formatNumber(issueCounts.contra || 0)}`,
+                ].join(" | ");
+
+                return (
+                  <div className="debate-trend-col" key={`${issue.label}:${bucket.bucket_start}:${index}`}>
+                    <span className="debate-trend-bar-wrap">
+                      {mentions > 0 ? (
+                        <span
+                          className="debate-trend-bar"
+                          style={{
+                            height: `${heightPct}%`,
+                            background: debateBarColor({
+                              mentions,
+                              pro: Number(issueCounts.pro || 0),
+                              contra: Number(issueCounts.contra || 0),
+                            }),
+                          }}
+                          title={title}
+                        />
+                      ) : (
+                        <span className="debate-trend-empty" title={title} />
+                      )}
+                    </span>
+                    <span className="trend-label">
+                      {showLabel ? formatBucketLabelForRange(bucket.bucket_start, rangeKey) : ""}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          </article>
+        );
+      })}
+    </div>
+  );
+}
+
 export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) {
   const activity = payload?.activity || null;
   const totals = activity?.totals || null;
@@ -107,6 +318,15 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
         { label: "Unique handles", value: totals.unique_handle_count },
       ]
     : [];
+
+  const summary = payload?.summary || null;
+  const summaryThemeBuckets = summary?.theme_mix.buckets || [];
+  const summaryTierBuckets = summary?.tier_mix.buckets || [];
+  const summaryDebateBuckets = summary?.debate_trends.buckets || [];
+  const summaryHasData =
+    summaryThemeBuckets.length > 0 || summaryTierBuckets.length > 0 || summaryDebateBuckets.length > 0;
+  const summaryThemeTotals = summary ? sumMixTotals(summary.theme_mix.labels, summaryThemeBuckets) : {};
+  const summaryTierTotals = summary ? sumMixTotals(summary.tier_mix.labels, summaryTierBuckets) : {};
 
   return (
     <details className="trends-panel">
@@ -140,7 +360,7 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
         ) : null}
 
         {payload && !payload.scope.text_filter_applied ? (
-          <p className="subtle-text">Semantic mode does not apply the free-text query filter to trends.</p>
+          <p className="subtle-text">Semantic mode does not apply the free-text query filter to activity trends.</p>
         ) : null}
 
         {!totals ? <p className="subtle-text">No activity trends are available yet.</p> : null}
@@ -195,6 +415,95 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
             </div>
           </section>
         ) : null}
+
+        <section className="trend-block">
+          <h3>Conversation-wide summary trends</h3>
+          {summary ? (
+            <p className="subtle-text summary-trend-note">
+              Uses precomputed 2-hour summaries and follows the selected time range only.
+              {summary.scope.coverage_start && summary.scope.coverage_end ? (
+                <>
+                  {" "}
+                  Coverage <LocalDateTime iso={summary.scope.coverage_start} /> -{" "}
+                  <LocalDateTime iso={summary.scope.coverage_end} /> | displayed in {summary.scope.bucket_hours}h buckets.
+                </>
+              ) : null}
+            </p>
+          ) : null}
+
+          {!summaryHasData ? <p className="subtle-text">No summary trend coverage is available for this range yet.</p> : null}
+
+          {summaryHasData ? (
+            <>
+              <section className="trend-block summary-trend-block">
+                <h3>Theme mix</h3>
+                <StackedTrendChart
+                  buckets={summaryThemeBuckets}
+                  colorMap={SUMMARY_THEME_COLORS}
+                  labels={summary?.theme_mix.labels || []}
+                  rangeKey={payload?.scope?.range_key}
+                  formatTitle={(bucket) =>
+                    [`${formatBucketLabel(bucket.bucket_start)} UTC`, formatCountBreakdown(summary?.theme_mix.labels || [], bucket.counts)].join(
+                      " | "
+                    )
+                  }
+                />
+                <div className="trend-legend">
+                  {(summary?.theme_mix.labels || []).map((label) => (
+                    <span className="trend-legend-item" key={label}>
+                      <span
+                        aria-hidden
+                        className="trend-legend-swatch"
+                        style={{ background: SUMMARY_THEME_COLORS[label] || "#91a0c2" }}
+                      />
+                      <span>
+                        {label} ({formatNumber(summaryThemeTotals[label] || 0)})
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </section>
+
+              <section className="trend-block summary-trend-block">
+                <h3>Debate intensity and polarity</h3>
+                <DebateTrendCards
+                  buckets={summaryDebateBuckets}
+                  labels={summary?.debate_trends.labels || []}
+                  rangeKey={payload?.scope?.range_key}
+                />
+              </section>
+
+              <section className="trend-block summary-trend-block">
+                <h3>Tier mix</h3>
+                <StackedTrendChart
+                  buckets={summaryTierBuckets}
+                  colorMap={SUMMARY_TIER_COLORS}
+                  labels={summary?.tier_mix.labels || []}
+                  rangeKey={payload?.scope?.range_key}
+                  formatTitle={(bucket) =>
+                    [`${formatBucketLabel(bucket.bucket_start)} UTC`, formatCountBreakdown(summary?.tier_mix.labels || [], bucket.counts)].join(
+                      " | "
+                    )
+                  }
+                />
+                <div className="trend-legend">
+                  {(summary?.tier_mix.labels || []).map((label) => (
+                    <span className="trend-legend-item" key={label}>
+                      <span
+                        aria-hidden
+                        className="trend-legend-swatch"
+                        style={{ background: SUMMARY_TIER_COLORS[label] || "#91a0c2" }}
+                      />
+                      <span>
+                        {label} ({formatNumber(summaryTierTotals[label] || 0)})
+                      </span>
+                    </span>
+                  ))}
+                </div>
+              </section>
+            </>
+          ) : null}
+        </section>
 
         {error ? <p className="error-text">{error}</p> : null}
       </div>
