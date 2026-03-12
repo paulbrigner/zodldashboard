@@ -73,6 +73,7 @@ const WATCHLIST_BY_TIER = {
     "hedging_reality",
     "inthepixels",
     "ivydngg",
+    "k6nb4k",
     "lucidzk",
     "maxdesalle",
     "mert",
@@ -97,7 +98,16 @@ const WATCHLIST_BY_TIER = {
     "zooko",
     "zpartanll7",
   ],
-  ecosystem: ["genzcash", "shieldedlabs", "zcash", "zcashcommgrants", "zcashfoundation", "zechub"],
+  ecosystem: [
+    "cipherscah_app",
+    "cipherpay_app",
+    "genzcash",
+    "shieldedlabs",
+    "zcash",
+    "zcashcommgrants",
+    "zcashfoundation",
+    "zechub",
+  ],
 } as const;
 
 const WATCHLIST_TIER_LABELS: Record<keyof typeof WATCHLIST_BY_TIER, string> = {
