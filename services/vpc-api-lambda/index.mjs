@@ -38,10 +38,10 @@ const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
 const DEFAULT_COMPOSE_ENABLED = true;
-const DEFAULT_COMPOSE_RETRIEVAL_LIMIT = 40;
-const DEFAULT_COMPOSE_MAX_RETRIEVAL_LIMIT = 100;
-const DEFAULT_COMPOSE_CONTEXT_LIMIT = 12;
-const DEFAULT_COMPOSE_MAX_CONTEXT_LIMIT = 24;
+const DEFAULT_COMPOSE_RETRIEVAL_LIMIT = 150;
+const DEFAULT_COMPOSE_MAX_RETRIEVAL_LIMIT = 150;
+const DEFAULT_COMPOSE_CONTEXT_LIMIT = 32;
+const DEFAULT_COMPOSE_MAX_CONTEXT_LIMIT = 32;
 const DEFAULT_COMPOSE_JOB_POLL_MS = 2500;
 const DEFAULT_COMPOSE_JOB_TTL_HOURS = 24;
 const DEFAULT_COMPOSE_JOB_MAX_ATTEMPTS = 3;
@@ -3150,6 +3150,24 @@ function buildCitationExcerpt(bodyText) {
   return `${normalized.slice(0, 217)}...`;
 }
 
+function normalizeComposeEvidenceBody(bodyText) {
+  const raw = asString(bodyText) || "(no text captured)";
+  const normalized = raw.replace(/\s+/g, " ").trim();
+  return normalized || "(no text captured)";
+}
+
+function compareComposeEvidenceItems(left, right) {
+  const leftScore = Number.isFinite(Number(left?.score)) ? Number(left.score) : -Infinity;
+  const rightScore = Number.isFinite(Number(right?.score)) ? Number(right.score) : -Infinity;
+  if (leftScore !== rightScore) return rightScore - leftScore;
+
+  const leftDiscoveredAt = new Date(left?.discovered_at || 0).getTime();
+  const rightDiscoveredAt = new Date(right?.discovered_at || 0).getTime();
+  if (leftDiscoveredAt !== rightDiscoveredAt) return rightDiscoveredAt - leftDiscoveredAt;
+
+  return String(right?.status_id || "").localeCompare(String(left?.status_id || ""));
+}
+
 async function queryComposeEvidence(query, embeddingVector) {
   const startedAt = Date.now();
   const db = getPool();
@@ -3284,12 +3302,14 @@ async function queryComposeEvidence(query, embeddingVector) {
     }
   }
 
+  deduped.sort(compareComposeEvidenceItems);
   const evidenceItems = deduped.slice(0, contextLimit);
   const citations = evidenceItems.map((item) => ({
     status_id: item.status_id,
     url: item.url,
     author_handle: item.author_handle,
     excerpt: buildCitationExcerpt(item.body_text),
+    body_text: normalizeComposeEvidenceBody(item.body_text),
     score: item.score !== undefined ? item.score : null,
   }));
 
@@ -3608,7 +3628,7 @@ function buildComposePrompt(input, evidence) {
         `author_handle: @${citation.author_handle}`,
         `score: ${scoreText}`,
         `url: ${citation.url}`,
-        `excerpt: ${citation.excerpt}`,
+        `body_text: ${normalizeComposeEvidenceBody(citation.body_text || citation.excerpt)}`,
       ].join("\n");
     })
     .join("\n\n");

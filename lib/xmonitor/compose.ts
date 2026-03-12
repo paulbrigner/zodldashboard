@@ -9,7 +9,7 @@ import type {
 } from "@/lib/xmonitor/types";
 
 const DEFAULT_COMPOSE_BASE_URL = "https://api.venice.ai/api/v1";
-const DEFAULT_COMPOSE_MODEL = "llama-3.2-3b";
+const DEFAULT_COMPOSE_MODEL = "openai-gpt-54";
 const DEFAULT_COMPOSE_TIMEOUT_MS = 20000;
 const COMPOSE_TOTAL_TIMEOUT_BUDGET_MS = 26000;
 const ASSUMED_MAX_OUTPUT_TOKENS_FOR_COST_ESTIMATE = 1200;
@@ -18,7 +18,7 @@ const DEFAULT_COMPOSE_MAX_DRAFT_CHARS_X_POST = 280;
 const DEFAULT_COMPOSE_MAX_CITATIONS = 10;
 const DEFAULT_COMPOSE_MAX_REQUESTS_PER_MINUTE = 30;
 const DEFAULT_COMPOSE_MAX_CONCURRENCY = 4;
-const DEFAULT_COMPOSE_MAX_ESTIMATED_COST_USD = 0.05;
+const DEFAULT_COMPOSE_MAX_ESTIMATED_COST_USD = 0.5;
 const DEFAULT_INPUT_COST_PER_1M_TOKENS = 0.15;
 const DEFAULT_OUTPUT_COST_PER_1M_TOKENS = 0.6;
 const DEFAULT_COMPOSE_DISABLE_THINKING = true;
@@ -440,6 +440,11 @@ function normalizeExcerpt(value: string | null | undefined): string {
   return text.length > 220 ? `${text.slice(0, 217)}...` : text;
 }
 
+function normalizeBodyText(value: string | null | undefined): string {
+  const text = (value || "").replace(/\s+/g, " ").trim();
+  return text || "(no text captured)";
+}
+
 function parseRetrievalStats(value: unknown): ComposeRetrievalStats | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -491,6 +496,7 @@ function parseEvidencePayload(payload: unknown): ComposeQueryResponse {
         url,
         author_handle: authorHandle,
         excerpt: normalizeExcerpt(asString(row.excerpt)),
+        body_text: normalizeBodyText(asString(row.body_text) || asString(row.excerpt)),
         score: Number.isFinite(score) ? score : null,
       };
     })
@@ -556,7 +562,7 @@ function buildComposePrompt(
         `author_handle: @${citation.author_handle}`,
         `score: ${scoreText}`,
         `url: ${citation.url}`,
-        `excerpt: ${citation.excerpt}`,
+        `body_text: ${normalizeBodyText(citation.body_text || citation.excerpt)}`,
       ].join("\n");
     })
     .join("\n\n");

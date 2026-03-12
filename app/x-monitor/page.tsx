@@ -52,11 +52,6 @@ function qsValue(value: string | undefined): string {
   return value ?? "";
 }
 
-function asPositiveInt(value: string | undefined, fallback: number): number {
-  const parsed = Number.parseInt(value || "", 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
 function envFlag(value: string | undefined, fallback = false): boolean {
   if (!value) return fallback;
   const normalized = value.trim().toLowerCase();
@@ -351,11 +346,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const composeFeatureEnabled = composeEnabled();
   const composeBackendConfigured = Boolean(backendApiBaseUrl());
   const composePanelEnabled = composeFeatureEnabled && semanticAvailable && composeBackendConfigured;
-  const composeDefaultRetrievalLimit = asPositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_RETRIEVAL_LIMIT, 50);
-  const composeDefaultContextLimit = Math.min(
-    asPositiveInt(process.env.XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT, 14),
-    composeDefaultRetrievalLimit
-  );
   const emailFeatureEnabled = envFlag(process.env.XMONITOR_EMAIL_ENABLED, false) && viewer.mode === "oauth";
   const emailSchedulesFeatureEnabled =
     emailFeatureEnabled && envFlag(process.env.XMONITOR_EMAIL_SCHEDULES_ENABLED, false);
@@ -543,8 +533,6 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           emailEnabled={emailFeatureEnabled}
           emailSchedulesEnabled={emailSchedulesFeatureEnabled}
           initialHandle={query.handle}
-          initialContextLimit={composeDefaultContextLimit}
-          initialRetrievalLimit={composeDefaultRetrievalLimit}
           initialSignificant={query.significant}
           initialSince={query.since}
           initialTiers={query.tiers}

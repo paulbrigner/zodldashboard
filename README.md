@@ -511,8 +511,8 @@ Notes:
 - Inputs:
   - `task_text` (required),
   - scope filters (`since`, `until`, `tier`, `handle`, `significant`),
-  - `retrieval_limit` (bounded to `1..100`),
-  - `context_limit` (bounded to `1..24`, and never above retrieval limit),
+  - `retrieval_limit` (bounded to `1..150`),
+  - `context_limit` (bounded to `1..32`, and never above retrieval limit),
   - `answer_style` (`brief|balanced|detailed`),
   - `draft_format` (`none|x_post|thread|email`).
 - Output is structured and citation-backed:
@@ -723,7 +723,7 @@ Set one valid backend mode:
 - Confirm compose model credentials are present (`XMONITOR_COMPOSE_API_KEY` or fallback key).
 - Confirm worker Lambda is deployed and has active SQS event-source mapping.
 - If worker/API Lambdas are VPC-attached, ensure internet egress exists for model API calls (NAT route for Lambda subnets or equivalent egress path).
-- Increase `XMONITOR_COMPOSE_TIMEOUT_MS` and/or reduce UI `Retrieval limit` + `Context limit` if jobs frequently fail.
+- Increase `XMONITOR_COMPOSE_TIMEOUT_MS` and/or tune `XMONITOR_COMPOSE_DEFAULT_RETRIEVAL_LIMIT` and `XMONITOR_COMPOSE_DEFAULT_CONTEXT_LIMIT` if jobs frequently fail.
 - Check logs for `compose_job_queued`, `compose_job_requeued`, `compose_job_failed`, and `compose_query_fallback_backend`.
 
 ### Answer Mode returns `Request failed (504)`

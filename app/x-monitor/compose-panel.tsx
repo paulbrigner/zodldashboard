@@ -31,16 +31,12 @@ type ComposePanelProps = {
   initialTiers?: string[];
   initialHandle?: string;
   initialSignificant?: boolean;
-  initialRetrievalLimit?: number;
-  initialContextLimit?: number;
   emailEnabled?: boolean;
   emailSchedulesEnabled?: boolean;
   viewerEmail?: string | null;
   viewerAccessLevel?: ViewerAccessLevel;
 };
 
-const DEFAULT_RETRIEVAL_LIMIT = 50;
-const DEFAULT_CONTEXT_LIMIT = 14;
 const DEFAULT_POLL_MS = 2500;
 const MIN_POLL_MS = 1000;
 const MAX_POLL_MS = 10000;
@@ -374,22 +370,11 @@ function buildXStatusUrl(authorHandle: string, statusId: string): string {
 }
 
 export function ComposePanel(props: ComposePanelProps) {
-  const initialRetrievalLimit =
-    typeof props.initialRetrievalLimit === "number" && props.initialRetrievalLimit > 0
-      ? Math.floor(props.initialRetrievalLimit)
-      : DEFAULT_RETRIEVAL_LIMIT;
-  const initialContextLimitRaw =
-    typeof props.initialContextLimit === "number" && props.initialContextLimit > 0
-      ? Math.floor(props.initialContextLimit)
-      : DEFAULT_CONTEXT_LIMIT;
-  const initialContextLimit = Math.min(initialContextLimitRaw, initialRetrievalLimit);
   const shareEnabled = props.viewerAccessLevel === "workspace";
 
   const [taskText, setTaskText] = useState("");
   const [answerStyle, setAnswerStyle] = useState<ComposeAnswerStyle>("balanced");
   const [draftFormat, setDraftFormat] = useState<ComposeDraftFormat>("none");
-  const [retrievalLimit, setRetrievalLimit] = useState(() => String(initialRetrievalLimit));
-  const [contextLimit, setContextLimit] = useState(() => String(initialContextLimit));
   const [isLoading, setIsLoading] = useState(false);
   const [errorText, setErrorText] = useState<string | null>(null);
   const [result, setResult] = useState<ComposeQueryResponse | null>(null);
@@ -582,14 +567,10 @@ export function ComposePanel(props: ComposePanelProps) {
       throw new Error("Lookback must be between 1 hour and 2 weeks.");
     }
 
-    const retrieval = asPositiveInt(retrievalLimit);
-    const context = asPositiveInt(contextLimit);
     const composeRequest = {
       task_text: task,
       answer_style: answerStyle,
       draft_format: "email" as const,
-      retrieval_limit: retrieval,
-      context_limit: context,
       tiers: props.initialTiers,
       handle: props.initialHandle,
       significant: props.initialSignificant,
@@ -760,12 +741,6 @@ export function ComposePanel(props: ComposePanelProps) {
     if (job.compose_request?.answer_style) {
       setAnswerStyle(job.compose_request.answer_style);
     }
-    if (job.compose_request?.retrieval_limit && Number.isFinite(job.compose_request.retrieval_limit)) {
-      setRetrievalLimit(String(job.compose_request.retrieval_limit));
-    }
-    if (job.compose_request?.context_limit && Number.isFinite(job.compose_request.context_limit)) {
-      setContextLimit(String(job.compose_request.context_limit));
-    }
     setDraftFormat("email");
     setScheduleStatusText(`Editing schedule ${job.name}`);
   }
@@ -857,15 +832,10 @@ export function ComposePanel(props: ComposePanelProps) {
       return;
     }
 
-    const retrieval = asPositiveInt(retrievalLimit);
-    const context = asPositiveInt(contextLimit);
-
     const payload = {
       task_text: task,
       answer_style: answerStyle,
       draft_format: draftFormat,
-      retrieval_limit: retrieval,
-      context_limit: context,
       since: props.initialSince,
       until: props.initialUntil,
       tiers: props.initialTiers,
@@ -997,40 +967,6 @@ export function ComposePanel(props: ComposePanelProps) {
                 <option value="thread">Thread</option>
                 {props.emailEnabled ? <option value="email">Email</option> : null}
               </select>
-            </label>
-
-            <label>
-              <div className="compose-label-row">
-                <span>Retrieval limit</span>
-                <FieldHelp
-                  label="Retrieval limit"
-                  text="Higher values search more candidate posts, which can improve coverage but increase latency. Keep this moderate for routine use."
-                />
-              </div>
-              <input
-                min={1}
-                onChange={(event) => setRetrievalLimit(event.target.value)}
-                step={1}
-                type="number"
-                value={retrievalLimit}
-              />
-            </label>
-
-            <label>
-              <div className="compose-label-row">
-                <span>Context limit</span>
-                <FieldHelp
-                  label="Context limit"
-                  text="Higher values pass more evidence into synthesis, which may improve detail but can increase model timeouts. Increase only when needed."
-                />
-              </div>
-              <input
-                min={1}
-                onChange={(event) => setContextLimit(event.target.value)}
-                step={1}
-                type="number"
-                value={contextLimit}
-              />
             </label>
           </div>
 

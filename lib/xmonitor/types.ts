@@ -402,6 +402,7 @@ export type ComposeCitation = {
   url: string;
   author_handle: string;
   excerpt: string;
+  body_text?: string | null;
   score?: number | null;
 };
 
