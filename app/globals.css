@@ -585,6 +585,15 @@ p {
   font-size: 0.82rem;
 }
 
+.trend-legend-item-control {
+  cursor: pointer;
+}
+
+.trend-legend-checkbox {
+  margin: 0;
+  accent-color: var(--primary);
+}
+
 .trend-legend-swatch {
   width: 0.72rem;
   height: 0.72rem;

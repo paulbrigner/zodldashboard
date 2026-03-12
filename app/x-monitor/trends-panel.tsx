@@ -1,5 +1,7 @@
+"use client";
+
 import Link from "next/link";
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import { LocalDateTime } from "@/app/components/local-date-time";
 import type { TrendsResponse } from "@/lib/xmonitor/types";
 
@@ -34,6 +36,13 @@ const SUMMARY_TIER_COLORS: Record<string, string> = {
   ecosystem: "#c57f24",
   other: "#91a0c2",
 };
+
+const DEBATE_POLARITY_COLORS = {
+  pro: "#2f5bb5",
+  contra: "#b84c67",
+  mixed: "#6d7fa6",
+  none: "#d9e4fb",
+} as const;
 
 function formatNumber(value: number): string {
   return numberFormatter.format(Math.round(value));
@@ -150,10 +159,10 @@ function formatCountBreakdown(labels: string[], counts: Record<string, number>):
 }
 
 function debateBarColor(issue: { mentions: number; pro: number; contra: number }): string {
-  if (!issue.mentions) return "#d9e4fb";
-  if (issue.pro > issue.contra) return "#2f5bb5";
-  if (issue.contra > issue.pro) return "#b84c67";
-  return "#6d7fa6";
+  if (!issue.mentions) return DEBATE_POLARITY_COLORS.none;
+  if (issue.pro > issue.contra) return DEBATE_POLARITY_COLORS.pro;
+  if (issue.contra > issue.pro) return DEBATE_POLARITY_COLORS.contra;
+  return DEBATE_POLARITY_COLORS.mixed;
 }
 
 function StackedTrendChart({
@@ -178,7 +187,7 @@ function StackedTrendChart({
     <div className="trend-chart-wrap">
       <div className="stacked-trend-bars" style={chartStyle}>
         {buckets.map((bucket, index) => {
-          const total = Math.max(0, bucket.total_count);
+          const total = Math.max(0, labels.reduce((sum, label) => sum + Number(bucket.counts[label] || 0), 0));
           const showLabel = labelIndexes.has(index);
           return (
             <div className="stacked-trend-col" key={`${bucket.bucket_start}:${index}`}>
@@ -300,6 +309,7 @@ function DebateTrendCards({
 }
 
 export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) {
+  const [includeOtherTier, setIncludeOtherTier] = useState(true);
   const activity = payload?.activity || null;
   const totals = activity?.totals || null;
   const buckets = compressTrendBuckets(activity?.buckets || [], MAX_TREND_BUCKETS);
@@ -326,7 +336,9 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
   const summaryHasData =
     summaryThemeBuckets.length > 0 || summaryTierBuckets.length > 0 || summaryDebateBuckets.length > 0;
   const summaryThemeTotals = summary ? sumMixTotals(summary.theme_mix.labels, summaryThemeBuckets) : {};
-  const summaryTierTotals = summary ? sumMixTotals(summary.tier_mix.labels, summaryTierBuckets) : {};
+  const summaryTierLabels = summary?.tier_mix.labels || [];
+  const visibleSummaryTierLabels = includeOtherTier ? summaryTierLabels : summaryTierLabels.filter((label) => label !== "other");
+  const summaryTierTotals = summary ? sumMixTotals(summaryTierLabels, summaryTierBuckets) : {};
 
   return (
     <details className="trends-panel">
@@ -466,6 +478,24 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
 
               <section className="trend-block summary-trend-block">
                 <h3>Debate intensity and polarity</h3>
+                <div className="trend-legend">
+                  <span className="trend-legend-item" key="debate-pro">
+                    <span aria-hidden className="trend-legend-swatch" style={{ background: DEBATE_POLARITY_COLORS.pro }} />
+                    <span>Pro-leading</span>
+                  </span>
+                  <span className="trend-legend-item" key="debate-contra">
+                    <span aria-hidden className="trend-legend-swatch" style={{ background: DEBATE_POLARITY_COLORS.contra }} />
+                    <span>Contra-leading</span>
+                  </span>
+                  <span className="trend-legend-item" key="debate-mixed">
+                    <span aria-hidden className="trend-legend-swatch" style={{ background: DEBATE_POLARITY_COLORS.mixed }} />
+                    <span>Even / mixed</span>
+                  </span>
+                  <span className="trend-legend-item" key="debate-none">
+                    <span aria-hidden className="trend-legend-swatch" style={{ background: DEBATE_POLARITY_COLORS.none }} />
+                    <span>No mentions in bucket</span>
+                  </span>
+                </div>
                 <DebateTrendCards
                   buckets={summaryDebateBuckets}
                   labels={summary?.debate_trends.labels || []}
@@ -478,27 +508,46 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
                 <StackedTrendChart
                   buckets={summaryTierBuckets}
                   colorMap={SUMMARY_TIER_COLORS}
-                  labels={summary?.tier_mix.labels || []}
+                  labels={visibleSummaryTierLabels}
                   rangeKey={payload?.scope?.range_key}
                   formatTitle={(bucket) =>
-                    [`${formatBucketLabel(bucket.bucket_start)} UTC`, formatCountBreakdown(summary?.tier_mix.labels || [], bucket.counts)].join(
+                    [`${formatBucketLabel(bucket.bucket_start)} UTC`, formatCountBreakdown(visibleSummaryTierLabels, bucket.counts)].join(
                       " | "
                     )
                   }
                 />
                 <div className="trend-legend">
-                  {(summary?.tier_mix.labels || []).map((label) => (
-                    <span className="trend-legend-item" key={label}>
-                      <span
-                        aria-hidden
-                        className="trend-legend-swatch"
-                        style={{ background: SUMMARY_TIER_COLORS[label] || "#91a0c2" }}
-                      />
-                      <span>
-                        {label} ({formatNumber(summaryTierTotals[label] || 0)})
+                  {summaryTierLabels.map((label) =>
+                    label === "other" ? (
+                      <label className="trend-legend-item trend-legend-item-control" key={label}>
+                        <input
+                          checked={includeOtherTier}
+                          className="trend-legend-checkbox"
+                          onChange={(event) => setIncludeOtherTier(event.target.checked)}
+                          type="checkbox"
+                        />
+                        <span
+                          aria-hidden
+                          className="trend-legend-swatch"
+                          style={{ background: SUMMARY_TIER_COLORS[label] || "#91a0c2" }}
+                        />
+                        <span>
+                          {label} ({formatNumber(summaryTierTotals[label] || 0)})
+                        </span>
+                      </label>
+                    ) : (
+                      <span className="trend-legend-item" key={label}>
+                        <span
+                          aria-hidden
+                          className="trend-legend-swatch"
+                          style={{ background: SUMMARY_TIER_COLORS[label] || "#91a0c2" }}
+                        />
+                        <span>
+                          {label} ({formatNumber(summaryTierTotals[label] || 0)})
+                        </span>
                       </span>
-                    </span>
-                  ))}
+                    )
+                  )}
                 </div>
               </section>
             </>
