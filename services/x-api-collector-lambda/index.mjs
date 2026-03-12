@@ -23,6 +23,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   chapterone: "investor",
   cryptohayes: "investor",
   cypherpunk: "investor",
+  davidlee: "investor",
   friedberg: "investor",
   hosseeb: "investor",
   jmj: "investor",

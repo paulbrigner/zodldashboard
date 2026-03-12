@@ -47,6 +47,7 @@ const WATCHLIST_BY_TIER = {
     "chapterone",
     "cryptohayes",
     "cypherpunk",
+    "davidlee",
     "friedberg",
     "hosseeb",
     "jmj",
