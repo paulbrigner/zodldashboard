@@ -478,6 +478,11 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
 
               <section className="trend-block summary-trend-block">
                 <h3>Debate intensity and polarity</h3>
+                <DebateTrendCards
+                  buckets={summaryDebateBuckets}
+                  labels={summary?.debate_trends.labels || []}
+                  rangeKey={payload?.scope?.range_key}
+                />
                 <div className="trend-legend">
                   <span className="trend-legend-item" key="debate-pro">
                     <span aria-hidden className="trend-legend-swatch" style={{ background: DEBATE_POLARITY_COLORS.pro }} />
@@ -496,11 +501,6 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
                     <span>No mentions in bucket</span>
                   </span>
                 </div>
-                <DebateTrendCards
-                  buckets={summaryDebateBuckets}
-                  labels={summary?.debate_trends.labels || []}
-                  rangeKey={payload?.scope?.range_key}
-                />
               </section>
 
               <section className="trend-block summary-trend-block">
