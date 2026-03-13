@@ -146,8 +146,9 @@ export function FilterPanel({
                   </summary>
                   <div className="field-help-popover">
                     <p>
-                      Text search is a case-insensitive phrase match across post body text and author handle. Multiple
-                      words are treated as one phrase, not automatic AND/OR logic.
+                      Text search is case-insensitive across post body text and author handle. Plain terms are required,
+                      <code>-term</code> excludes matches, and quotes keep phrases together. Example: <code>mining -foundry</code>{" "}
+                      or <code>"mining pool" -"foundry usa"</code>.
                     </p>
                   </div>
                 </details>

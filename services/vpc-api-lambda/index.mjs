@@ -96,6 +96,10 @@ const {
 } = await importSharedModule(["../../shared/xmonitor/summary-trends.mjs", "./shared/xmonitor/summary-trends.mjs"]);
 
 const {
+  parseTextFilterQuery,
+} = await importSharedModule(["../../shared/xmonitor/text-filter.mjs", "./shared/xmonitor/text-filter.mjs"]);
+
+const {
   buildOmitHandleSet,
   compileBaseTermRegex,
   hasConfiguredBaseTerm,
@@ -1718,11 +1722,23 @@ function buildFeedWhereClause(query, options = {}) {
   }
 
   if (options.includeTextQuery !== false && query.q) {
-    params.push(`%${query.q}%`);
-    where.push(`(
-      p.body_text ILIKE $${params.length}
-      OR p.author_handle::text ILIKE $${params.length}
-    )`);
+    const textFilter = parseTextFilterQuery(query.q);
+
+    for (const term of textFilter.includeTerms) {
+      params.push(`%${term}%`);
+      where.push(`(
+        p.body_text ILIKE $${params.length}
+        OR p.author_handle::text ILIKE $${params.length}
+      )`);
+    }
+
+    for (const term of textFilter.excludeTerms) {
+      params.push(`%${term}%`);
+      where.push(`NOT (
+        p.body_text ILIKE $${params.length}
+        OR p.author_handle::text ILIKE $${params.length}
+      )`);
+    }
   }
 
   if (options.includeCursor && query.cursor) {

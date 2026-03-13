@@ -11,6 +11,7 @@ import {
   shouldOmitKeywordOriginPost,
 } from "@/shared/xmonitor/ingest-policy.mjs";
 import { buildSummaryTrends } from "@/shared/xmonitor/summary-trends.mjs";
+import { parseTextFilterQuery } from "@/shared/xmonitor/text-filter.mjs";
 import type {
   ActivityTrendBucket,
   ActivityTrendTotals,
@@ -907,11 +908,23 @@ function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions =
   }
 
   if (options.includeTextQuery !== false && query.q) {
-    params.push(`%${query.q}%`);
-    where.push(`(
-      p.body_text ILIKE $${params.length}
-      OR p.author_handle::text ILIKE $${params.length}
-    )`);
+    const textFilter = parseTextFilterQuery(query.q);
+
+    for (const term of textFilter.includeTerms) {
+      params.push(`%${term}%`);
+      where.push(`(
+        p.body_text ILIKE $${params.length}
+        OR p.author_handle::text ILIKE $${params.length}
+      )`);
+    }
+
+    for (const term of textFilter.excludeTerms) {
+      params.push(`%${term}%`);
+      where.push(`NOT (
+        p.body_text ILIKE $${params.length}
+        OR p.author_handle::text ILIKE $${params.length}
+      )`);
+    }
   }
 
   if (options.includeCursor && query.cursor) {
