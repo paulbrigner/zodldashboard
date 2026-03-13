@@ -327,6 +327,25 @@ function buildTrendRangeUrl(
   return serialized ? `/x-monitor?${serialized}` : "/x-monitor";
 }
 
+function buildFilterPanelKey(
+  query: ReturnType<typeof parseFeedQuery>,
+  searchMode: SearchMode,
+  significantMode: SignificantFilterMode
+): string {
+  return JSON.stringify({
+    searchMode,
+    significantMode,
+    since: query.since || "",
+    until: query.until || "",
+    tiers: query.tiers || [],
+    themes: query.themes || [],
+    debateIssues: query.debate_issues || [],
+    handle: query.handle || "",
+    q: query.q || "",
+    limit: query.limit || 0,
+  });
+}
+
 async function readApiError(response: Response): Promise<string> {
   try {
     const payload = (await response.json()) as { error?: unknown };
@@ -565,6 +584,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     href: buildTrendRangeUrl(params, range, significantMode),
     active: range === trendRange,
   }));
+  const filterPanelKey = buildFilterPanelKey(query, searchMode, significantMode);
 
   return (
     <main className="page feed-page">
@@ -635,6 +655,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <TrendsPanel error={trendsError} payload={trends} rangeOptions={trendRangeOptions} />
 
         <FilterPanel
+          key={filterPanelKey}
           initialDebateIssues={query.debate_issues}
           initialHandle={qsValue(query.handle)}
           initialHasActiveFilters={hasActiveFilters}
