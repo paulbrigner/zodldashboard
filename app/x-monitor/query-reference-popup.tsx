@@ -65,6 +65,8 @@ const WATCHLIST_BY_TIER = {
     "banthys",
     "bitlarrain",
     "btcturtle",
+    "cipherscan_app",
+    "cipherpay_app",
     "colludingnode",
     "cq_elzz",
     "dignitycipher",
@@ -99,8 +101,6 @@ const WATCHLIST_BY_TIER = {
     "zpartanll7",
   ],
   ecosystem: [
-    "cipherscan_app",
-    "cipherpay_app",
     "zkav_club",
     "genzcash",
     "shieldedlabs",
