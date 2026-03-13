@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SUMMARY_DEBATE_LABELS, SUMMARY_THEME_LABELS } from "@/shared/xmonitor/summary-taxonomy.mjs";
 import { DateRangeFields } from "./date-range-fields";
 
 type SearchMode = "keyword" | "semantic";
@@ -9,6 +10,8 @@ type SearchMode = "keyword" | "semantic";
 type FilterPanelProps = {
   initialSearchMode: SearchMode;
   initialTiers?: string[];
+  initialThemes?: string[];
+  initialDebateIssues?: string[];
   initialHandle?: string;
   initialSignificant?: boolean;
   initialSince?: string;
@@ -21,6 +24,8 @@ type FilterPanelProps = {
 export function FilterPanel({
   initialSearchMode,
   initialTiers,
+  initialThemes,
+  initialDebateIssues,
   initialHandle,
   initialSignificant,
   initialSince,
@@ -34,7 +39,7 @@ export function FilterPanel({
   const [queryText, setQueryText] = useState<string>(initialQuery || "");
 
   const semanticActive = useMemo(() => queryText.trim().length > 0, [queryText]);
-  const hasActiveFilters = searchMode === "semantic" ? semanticActive : initialHasActiveFilters;
+  const hasActiveFilters = searchMode === "semantic" ? (semanticActive || initialHasActiveFilters) : initialHasActiveFilters;
 
   const resetFilters = () => {
     setSearchMode("keyword");
@@ -105,6 +110,33 @@ export function FilterPanel({
                 <option value="influencer">Influencer</option>
                 <option value="ecosystem">Ecosystem</option>
                 <option value="other">Other</option>
+              </select>
+            </label>
+
+            <label>
+              <span>Themes</span>
+              <select multiple name="theme" defaultValue={initialThemes || []} size={Math.min(SUMMARY_THEME_LABELS.length, 5)}>
+                {SUMMARY_THEME_LABELS.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span>Debate topics</span>
+              <select
+                multiple
+                name="debate_issue"
+                defaultValue={initialDebateIssues || []}
+                size={Math.min(SUMMARY_DEBATE_LABELS.length, 4)}
+              >
+                {SUMMARY_DEBATE_LABELS.map((label) => (
+                  <option key={label} value={label}>
+                    {label}
+                  </option>
+                ))}
               </select>
             </label>
 

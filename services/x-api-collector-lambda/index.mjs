@@ -1,5 +1,26 @@
 import { createHash } from "node:crypto";
 
+async function importSharedModule(relativeCandidates) {
+  let lastError;
+  for (const relativePath of relativeCandidates) {
+    try {
+      return await import(new URL(relativePath, import.meta.url));
+    } catch (error) {
+      if (error?.code !== "ERR_MODULE_NOT_FOUND") {
+        throw error;
+      }
+      lastError = error;
+    }
+  }
+  throw lastError || new Error(`missing shared module: ${relativeCandidates.join(" or ")}`);
+}
+
+const {
+  SUMMARY_DEBATE_LABELS,
+  detectSummaryDebateMatches,
+  detectSummaryThemes,
+} = await importSharedModule(["../../shared/xmonitor/summary-taxonomy.mjs", "./shared/xmonitor/summary-taxonomy.mjs"]);
+
 const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
 const QUERY_REPLY_MODES = new Set(["off", "term_constrained", "selected_handles"]);
 const COLLECTOR_MODES = new Set(["priority", "discovery"]);
@@ -94,87 +115,6 @@ const DEFAULT_SUMMARY_LLM_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_SUMMARY_LLM_MODEL = "zai-org-glm-5";
 
 const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b)/i;
-
-const SUMMARY_THEME_KEYWORDS = {
-  "Governance / strategy": [
-    "governance",
-    "consensus",
-    "nu7",
-    "nu6",
-    "roadmap",
-    "poll",
-    "polling",
-    "zsa",
-    "shielded asset",
-    "fee burning",
-    "arborist",
-    "zcashd",
-    "grants",
-  ],
-  "Privacy / freedom narrative": [
-    "privacy",
-    "private",
-    "surveillance",
-    "freedom",
-    "censorship",
-    "encrypted",
-    "shielded",
-    "civil liberties",
-  ],
-  "Market / price": [
-    "zec",
-    "price",
-    "btc",
-    "bitcoin",
-    "ath",
-    "stack",
-    "buy",
-    "market cap",
-    "bull",
-    "bear",
-  ],
-  "Product / ecosystem": [
-    "wallet",
-    "zashi",
-    "integration",
-    "release",
-    "upgrade",
-    "partnership",
-    "sdk",
-    "api",
-    "zodl",
-    "foundation",
-    "commgrants",
-    "shieldedlabs",
-  ],
-  "Community / memes": [
-    "gm",
-    "meme",
-    "lol",
-    "lfg",
-    "vibes",
-    "blessed",
-    "replying to",
-  ],
-};
-
-const SUMMARY_DEBATE_ISSUES = {
-  "ZSA direction": {
-    keywords: ["zsa", "shielded asset", "shielded assets", "fee burning", "private stables"],
-    pro: ["support", "worth", "needed", "should", "important", "bullish", "yes"],
-    contra: ["against", "distract", "risk", "oppose", "bad", "concern", "no"],
-  },
-  "Governance legitimacy": {
-    keywords: ["governance", "poll", "polling", "consensus", "nu7", "vote", "voting"],
-    pro: ["clear", "majority", "consensus", "agree", "valid"],
-    contra: ["unclear", "contested", "disagree", "not representative", "invalid"],
-  },
-  "Execution readiness": {
-    keywords: ["arborist", "zcashd", "migration", "upgrade", "audit", "timeline"],
-    pro: ["ready", "on track", "solid", "progress"],
-    contra: ["blocked", "delay", "not ready", "behind", "risk"],
-  },
-};
 
 function asString(value) {
   if (typeof value !== "string") return "";
@@ -721,62 +661,6 @@ async function fetchWindowFeedPosts(config, windowStartIso, windowEndIso) {
   return { items, pageCount, truncated };
 }
 
-function detectSummaryThemes(text) {
-  const low = normalizeSubstanceText(text).toLowerCase();
-  if (!low) return [];
-
-  const hits = [];
-  for (const [theme, keys] of Object.entries(SUMMARY_THEME_KEYWORDS)) {
-    let matched = false;
-    for (const key of keys) {
-      if (key === "zec") {
-        if (/(?:^|[^a-z0-9_])zec(?:$|[^a-z0-9_])/.test(low)) {
-          matched = true;
-          break;
-        }
-        continue;
-      }
-      if (key === "btc") {
-        if (/(?:^|[^a-z0-9_])btc(?:$|[^a-z0-9_])/.test(low)) {
-          matched = true;
-          break;
-        }
-        continue;
-      }
-      if (low.includes(key)) {
-        matched = true;
-        break;
-      }
-    }
-    if (matched) hits.push(theme);
-  }
-
-  return hits;
-}
-
-function detectSummaryDebateMatches(text) {
-  const low = normalizeSubstanceText(text).toLowerCase();
-  if (!low) return [];
-
-  const matches = [];
-  for (const [issue, config] of Object.entries(SUMMARY_DEBATE_ISSUES)) {
-    const hasKeyword = config.keywords.some((keyword) => low.includes(keyword));
-    if (!hasKeyword) continue;
-
-    const hasPro = config.pro.some((keyword) => low.includes(keyword));
-    const hasContra = config.contra.some((keyword) => low.includes(keyword));
-
-    let stance = "neutral";
-    if (hasPro && hasContra) stance = "mixed";
-    else if (hasPro) stance = "pro";
-    else if (hasContra) stance = "contra";
-
-    matches.push([issue, stance]);
-  }
-
-  return matches;
-}
-
 function summarizeWindowPosts(posts, topPostsLimit) {
   const tierCounts = {
     teammate: 0,
@@ -790,7 +674,7 @@ function summarizeWindowPosts(posts, topPostsLimit) {
   const themeCounts = new Map();
   const debateStats = new Map();
 
-  for (const issue of Object.keys(SUMMARY_DEBATE_ISSUES)) {
+  for (const issue of SUMMARY_DEBATE_LABELS) {
     debateStats.set(issue, {
       issue,
       mentions: 0,

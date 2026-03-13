@@ -18,6 +18,10 @@ import {
   type WindowSummaryUpsert,
 } from "@/lib/xmonitor/types";
 import { defaultFeedLimit, maxFeedLimit } from "@/lib/xmonitor/config";
+import {
+  normalizeSummaryDebateFilters,
+  normalizeSummaryThemeFilters,
+} from "@/shared/xmonitor/summary-taxonomy.mjs";
 
 const COMPOSE_DEFAULT_RETRIEVAL_LIMIT = 150;
 const COMPOSE_MAX_RETRIEVAL_LIMIT = 150;
@@ -499,6 +503,8 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
   const since = asIsoTimestamp(firstValue(input.since));
   const until = asIsoTimestamp(firstValue(input.until));
   const tiers = tierValues(input.tier);
+  const themes = normalizeSummaryThemeFilters(input.theme);
+  const debateIssues = normalizeSummaryDebateFilters(input.debate_issue);
 
   const significant = asBoolean(firstValue(input.significant));
 
@@ -515,6 +521,8 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
     since,
     until,
     tiers,
+    themes: themes.length > 0 ? themes : undefined,
+    debate_issues: debateIssues.length > 0 ? debateIssues : undefined,
     handle: normalizedHandle || undefined,
     significant,
     q: asString(firstValue(input.q)),

@@ -585,6 +585,22 @@ p {
   font-size: 0.82rem;
 }
 
+.trend-legend-link {
+  text-decoration: none;
+}
+
+.trend-filter-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.trend-filter-link:hover,
+.trend-filter-link:focus-visible {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .trend-legend-item-control {
   cursor: pointer;
 }

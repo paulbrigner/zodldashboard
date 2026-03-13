@@ -405,6 +405,8 @@ export type FeedQuery = {
   since?: string;
   until?: string;
   tiers?: WatchTierFilter[];
+  themes?: string[];
+  debate_issues?: string[];
   handle?: string;
   significant?: boolean;
   q?: string;

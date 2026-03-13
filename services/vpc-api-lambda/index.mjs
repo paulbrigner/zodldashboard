@@ -100,6 +100,13 @@ const {
 } = await importSharedModule(["../../shared/xmonitor/text-filter.mjs", "./shared/xmonitor/text-filter.mjs"]);
 
 const {
+  buildSummaryDebateMatcherGroups,
+  buildSummaryThemeMatcherGroups,
+  normalizeSummaryDebateFilters,
+  normalizeSummaryThemeFilters,
+} = await importSharedModule(["../../shared/xmonitor/summary-taxonomy.mjs", "./shared/xmonitor/summary-taxonomy.mjs"]);
+
+const {
   buildOmitHandleSet,
   compileBaseTermRegex,
   hasConfiguredBaseTerm,
@@ -1670,6 +1677,8 @@ function parseFeedQuery(input) {
   const since = asIsoTimestamp(firstValue(input.since));
   const until = asIsoTimestamp(firstValue(input.until));
   const tiers = tierValues(input.tier);
+  const themes = normalizeSummaryThemeFilters(input.theme);
+  const debateIssues = normalizeSummaryDebateFilters(input.debate_issue);
   const significant = asBoolean(firstValue(input.significant));
 
   const limitValue = asInteger(firstValue(input.limit));
@@ -1681,6 +1690,8 @@ function parseFeedQuery(input) {
     since,
     until,
     tiers,
+    themes: themes.length > 0 ? themes : undefined,
+    debate_issues: debateIssues.length > 0 ? debateIssues : undefined,
     handle: asString(firstValue(input.handle))?.toLowerCase(),
     significant,
     q: asString(firstValue(input.q)),
@@ -1721,6 +1732,9 @@ function buildFeedWhereClause(query, options = {}) {
     where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
+  appendSummaryMatcherFilter(where, params, buildSummaryThemeMatcherGroups(query.themes), "p");
+  appendSummaryMatcherFilter(where, params, buildSummaryDebateMatcherGroups(query.debate_issues), "p");
+
   if (options.includeTextQuery !== false && query.q) {
     const textFilter = parseTextFilterQuery(query.q);
 
@@ -1751,6 +1765,38 @@ function buildFeedWhereClause(query, options = {}) {
   }
 
   return { where, params };
+}
+
+function escapeLikePattern(value) {
+  return String(value || "").replace(/[\\%_]/g, "\\$&");
+}
+
+function summaryMatchTextSql(postAlias = "p") {
+  return `lower(regexp_replace(regexp_replace(regexp_replace(regexp_replace(coalesce(${postAlias}.body_text, ''), 'https?://[^[:space:]]+', ' ', 'gi'), '[$#]([A-Za-z0-9_]+)', ' \\\\1 ', 'g'), '@[A-Za-z0-9_][A-Za-z0-9_.]*', ' ', 'g'), '[[:space:]]+', ' ', 'g'))`;
+}
+
+function appendSummaryMatcherFilter(where, params, matcherGroups, postAlias = "p") {
+  if (!Array.isArray(matcherGroups) || matcherGroups.length === 0) return;
+
+  const normalizedSql = summaryMatchTextSql(postAlias);
+  const labelClauses = matcherGroups
+    .map((group) => {
+      const matcherClauses = (group.matchers || []).map((matcher) => {
+        if (matcher.type === "regex") {
+          params.push(matcher.value);
+          return `${normalizedSql} ~ $${params.length}`;
+        }
+        params.push(`%${escapeLikePattern(matcher.value)}%`);
+        return `${normalizedSql} LIKE $${params.length} ESCAPE '\\'`;
+      });
+      if (matcherClauses.length === 0) return null;
+      return matcherClauses.length === 1 ? matcherClauses[0] : `(${matcherClauses.join(" OR ")})`;
+    })
+    .filter(Boolean);
+
+  if (labelClauses.length > 0) {
+    where.push(`(${labelClauses.join(" OR ")})`);
+  }
 }
 
 function parseDateOrNull(value) {

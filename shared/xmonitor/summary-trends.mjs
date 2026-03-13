@@ -1,18 +1,8 @@
+import { SUMMARY_DEBATE_LABELS, SUMMARY_THEME_LABELS } from "./summary-taxonomy.mjs";
+
+export { SUMMARY_DEBATE_LABELS, SUMMARY_THEME_LABELS } from "./summary-taxonomy.mjs";
+
 const TWO_HOUR_BUCKET_HOURS = 2;
-
-export const SUMMARY_THEME_LABELS = [
-  "Governance / strategy",
-  "Privacy / freedom narrative",
-  "Market / price",
-  "Product / ecosystem",
-  "Community / memes",
-];
-
-export const SUMMARY_DEBATE_LABELS = [
-  "ZSA direction",
-  "Governance legitimacy",
-  "Execution readiness",
-];
 
 export const SUMMARY_TIER_LABELS = ["teammate", "investor", "influencer", "ecosystem", "other"];
 
@@ -198,11 +188,11 @@ export function buildSummaryTrends(rows, options = {}) {
       conversation_wide: true,
     },
     theme_mix: {
-      labels: SUMMARY_THEME_LABELS,
+      labels: [...SUMMARY_THEME_LABELS],
       buckets: buildMixBuckets(sourceBuckets, "theme_counts"),
     },
     debate_trends: {
-      labels: SUMMARY_DEBATE_LABELS,
+      labels: [...SUMMARY_DEBATE_LABELS],
       buckets: buildDebateBuckets(sourceBuckets),
     },
     tier_mix: {

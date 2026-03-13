@@ -10,6 +10,10 @@ import {
   shouldOmitKeywordOriginMissingBaseTerm,
   shouldOmitKeywordOriginPost,
 } from "@/shared/xmonitor/ingest-policy.mjs";
+import {
+  buildSummaryDebateMatcherGroups,
+  buildSummaryThemeMatcherGroups,
+} from "@/shared/xmonitor/summary-taxonomy.mjs";
 import { buildSummaryTrends } from "@/shared/xmonitor/summary-trends.mjs";
 import { parseTextFilterQuery } from "@/shared/xmonitor/text-filter.mjs";
 import type {
@@ -100,6 +104,43 @@ function addWatchTierFilter(query: FeedQuery, params: unknown[], where: string[]
   }
 
   where.push(`${postAlias}.watch_tier IS NULL`);
+}
+
+function escapeLikePattern(value: string): string {
+  return String(value || "").replace(/[\\%_]/g, "\\$&");
+}
+
+function summaryMatchTextSql(postAlias = "p"): string {
+  return `lower(regexp_replace(regexp_replace(regexp_replace(regexp_replace(coalesce(${postAlias}.body_text, ''), 'https?://[^[:space:]]+', ' ', 'gi'), '[$#]([A-Za-z0-9_]+)', ' \\\\1 ', 'g'), '@[A-Za-z0-9_][A-Za-z0-9_.]*', ' ', 'g'), '[[:space:]]+', ' ', 'g'))`;
+}
+
+function appendSummaryMatcherFilter(
+  where: string[],
+  params: unknown[],
+  matcherGroups: Array<{ label: string; matchers: Array<{ type: string; value: string }> }>,
+  postAlias = "p"
+): void {
+  if (matcherGroups.length === 0) return;
+
+  const normalizedSql = summaryMatchTextSql(postAlias);
+  const labelClauses = matcherGroups
+    .map((group) => {
+      const matcherClauses = group.matchers.map((matcher) => {
+        if (matcher.type === "regex") {
+          params.push(matcher.value);
+          return `${normalizedSql} ~ $${params.length}`;
+        }
+        params.push(`%${escapeLikePattern(matcher.value)}%`);
+        return `${normalizedSql} LIKE $${params.length} ESCAPE '\\'`;
+      });
+      if (matcherClauses.length === 0) return null;
+      return matcherClauses.length === 1 ? matcherClauses[0] : `(${matcherClauses.join(" OR ")})`;
+    })
+    .filter(Boolean);
+
+  if (labelClauses.length > 0) {
+    where.push(`(${labelClauses.join(" OR ")})`);
+  }
 }
 
 function rowToFeedItem(row: QueryResultRow): FeedItem {
@@ -906,6 +947,9 @@ function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions =
   if (query.significant !== undefined) {
     where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
+
+  appendSummaryMatcherFilter(where, params, buildSummaryThemeMatcherGroups(query.themes), "p");
+  appendSummaryMatcherFilter(where, params, buildSummaryDebateMatcherGroups(query.debate_issues), "p");
 
   if (options.includeTextQuery !== false && query.q) {
     const textFilter = parseTextFilterQuery(query.q);

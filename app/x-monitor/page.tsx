@@ -32,6 +32,7 @@ const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
 type SearchMode = "keyword" | "semantic";
 type TrendRangeKey = "24h" | "7d" | "30d";
 type SignificantFilterMode = "default_true" | "any" | "true" | "false";
+const MULTI_VALUE_FILTER_KEYS = new Set(["tier", "theme", "debate_issue"]);
 
 const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
   rolling_2h: "2-hour rolling summary",
@@ -152,6 +153,8 @@ function buildQuery(
     "since",
     "until",
     "tier",
+    "theme",
+    "debate_issue",
     "handle",
     "significant",
     "q",
@@ -170,9 +173,9 @@ function buildQuery(
     if (key === "significant") {
       return;
     }
-    if (key === "tier") {
+    if (MULTI_VALUE_FILTER_KEYS.has(String(key))) {
       for (const value of asStrings(params[key])) {
-        query.append("tier", value);
+        query.append(String(key), value);
       }
       return;
     }
@@ -197,6 +200,8 @@ function buildFilterSearchParams(
   if (query.since) params.set("since", query.since);
   if (query.until) params.set("until", query.until);
   query.tiers?.forEach((tier) => params.append("tier", tier));
+  query.themes?.forEach((theme) => params.append("theme", theme));
+  query.debate_issues?.forEach((issue) => params.append("debate_issue", issue));
   if (query.handle) params.set("handle", query.handle);
   appendSignificantParam(params, significantMode);
   if (query.q) params.set("q", query.q);
@@ -257,6 +262,8 @@ function buildFeedApiUrl(
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
   query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
+  query.themes?.forEach((theme) => url.searchParams.append("theme", theme));
+  query.debate_issues?.forEach((issue) => url.searchParams.append("debate_issue", issue));
   if (query.handle) url.searchParams.set("handle", query.handle);
   appendSignificantParam(url.searchParams, significantMode);
   if (query.q) url.searchParams.set("q", query.q);
@@ -284,6 +291,8 @@ function buildTrendsApiUrl(
   if (query.since) url.searchParams.set("since", query.since);
   if (query.until) url.searchParams.set("until", query.until);
   query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
+  query.themes?.forEach((theme) => url.searchParams.append("theme", theme));
+  query.debate_issues?.forEach((issue) => url.searchParams.append("debate_issue", issue));
   if (query.handle) url.searchParams.set("handle", query.handle);
   appendSignificantParam(url.searchParams, significantMode);
   if (query.q) url.searchParams.set("q", query.q);
@@ -301,7 +310,7 @@ function buildTrendRangeUrl(
   const query = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
     if (key === "cursor" || key === "engagement_range" || key === "significant") continue;
-    if (key === "tier") {
+    if (MULTI_VALUE_FILTER_KEYS.has(key)) {
       for (const text of asStrings(value)) {
         query.append(key, text);
       }
@@ -374,6 +383,8 @@ async function fetchSemanticViaApi(baseUrl: string, query: ReturnType<typeof par
       since: query.since,
       until: query.until,
       tiers: query.tiers,
+      themes: query.themes,
+      debate_issues: query.debate_issues,
       handle: query.handle,
       significant: query.significant,
       limit: query.limit,
@@ -537,6 +548,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const summariesByType = new Map(summaries.map((summary) => [summary.window_type, summary]));
   const keywordHasActiveFilters = Boolean(
     (query.tiers && query.tiers.length > 0) ||
+      (query.themes && query.themes.length > 0) ||
+      (query.debate_issues && query.debate_issues.length > 0) ||
       query.handle ||
       significantMode === "false" ||
       significantMode === "any" ||
@@ -622,6 +635,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         <TrendsPanel error={trendsError} payload={trends} rangeOptions={trendRangeOptions} />
 
         <FilterPanel
+          initialDebateIssues={query.debate_issues}
           initialHandle={qsValue(query.handle)}
           initialHasActiveFilters={hasActiveFilters}
           initialLimit={query.limit || 50}
@@ -629,6 +643,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           initialSearchMode={searchMode}
           initialSignificant={query.significant}
           initialSince={query.since}
+          initialThemes={query.themes}
           initialTiers={query.tiers}
           initialUntil={query.until}
         />

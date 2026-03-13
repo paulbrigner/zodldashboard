@@ -158,6 +158,23 @@ function formatCountBreakdown(labels: string[], counts: Record<string, number>):
     .join(" | ");
 }
 
+function buildSummaryFilterUrl(
+  scope: TrendsResponse["scope"] | null | undefined,
+  filters: { theme?: string; debateIssue?: string }
+): string {
+  const params = new URLSearchParams();
+  if (scope?.range_key && scope.range_key !== "custom") {
+    params.set("trend_range", scope.range_key);
+  } else {
+    if (scope?.since) params.set("since", scope.since);
+    if (scope?.until) params.set("until", scope.until);
+  }
+  params.set("significant", "");
+  if (filters.theme) params.append("theme", filters.theme);
+  if (filters.debateIssue) params.append("debate_issue", filters.debateIssue);
+  return `/x-monitor?${params.toString()}`;
+}
+
 function debateBarColor(issue: { mentions: number; pro: number; contra: number }): string {
   if (!issue.mentions) return DEBATE_POLARITY_COLORS.none;
   if (issue.pro > issue.contra) return DEBATE_POLARITY_COLORS.pro;
@@ -226,10 +243,12 @@ function DebateTrendCards({
   buckets,
   labels,
   rangeKey,
+  scope,
 }: {
   buckets: TrendsResponse["summary"]["debate_trends"]["buckets"];
   labels: string[];
   rangeKey: string | undefined;
+  scope: TrendsResponse["scope"] | null | undefined;
 }) {
   const labelIndexes = buildLabelIndexSet(buckets.length, 6);
   const totals = sumDebateTotals(labels, buckets);
@@ -255,7 +274,15 @@ function DebateTrendCards({
         return (
           <article className="debate-trend-card" key={issue.label}>
             <div className="debate-trend-head">
-              <h4>{issue.label}</h4>
+              <h4>
+                <Link
+                  className="trend-filter-link"
+                  href={buildSummaryFilterUrl(scope, { debateIssue: issue.label })}
+                  title={`Show posts matching ${issue.label}`}
+                >
+                  {issue.label}
+                </Link>
+              </h4>
               <p className="subtle-text debate-trend-metrics">
                 {formatNumber(issue.totals.mentions)} mentions | {formatNumber(issue.totals.pro)} pro |{" "}
                 {formatNumber(issue.totals.contra)} contra
@@ -462,7 +489,12 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
                 />
                 <div className="trend-legend">
                   {(summary?.theme_mix.labels || []).map((label) => (
-                    <span className="trend-legend-item" key={label}>
+                    <Link
+                      className="trend-legend-item trend-filter-link trend-legend-link"
+                      href={buildSummaryFilterUrl(payload?.scope, { theme: label })}
+                      key={label}
+                      title={`Show posts matching ${label}`}
+                    >
                       <span
                         aria-hidden
                         className="trend-legend-swatch"
@@ -471,7 +503,7 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
                       <span>
                         {label} ({formatNumber(summaryThemeTotals[label] || 0)})
                       </span>
-                    </span>
+                    </Link>
                   ))}
                 </div>
               </section>
@@ -482,6 +514,7 @@ export function TrendsPanel({ payload, error, rangeOptions }: TrendsPanelProps) 
                   buckets={summaryDebateBuckets}
                   labels={summary?.debate_trends.labels || []}
                   rangeKey={payload?.scope?.range_key}
+                  scope={payload?.scope}
                 />
                 <div className="trend-legend">
                   <span className="trend-legend-item" key="debate-pro">

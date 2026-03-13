@@ -291,7 +291,22 @@ else
   npm install --omit=dev >/dev/null
 fi
 rm -f function.zip
-zip -rq function.zip index.mjs package.json package-lock.json node_modules 2>/dev/null || zip -rq function.zip index.mjs package.json node_modules
+BUILD_DIR="$(mktemp -d)"
+cleanup_build_dir() {
+  rm -rf "$BUILD_DIR"
+}
+trap cleanup_build_dir EXIT
+mkdir -p "$BUILD_DIR/shared/xmonitor"
+cp index.mjs package.json "$BUILD_DIR/"
+if [[ -f package-lock.json ]]; then
+  cp package-lock.json "$BUILD_DIR/"
+fi
+cp -R node_modules "$BUILD_DIR/node_modules"
+cp "$ROOT_DIR/shared/xmonitor/summary-taxonomy.mjs" "$BUILD_DIR/shared/xmonitor/summary-taxonomy.mjs"
+pushd "$BUILD_DIR" >/dev/null
+zip -rq "$LAMBDA_DIR/function.zip" index.mjs package.json package-lock.json node_modules shared 2>/dev/null || \
+  zip -rq "$LAMBDA_DIR/function.zip" index.mjs package.json node_modules shared
+popd >/dev/null
 popd >/dev/null
 
 ENV_JSON="$(
