@@ -36,7 +36,7 @@ const dashboards: DashboardCard[] = [
   {
     id: "cipherpay-test",
     name: "CipherPay Test",
-    description: "Testnet-first CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
+    description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
     href: "/cipherpay-test",
     workspaceOnly: true,
   },
