@@ -15,6 +15,7 @@ const SCHEDULE_KINDS = new Set(["interval", "weekly"]);
 const SCHEDULE_VISIBILITIES = new Set(["personal", "shared"]);
 const SCHEDULE_DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const SCHEDULE_DAY_CODE_SET = new Set(SCHEDULE_DAY_CODES);
+const AUTH_LOGIN_ACCESS_LEVELS = new Set(["workspace", "guest"]);
 const WORKSPACE_EMAIL_DOMAIN = normalizeDomain(process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com");
 
 const DEFAULT_SERVICE_NAME = "xmonitor-api";
@@ -4402,6 +4403,34 @@ function parseEmailSendBody(value) {
   };
 }
 
+function parseAuthLoginEventBody(value) {
+  const body = asObject(value);
+  if (!body) {
+    return { ok: false, error: "body must be an object" };
+  }
+
+  const provider = asString(body.provider)?.toLowerCase();
+  if (!provider) {
+    return { ok: false, error: "provider is required" };
+  }
+  if (provider.length > 64) {
+    return { ok: false, error: "provider is too long" };
+  }
+
+  const accessLevel = asString(body.access_level)?.toLowerCase();
+  if (!accessLevel || !AUTH_LOGIN_ACCESS_LEVELS.has(accessLevel)) {
+    return { ok: false, error: "access_level must be one of workspace or guest" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      provider,
+      access_level: accessLevel,
+    },
+  };
+}
+
 function parseScheduledEmailJobCreateBody(value) {
   if (!isRecord(value)) return { ok: false, error: "body must be an object" };
 
@@ -4895,6 +4924,24 @@ async function sendEmailDelivery({
       delivery_id: deliveryId,
     };
   }
+}
+
+async function recordAuthLoginEvent({
+  email,
+  provider,
+  authMode = "oauth",
+  accessLevel,
+}) {
+  const db = getPool();
+  const result = await db.query(
+    `
+      INSERT INTO auth_login_events(email, provider, auth_mode, access_level)
+      VALUES ($1, $2, $3, $4)
+      RETURNING event_id, email, provider, auth_mode, access_level, logged_in_at
+    `,
+    [email, provider, authMode, accessLevel]
+  );
+  return result.rows[0] || null;
 }
 
 async function fetchScheduledEmailJobById(jobId) {
@@ -6233,6 +6280,39 @@ async function handleEmailSend(event) {
   return jsonOk(delivery.data);
 }
 
+async function handleAuthLoginEventCreate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event, { oauthOnly: true });
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsed = parseAuthLoginEventBody(parsedBody.body);
+  if (!parsed.ok) {
+    return jsonError(parsed.error, 400);
+  }
+
+  try {
+    const item = await recordAuthLoginEvent({
+      email: viewer.viewer.email,
+      provider: parsed.data.provider,
+      authMode: viewer.viewer.auth_mode,
+      accessLevel: parsed.data.access_level,
+    });
+    return jsonOk({ item }, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to record auth login event", 503);
+  }
+}
+
 async function handleEmailSchedulesList(event) {
   if (!emailEnabled() || !emailSchedulesEnabled()) {
     return jsonError("email schedules are disabled", 503);
@@ -6828,6 +6908,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/email/send") {
     return handleEmailSend(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/login-events") {
+    return handleAuthLoginEventCreate(event);
   }
 
   if (method === "GET" && path === "/v1/email/schedules") {

@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
+import { recordSuccessfulOAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
 
 const allowedDomain = (process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com").toLowerCase();
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
@@ -27,6 +28,12 @@ function parseEmailAllowlist(value: string): Set<string> {
 
 function normalizeEmail(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
+}
+
+function accessLevelForProvider(provider: string): AuthLoginAccessLevel | null {
+  if (provider === "google") return "workspace";
+  if (provider === "google-guest") return "guest";
+  return null;
 }
 
 function isEmailVerified(profile: unknown): boolean {
@@ -128,6 +135,22 @@ export const authOptions: NextAuthOptions = {
         session.user.email = token.email || null;
       }
       return session;
+    },
+  },
+  events: {
+    async signIn({ account, profile, user }) {
+      const provider = account?.provider || "";
+      const accessLevel = accessLevelForProvider(provider);
+      if (!accessLevel) return;
+
+      const email = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
+      if (!email) return;
+
+      await recordSuccessfulOAuthLogin({
+        email,
+        provider,
+        accessLevel,
+      });
     },
   },
   pages: {
