@@ -2500,6 +2500,77 @@ p {
   margin: 0;
 }
 
+.cipherpay-catalog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0.85rem;
+}
+
+.cipherpay-catalog-card {
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.cipherpay-catalog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cipherpay-catalog-header h3,
+.cipherpay-catalog-header p {
+  margin: 0;
+}
+
+.cipherpay-catalog-slug {
+  color: #47639d;
+}
+
+.cipherpay-price-chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.cipherpay-price-chip {
+  border: 1px solid #cbd9f3;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #254f95;
+  padding: 0.4rem 0.7rem;
+  font: inherit;
+  font-size: 0.86rem;
+  cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.cipherpay-price-chip:hover,
+.cipherpay-price-chip:focus-visible {
+  border-color: #2d7b64;
+  color: #145743;
+}
+
+.cipherpay-price-chip-active {
+  border-color: #1f7f63;
+  background: #daf5ec;
+  color: #155c48;
+  font-weight: 700;
+}
+
+.cipherpay-catalog-note {
+  display: grid;
+  gap: 0.32rem;
+}
+
+.cipherpay-catalog-note p {
+  margin: 0;
+}
+
 .cipherpay-valid-text {
   color: #116447;
 }

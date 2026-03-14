@@ -1,13 +1,18 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import type { CipherPayDashboardData } from "@/lib/cipherpay-test/types";
+import Link from "next/link";
+import type {
+  CipherPayCatalogPrice,
+  CipherPayCatalogProduct,
+  CipherPayStorefrontData,
+} from "@/lib/cipherpay-test/types";
 import { LocalDateTime } from "../../components/local-date-time";
 import { CipherPayStatusPill } from "../status-pill";
 import { formatFiatAmount, readJsonOrThrow } from "../client-utils";
 
 type CheckoutResponse = {
-  session: CipherPayDashboardData["sessions"][number];
+  session: CipherPayStorefrontData["sessions"][number];
   invoice: {
     invoice_id: string;
     memo_code: string | null;
@@ -19,23 +24,46 @@ type CheckoutResponse = {
   };
 };
 
+function supportedCatalogPrices(product: CipherPayCatalogProduct) {
+  return product.prices.filter((price) => price.active && price.price_type === "one_time");
+}
+
+function pickDefaultCatalogPrice(product: CipherPayCatalogProduct, preferredCurrency: string | null): CipherPayCatalogPrice | null {
+  const prices = supportedCatalogPrices(product);
+  if (!prices.length) return null;
+  const defaultPrice = product.default_price_id ? prices.find((price) => price.id === product.default_price_id) : null;
+  if (defaultPrice) return defaultPrice;
+  const preferred = preferredCurrency ? prices.find((price) => price.currency === preferredCurrency) : null;
+  return preferred || prices[0];
+}
+
+function recurringPriceSummary(price: CipherPayCatalogPrice) {
+  if (price.price_type !== "recurring") return null;
+  const interval = price.billing_interval || "period";
+  const count = price.interval_count && price.interval_count > 1 ? `every ${price.interval_count} ${interval}s` : `every ${interval}`;
+  return count;
+}
+
 export function CipherPayTestStorefrontClient() {
-  const [data, setData] = useState<CipherPayDashboardData | null>(null);
-  const [productName, setProductName] = useState("");
-  const [amount, setAmount] = useState("1.00");
-  const [currency, setCurrency] = useState("USD");
-  const [size, setSize] = useState("");
+  const [data, setData] = useState<CipherPayStorefrontData | null>(null);
+  const [manualProductName, setManualProductName] = useState("");
+  const [manualAmount, setManualAmount] = useState("1.00");
+  const [manualCurrency, setManualCurrency] = useState("USD");
+  const [manualSize, setManualSize] = useState("");
+  const [selectedPriceIds, setSelectedPriceIds] = useState<Record<string, string>>({});
+  const [catalogVariants, setCatalogVariants] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [manualSubmitting, setManualSubmitting] = useState(false);
+  const [catalogSubmittingProductId, setCatalogSubmittingProductId] = useState<string | null>(null);
   const [syncingSessionId, setSyncingSessionId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
-  async function loadDashboard() {
+  async function loadStorefront() {
     setLoading(true);
     setError(null);
     try {
-      const nextData = await readJsonOrThrow<CipherPayDashboardData>(await fetch("/api/v1/cipherpay/dashboard", { cache: "no-store" }));
+      const nextData = await readJsonOrThrow<CipherPayStorefrontData>(await fetch("/api/v1/cipherpay/storefront", { cache: "no-store" }));
       setData(nextData);
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Failed to load storefront state");
@@ -45,19 +73,37 @@ export function CipherPayTestStorefrontClient() {
   }
 
   useEffect(() => {
-    void loadDashboard();
+    void loadStorefront();
   }, []);
 
   useEffect(() => {
     if (!data) return;
-    if (!productName) setProductName(data.config.default_product_name);
-    if (amount === "1.00") setAmount(data.config.default_amount.toFixed(2));
-    if (currency === "USD") setCurrency(data.config.default_currency);
-  }, [amount, currency, data, productName]);
+    if (!manualProductName) setManualProductName(data.config.default_product_name);
+    if (manualAmount === "1.00") setManualAmount(data.config.default_amount.toFixed(2));
+    if (manualCurrency === "USD") setManualCurrency(data.config.default_currency);
 
-  async function handleCreateCheckout(event: FormEvent<HTMLFormElement>) {
+    setSelectedPriceIds((current) => {
+      let changed = false;
+      const next = { ...current };
+      for (const product of data.catalog.products) {
+        const prices = supportedCatalogPrices(product);
+        if (!prices.length) continue;
+        const currentPriceId = next[product.id];
+        if (!currentPriceId || !prices.some((price) => price.id === currentPriceId)) {
+          const fallbackPrice = pickDefaultCatalogPrice(product, data.config.default_currency);
+          if (fallbackPrice) {
+            next[product.id] = fallbackPrice.id;
+            changed = true;
+          }
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [data, manualAmount, manualCurrency, manualProductName]);
+
+  async function handleManualCheckout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSubmitting(true);
+    setManualSubmitting(true);
     setError(null);
     setNotice(null);
 
@@ -69,21 +115,52 @@ export function CipherPayTestStorefrontClient() {
             "content-type": "application/json",
           },
           body: JSON.stringify({
-            product_name: productName,
-            amount: Number(amount),
-            currency,
-            size: size.trim() || undefined,
+            product_name: manualProductName,
+            amount: Number(manualAmount),
+            currency: manualCurrency,
+            size: manualSize.trim() || undefined,
           }),
         })
       );
 
       setNotice(`Created checkout ${response.invoice.invoice_id}. Hosted checkout opened in a new tab.`);
       window.open(response.invoice.checkout_url, "_blank", "noopener,noreferrer");
-      await loadDashboard();
+      await loadStorefront();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Failed to create checkout");
     } finally {
-      setSubmitting(false);
+      setManualSubmitting(false);
+    }
+  }
+
+  async function createCatalogCheckout(product: CipherPayCatalogProduct) {
+    const selectedPriceId = selectedPriceIds[product.id];
+    setCatalogSubmittingProductId(product.id);
+    setError(null);
+    setNotice(null);
+
+    try {
+      const response = await readJsonOrThrow<CheckoutResponse>(
+        await fetch("/api/v1/cipherpay/checkout", {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            product_id: product.id,
+            price_id: selectedPriceId || undefined,
+            size: (catalogVariants[product.id] || "").trim() || undefined,
+          }),
+        })
+      );
+
+      setNotice(`Created checkout ${response.invoice.invoice_id}. Hosted checkout opened in a new tab.`);
+      window.open(response.invoice.checkout_url, "_blank", "noopener,noreferrer");
+      await loadStorefront();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Failed to create catalog checkout");
+    } finally {
+      setCatalogSubmittingProductId(null);
     }
   }
 
@@ -98,7 +175,7 @@ export function CipherPayTestStorefrontClient() {
         })
       );
       setNotice("Session synced from CipherPay.");
-      await loadDashboard();
+      await loadStorefront();
     } catch (syncError) {
       setError(syncError instanceof Error ? syncError.message : "Failed to sync session");
     } finally {
@@ -106,59 +183,169 @@ export function CipherPayTestStorefrontClient() {
     }
   }
 
-  const configReady = Boolean(data?.config.has_api_key);
   const sessions = data?.sessions ?? [];
+  const catalog = data?.catalog;
+  const products = catalog?.products ?? [];
+  const manualCheckoutReady = Boolean(data?.config.has_api_key);
 
   return (
     <div className="cipherpay-page-body">
       <section className="cipherpay-section">
         <header className="cipherpay-section-header">
           <div>
-            <h2>Storefront</h2>
-            <p className="subtle-text">Create a minimal checkout, open CipherPay hosted pay, then watch the webhook and sync pipeline update the order.</p>
+            <h2>Catalog products</h2>
+            <p className="subtle-text">Loaded from your CipherPay merchant dashboard and ready to launch into hosted checkout.</p>
+          </div>
+          <div className="button-row">
+            <button className="button button-secondary button-small" onClick={() => void loadStorefront()} type="button">
+              Refresh
+            </button>
           </div>
         </header>
 
         <div className="cipherpay-callout">
-          <strong>Test flow</strong>
+          <strong>Catalog-backed checkout</strong>
           <p>
-            Save your testnet API key and webhook secret on the Admin tab, create a checkout here, then pay it from a Zcash wallet. The local session
-            status updates automatically when CipherPay calls the webhook endpoint, and you can manually sync if you need to poll the public invoice API.
+            This storefront now reads active products and prices from CipherPay. Save a CipherPay dashboard token on the{" "}
+            <Link href="/cipherpay-test/admin">Admin</Link> tab so the server can fetch your catalog, then click a price below to launch a hosted checkout.
           </p>
         </div>
 
         {loading ? <p className="subtle-text">Loading storefront…</p> : null}
         {error ? <p className="cipherpay-error-text">{error}</p> : null}
         {notice ? <p className="cipherpay-valid-text">{notice}</p> : null}
+        {!catalog?.has_dashboard_token && !loading ? (
+          <p className="subtle-text">Add a CipherPay dashboard token on the Admin tab to load your product catalog.</p>
+        ) : null}
+        {catalog?.error ? <p className="cipherpay-error-text">{catalog.error}</p> : null}
+        {!products.length && catalog?.has_dashboard_token && !catalog?.error && !loading ? (
+          <p className="subtle-text">No active one-time products were returned from CipherPay.</p>
+        ) : null}
 
-        <form className="cipherpay-form" onSubmit={handleCreateCheckout}>
+        {products.length ? (
+          <div className="cipherpay-catalog-grid">
+            {products.map((product) => {
+              const oneTimePrices = supportedCatalogPrices(product);
+              const recurringPrices = product.prices.filter((price) => price.active && price.price_type !== "one_time");
+              const selectedPrice =
+                oneTimePrices.find((price) => price.id === selectedPriceIds[product.id]) ||
+                pickDefaultCatalogPrice(product, data?.config.default_currency || null);
+
+              return (
+                <article className="cipherpay-catalog-card" key={product.id}>
+                  <div className="cipherpay-catalog-header">
+                    <div>
+                      <h3>{product.name}</h3>
+                      <p className="subtle-text">{product.description || "No description provided in CipherPay."}</p>
+                    </div>
+                    <p className="cipherpay-inline-code cipherpay-catalog-slug">{product.slug}</p>
+                  </div>
+
+                  {oneTimePrices.length ? (
+                    <>
+                      <div className="cipherpay-price-chip-row">
+                        {oneTimePrices.map((price) => (
+                          <button
+                            className={`cipherpay-price-chip${selectedPrice?.id === price.id ? " cipherpay-price-chip-active" : ""}`}
+                            key={price.id}
+                            onClick={() => setSelectedPriceIds((current) => ({ ...current, [product.id]: price.id }))}
+                            type="button"
+                          >
+                            {formatFiatAmount(price.unit_amount, price.currency)}
+                          </button>
+                        ))}
+                      </div>
+
+                      <p className="subtle-text">
+                        {selectedPrice
+                          ? `Selected ${formatFiatAmount(selectedPrice.unit_amount, selectedPrice.currency)} on CipherPay.`
+                          : "Choose a price to create a checkout."}
+                      </p>
+
+                      <label className="cipherpay-field">
+                        <span>Variant / size</span>
+                        <input
+                          className="cipherpay-input"
+                          onChange={(event) =>
+                            setCatalogVariants((current) => ({
+                              ...current,
+                              [product.id]: event.target.value,
+                            }))
+                          }
+                          placeholder="Optional"
+                          type="text"
+                          value={catalogVariants[product.id] || ""}
+                        />
+                      </label>
+
+                      <div className="button-row">
+                        <button
+                          className="button"
+                          disabled={!selectedPrice || catalogSubmittingProductId === product.id}
+                          onClick={() => void createCatalogCheckout(product)}
+                          type="button"
+                        >
+                          {catalogSubmittingProductId === product.id ? "Creating…" : "Open checkout"}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="subtle-text">No active one-time prices are available for this product yet.</p>
+                  )}
+
+                  {recurringPrices.length ? (
+                    <div className="cipherpay-catalog-note">
+                      {recurringPrices.map((price) => (
+                        <p className="subtle-text" key={price.id}>
+                          Recurring price available: {formatFiatAmount(price.unit_amount, price.currency)}{" "}
+                          {recurringPriceSummary(price) ? `(${recurringPriceSummary(price)})` : ""}.
+                        </p>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        ) : null}
+      </section>
+
+      <section className="cipherpay-section">
+        <header className="cipherpay-section-header">
+          <div>
+            <h2>Manual invoice</h2>
+            <p className="subtle-text">Fallback path for ad hoc testing when you want to create an invoice without using the CipherPay product catalog.</p>
+          </div>
+        </header>
+
+        <form className="cipherpay-form" onSubmit={handleManualCheckout}>
           <div className="cipherpay-form-grid">
             <label className="cipherpay-field">
               <span>Product</span>
-              <input className="cipherpay-input" onChange={(event) => setProductName(event.target.value)} type="text" value={productName} />
+              <input className="cipherpay-input" onChange={(event) => setManualProductName(event.target.value)} type="text" value={manualProductName} />
             </label>
 
             <label className="cipherpay-field">
               <span>Amount</span>
-              <input className="cipherpay-input" min="0.01" onChange={(event) => setAmount(event.target.value)} step="0.01" type="number" value={amount} />
+              <input className="cipherpay-input" min="0.01" onChange={(event) => setManualAmount(event.target.value)} step="0.01" type="number" value={manualAmount} />
             </label>
 
             <label className="cipherpay-field">
               <span>Currency</span>
-              <input className="cipherpay-input" maxLength={3} onChange={(event) => setCurrency(event.target.value.toUpperCase())} type="text" value={currency} />
+              <input className="cipherpay-input" maxLength={3} onChange={(event) => setManualCurrency(event.target.value.toUpperCase())} type="text" value={manualCurrency} />
             </label>
 
             <label className="cipherpay-field">
               <span>Variant / size</span>
-              <input className="cipherpay-input" onChange={(event) => setSize(event.target.value)} placeholder="Optional" type="text" value={size} />
+              <input className="cipherpay-input" onChange={(event) => setManualSize(event.target.value)} placeholder="Optional" type="text" value={manualSize} />
             </label>
           </div>
 
           <div className="button-row">
-            <button className="button" disabled={submitting || !configReady} type="submit">
-              {submitting ? "Creating…" : "Create checkout"}
+            <button className="button" disabled={manualSubmitting || !manualCheckoutReady} type="submit">
+              {manualSubmitting ? "Creating…" : "Create manual checkout"}
             </button>
-            {!configReady ? <span className="subtle-text">Add an API key on the Admin tab before creating checkouts.</span> : null}
+            {!manualCheckoutReady ? <span className="subtle-text">Add an API key on the Admin tab before creating manual invoices.</span> : null}
           </div>
         </form>
       </section>

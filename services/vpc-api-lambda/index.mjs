@@ -138,6 +138,11 @@ const {
   verifyCipherPayWebhookSignature,
 } = await importSharedModule(["../../shared/cipherpay-test/webhook.mjs", "./shared/cipherpay-test/webhook.mjs"]);
 
+const {
+  normalizeCipherPayCatalogProducts,
+  parseCipherPaySessionCookie,
+} = await importSharedModule(["../../shared/cipherpay-test/catalog.mjs", "./shared/cipherpay-test/catalog.mjs"]);
+
 const DEFAULT_INGEST_OMIT_HANDLES = readCanonicalJson([
   "../../config/xmonitor/omit-handles.json",
   "./config/xmonitor/omit-handles.json",
@@ -6596,6 +6601,8 @@ function rowToCipherPayTestConfig(row) {
     default_amount: Number(row?.default_amount ?? DEFAULT_CIPHERPAY_TEST_AMOUNT),
     has_api_key: Boolean(asString(row?.api_key)),
     api_key_preview: maskSecretPreview(row?.api_key),
+    has_dashboard_token: Boolean(asString(row?.dashboard_token)),
+    dashboard_token_preview: maskSecretPreview(row?.dashboard_token),
     has_webhook_secret: Boolean(asString(row?.webhook_secret)),
     webhook_secret_preview: maskSecretPreview(row?.webhook_secret),
     updated_by_email: asString(row?.updated_by_email) || null,
@@ -6710,6 +6717,11 @@ function parseCipherPayTestConfigBody(value) {
     if (apiKey) patch.api_key = apiKey;
   }
 
+  if (Object.prototype.hasOwnProperty.call(value, "dashboard_token")) {
+    const dashboardToken = asString(value.dashboard_token);
+    if (dashboardToken) patch.dashboard_token = dashboardToken;
+  }
+
   if (Object.prototype.hasOwnProperty.call(value, "webhook_secret")) {
     const webhookSecret = asString(value.webhook_secret);
     if (webhookSecret) patch.webhook_secret = webhookSecret;
@@ -6717,6 +6729,10 @@ function parseCipherPayTestConfigBody(value) {
 
   if (asBoolean(value.clear_api_key) === true) {
     patch.api_key = null;
+  }
+
+  if (asBoolean(value.clear_dashboard_token) === true) {
+    patch.dashboard_token = null;
   }
 
   if (asBoolean(value.clear_webhook_secret) === true) {
@@ -6731,9 +6747,29 @@ function parseCipherPayTestCheckoutBody(value) {
     return { ok: false, error: "body must be an object" };
   }
 
+  const productId = asString(value.product_id);
+  const priceId = asString(value.price_id);
+  const returnUrl = asString(value.return_url);
+  if (returnUrl && !/^https?:\/\//i.test(returnUrl)) {
+    return { ok: false, error: "return_url must be an absolute http(s) URL" };
+  }
+
+  if (productId || priceId) {
+    return {
+      ok: true,
+      data: {
+        checkout_kind: "catalog",
+        product_id: productId || null,
+        price_id: priceId || null,
+        size: asNullableString(value.size),
+        return_url: returnUrl || null,
+      },
+    };
+  }
+
   const productName = asString(value.product_name);
   if (!productName) {
-    return { ok: false, error: "product_name is required" };
+    return { ok: false, error: "product_name is required when product_id or price_id is not provided" };
   }
 
   const amount = asFiniteNumber(value.amount);
@@ -6746,14 +6782,10 @@ function parseCipherPayTestCheckoutBody(value) {
     return { ok: false, error: "currency must be a 3-letter ISO currency code" };
   }
 
-  const returnUrl = asString(value.return_url);
-  if (returnUrl && !/^https?:\/\//i.test(returnUrl)) {
-    return { ok: false, error: "return_url must be an absolute http(s) URL" };
-  }
-
   return {
     ok: true,
     data: {
+      checkout_kind: "manual",
       product_name: productName,
       size: asNullableString(value.size),
       amount: Number(amount.toFixed(2)),
@@ -6788,7 +6820,39 @@ async function fetchCipherPayTestSessionById(sessionId) {
   return result.rows[0] || null;
 }
 
-async function cipherPayApiRequest(url, { method = "GET", apiKey = null, body = null } = {}) {
+async function readCipherPayJsonPayload(response) {
+  const text = await response.text();
+  let parsed = null;
+  if (text) {
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = null;
+    }
+  }
+  return { text, parsed };
+}
+
+function cipherPayErrorMessageFromPayload(response, payload) {
+  return (
+    asString(payload?.parsed?.error) ||
+    asString(payload?.parsed?.message) ||
+    asString(payload?.text) ||
+    `CipherPay request failed (${response.status})`
+  );
+}
+
+function firstCipherPaySetCookie(headers) {
+  if (typeof headers?.getSetCookie === "function") {
+    const setCookies = headers.getSetCookie();
+    if (Array.isArray(setCookies) && setCookies.length > 0) {
+      return setCookies[0];
+    }
+  }
+  return asString(headers?.get?.("set-cookie"));
+}
+
+async function cipherPayApiRequest(url, { method = "GET", apiKey = null, body = null, headers: extraHeaders = null } = {}) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), cipherPayRequestTimeoutMs());
   const headers = {
@@ -6800,6 +6864,14 @@ async function cipherPayApiRequest(url, { method = "GET", apiKey = null, body = 
   if (apiKey) {
     headers.authorization = `Bearer ${apiKey}`;
   }
+  if (isRecord(extraHeaders)) {
+    for (const [headerName, headerValue] of Object.entries(extraHeaders)) {
+      const normalizedHeaderValue = asString(headerValue);
+      if (normalizedHeaderValue) {
+        headers[headerName] = normalizedHeaderValue;
+      }
+    }
+  }
 
   try {
     const response = await fetch(url, {
@@ -6810,27 +6882,17 @@ async function cipherPayApiRequest(url, { method = "GET", apiKey = null, body = 
       cache: "no-store",
       redirect: "manual",
     });
-
-    const text = await response.text();
-    let parsed = null;
-    if (text) {
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = null;
-      }
-    }
+    const payload = await readCipherPayJsonPayload(response);
 
     if (!response.ok) {
-      const message = asString(parsed?.error) || asString(parsed?.message) || asString(text) || `CipherPay request failed (${response.status})`;
-      throw createStatusError(response.status, message);
+      throw createStatusError(response.status, cipherPayErrorMessageFromPayload(response, payload));
     }
 
-    if (parsed == null) {
+    if (payload.parsed == null) {
       throw createStatusError(502, "CipherPay returned a non-JSON response");
     }
 
-    return parsed;
+    return payload.parsed;
   } catch (error) {
     if (error?.name === "AbortError") {
       throw createStatusError(504, `CipherPay request timed out after ${cipherPayRequestTimeoutMs()}ms`);
@@ -6838,6 +6900,88 @@ async function cipherPayApiRequest(url, { method = "GET", apiKey = null, body = 
     throw error;
   } finally {
     clearTimeout(timeoutId);
+  }
+}
+
+async function createCipherPayDashboardSessionCookie(apiBaseUrl, dashboardToken) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), cipherPayRequestTimeoutMs());
+  try {
+    const response = await fetch(`${trimTrailingSlash(apiBaseUrl)}/api/auth/session`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ token: dashboardToken }),
+      signal: controller.signal,
+      cache: "no-store",
+      redirect: "manual",
+    });
+    const payload = await readCipherPayJsonPayload(response);
+
+    if (!response.ok) {
+      throw createStatusError(response.status, cipherPayErrorMessageFromPayload(response, payload));
+    }
+
+    const sessionCookie = parseCipherPaySessionCookie(firstCipherPaySetCookie(response.headers));
+    if (!sessionCookie) {
+      throw createStatusError(502, "CipherPay did not return a dashboard session cookie");
+    }
+    return sessionCookie;
+  } catch (error) {
+    if (error?.name === "AbortError") {
+      throw createStatusError(504, `CipherPay request timed out after ${cipherPayRequestTimeoutMs()}ms`);
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+function buildCipherPayHostedCheckoutUrl(config, invoiceId, returnUrl = null) {
+  const checkoutUrl = new URL(
+    `${trimTrailingSlash(config.checkout_base_url) || defaultCipherPayCheckoutBaseUrl(config.network)}/pay/${encodeURIComponent(invoiceId)}`
+  );
+  if (returnUrl) {
+    checkoutUrl.searchParams.set("return_url", returnUrl);
+  }
+  return checkoutUrl.toString();
+}
+
+async function loadCipherPayCatalogState(configRow) {
+  const dashboardToken = asString(configRow?.dashboard_token);
+  if (!dashboardToken) {
+    return {
+      has_dashboard_token: false,
+      loaded_at: null,
+      error: null,
+      products: [],
+    };
+  }
+
+  const config = rowToCipherPayTestConfig(configRow);
+  const loadedAt = nowIso();
+  try {
+    const sessionCookie = await createCipherPayDashboardSessionCookie(config.api_base_url, dashboardToken);
+    const products = await cipherPayApiRequest(`${config.api_base_url}/api/products`, {
+      headers: {
+        cookie: sessionCookie,
+      },
+    });
+    return {
+      has_dashboard_token: true,
+      loaded_at: loadedAt,
+      error: null,
+      products: normalizeCipherPayCatalogProducts(products),
+    };
+  } catch (error) {
+    return {
+      has_dashboard_token: true,
+      loaded_at: loadedAt,
+      error: errorMessage(error) || "failed to load CipherPay product catalog",
+      products: [],
+    };
   }
 }
 
@@ -6897,6 +7041,29 @@ async function listCipherPayTestDashboard(viewer) {
   };
 }
 
+async function listCipherPayTestStorefront(viewer) {
+  ensureCipherPayTestPermission(viewer);
+  const db = getPool();
+  const [configRow, sessionsResult] = await Promise.all([
+    fetchCipherPayTestConfigRow(),
+    db.query(
+      `
+        SELECT *
+        FROM cipherpay_test_sessions
+        ORDER BY created_at DESC
+        LIMIT 20
+      `
+    ),
+  ]);
+
+  return {
+    viewer_email: viewer.email,
+    config: rowToCipherPayTestConfig(configRow),
+    sessions: sessionsResult.rows.map(rowToCipherPayTestSession),
+    catalog: await loadCipherPayCatalogState(configRow),
+  };
+}
+
 async function upsertCipherPayTestConfig(viewer, patch) {
   ensureCipherPayTestPermission(viewer);
   const currentRow = await fetchCipherPayTestConfigRow();
@@ -6914,6 +7081,9 @@ async function upsertCipherPayTestConfig(viewer, patch) {
   const apiKey = Object.prototype.hasOwnProperty.call(patch, "api_key")
     ? patch.api_key
     : asString(currentRow?.api_key) || null;
+  const dashboardToken = Object.prototype.hasOwnProperty.call(patch, "dashboard_token")
+    ? patch.dashboard_token
+    : asString(currentRow?.dashboard_token) || null;
   const webhookSecret = Object.prototype.hasOwnProperty.call(patch, "webhook_secret")
     ? patch.webhook_secret
     : asString(currentRow?.webhook_secret) || null;
@@ -6926,6 +7096,7 @@ async function upsertCipherPayTestConfig(viewer, patch) {
         api_base_url,
         checkout_base_url,
         api_key,
+        dashboard_token,
         webhook_secret,
         default_currency,
         default_product_name,
@@ -6942,7 +7113,8 @@ async function upsertCipherPayTestConfig(viewer, patch) {
         $6,
         $7,
         $8,
-        $9::citext
+        $9,
+        $10::citext
       )
       ON CONFLICT (config_key) DO UPDATE
       SET
@@ -6950,6 +7122,7 @@ async function upsertCipherPayTestConfig(viewer, patch) {
         api_base_url = EXCLUDED.api_base_url,
         checkout_base_url = EXCLUDED.checkout_base_url,
         api_key = EXCLUDED.api_key,
+        dashboard_token = EXCLUDED.dashboard_token,
         webhook_secret = EXCLUDED.webhook_secret,
         default_currency = EXCLUDED.default_currency,
         default_product_name = EXCLUDED.default_product_name,
@@ -6963,6 +7136,7 @@ async function upsertCipherPayTestConfig(viewer, patch) {
       apiBaseUrl,
       checkoutBaseUrl,
       apiKey,
+      dashboardToken,
       webhookSecret,
       defaultCurrency,
       defaultProductName,
@@ -6981,6 +7155,128 @@ async function createCipherPayTestCheckout(viewer, payload) {
     throw createStatusError(400, "CipherPay Test config has not been saved yet");
   }
   const config = rowToCipherPayTestConfig(configRow);
+  const upsertSessionSnapshot = async (snapshot) => {
+    const result = await getPool().query(
+      `
+        INSERT INTO cipherpay_test_sessions (
+          created_by_email,
+          network,
+          product_name,
+          size,
+          amount,
+          currency,
+          checkout_url,
+          cipherpay_invoice_id,
+          cipherpay_memo_code,
+          cipherpay_payment_address,
+          cipherpay_zcash_uri,
+          cipherpay_price_zec,
+          cipherpay_expires_at,
+          status,
+          synced_at
+        )
+        VALUES (
+          $1::citext,
+          $2,
+          $3,
+          $4,
+          $5,
+          $6,
+          $7,
+          $8,
+          $9,
+          $10,
+          $11,
+          $12,
+          $13::timestamptz,
+          $14,
+          $15::timestamptz
+        )
+        ON CONFLICT (cipherpay_invoice_id) DO UPDATE
+        SET
+          product_name = COALESCE(EXCLUDED.product_name, cipherpay_test_sessions.product_name),
+          size = COALESCE(EXCLUDED.size, cipherpay_test_sessions.size),
+          amount = COALESCE(EXCLUDED.amount, cipherpay_test_sessions.amount),
+          currency = COALESCE(EXCLUDED.currency, cipherpay_test_sessions.currency),
+          checkout_url = EXCLUDED.checkout_url,
+          cipherpay_memo_code = COALESCE(EXCLUDED.cipherpay_memo_code, cipherpay_test_sessions.cipherpay_memo_code),
+          cipherpay_payment_address = COALESCE(EXCLUDED.cipherpay_payment_address, cipherpay_test_sessions.cipherpay_payment_address),
+          cipherpay_zcash_uri = COALESCE(EXCLUDED.cipherpay_zcash_uri, cipherpay_test_sessions.cipherpay_zcash_uri),
+          cipherpay_price_zec = COALESCE(EXCLUDED.cipherpay_price_zec, cipherpay_test_sessions.cipherpay_price_zec),
+          cipherpay_expires_at = COALESCE(EXCLUDED.cipherpay_expires_at, cipherpay_test_sessions.cipherpay_expires_at),
+          status = EXCLUDED.status,
+          updated_at = now(),
+          synced_at = EXCLUDED.synced_at
+        RETURNING *
+      `,
+      [
+        viewer.email,
+        config.network,
+        snapshot.product_name || null,
+        snapshot.size || null,
+        snapshot.amount ?? null,
+        snapshot.currency || null,
+        snapshot.checkout_url,
+        snapshot.cipherpay_invoice_id,
+        snapshot.cipherpay_memo_code || null,
+        snapshot.cipherpay_payment_address || null,
+        snapshot.cipherpay_zcash_uri || null,
+        snapshot.cipherpay_price_zec ?? null,
+        snapshot.cipherpay_expires_at || null,
+        snapshot.status || "pending",
+        snapshot.synced_at || nowIso(),
+      ]
+    );
+    return rowToCipherPayTestSession(result.rows[0]);
+  };
+
+  if (payload.checkout_kind === "catalog") {
+    const checkout = await cipherPayApiRequest(`${config.api_base_url}/api/checkout`, {
+      method: "POST",
+      body: {
+        ...(payload.product_id ? { product_id: payload.product_id } : {}),
+        ...(payload.price_id ? { price_id: payload.price_id } : {}),
+        ...(payload.size ? { variant: payload.size } : {}),
+      },
+    });
+
+    const invoiceId = asString(checkout.invoice_id);
+    if (!invoiceId) {
+      throw createStatusError(502, "CipherPay did not return an invoice_id");
+    }
+
+    const invoice = await cipherPayApiRequest(`${config.api_base_url}/api/invoices/${encodeURIComponent(invoiceId)}`);
+    const checkoutUrl = buildCipherPayHostedCheckoutUrl(config, invoiceId, payload.return_url);
+    const session = await upsertSessionSnapshot({
+      product_name: asString(invoice.product_name) || null,
+      size: asString(invoice.size) || payload.size || null,
+      amount: asFiniteNumber(invoice.amount) ?? asFiniteNumber(checkout.amount),
+      currency: asString(invoice.currency) || asString(checkout.currency) || null,
+      checkout_url: checkoutUrl,
+      cipherpay_invoice_id: invoiceId,
+      cipherpay_memo_code: asString(checkout.memo_code) || null,
+      cipherpay_payment_address: asString(invoice.payment_address) || asString(checkout.payment_address) || null,
+      cipherpay_zcash_uri: asString(invoice.zcash_uri) || asString(checkout.zcash_uri) || null,
+      cipherpay_price_zec: asFiniteNumber(invoice.price_zec) ?? asFiniteNumber(checkout.price_zec),
+      cipherpay_expires_at: asIsoTimestamp(invoice.expires_at) || asIsoTimestamp(checkout.expires_at) || null,
+      status: normalizeCipherPaySessionStatus(asString(invoice.status) || "pending"),
+      synced_at: nowIso(),
+    });
+
+    return {
+      session,
+      invoice: {
+        invoice_id: invoiceId,
+        memo_code: asString(checkout.memo_code) || null,
+        payment_address: asString(invoice.payment_address) || asString(checkout.payment_address) || null,
+        zcash_uri: asString(invoice.zcash_uri) || asString(checkout.zcash_uri) || null,
+        price_zec: asFiniteNumber(invoice.price_zec) ?? asFiniteNumber(checkout.price_zec),
+        expires_at: asIsoTimestamp(invoice.expires_at) || asIsoTimestamp(checkout.expires_at) || null,
+        checkout_url: checkoutUrl,
+      },
+    };
+  }
+
   const apiKey = asString(configRow.api_key);
   if (!apiKey) {
     throw createStatusError(400, "CipherPay API key is not configured");
@@ -7002,78 +7298,25 @@ async function createCipherPayTestCheckout(viewer, payload) {
     throw createStatusError(502, "CipherPay did not return an invoice_id");
   }
 
-  const checkoutUrl = new URL(`${trimTrailingSlash(config.checkout_base_url) || defaultCipherPayCheckoutBaseUrl(config.network)}/pay/${encodeURIComponent(invoiceId)}`);
-  if (payload.return_url) {
-    checkoutUrl.searchParams.set("return_url", payload.return_url);
-  }
-
-  const result = await getPool().query(
-    `
-      INSERT INTO cipherpay_test_sessions (
-        created_by_email,
-        network,
-        product_name,
-        size,
-        amount,
-        currency,
-        checkout_url,
-        cipherpay_invoice_id,
-        cipherpay_memo_code,
-        cipherpay_payment_address,
-        cipherpay_zcash_uri,
-        cipherpay_price_zec,
-        cipherpay_expires_at,
-        status,
-        synced_at
-      )
-      VALUES (
-        $1::citext,
-        $2,
-        $3,
-        $4,
-        $5,
-        $6,
-        $7,
-        $8,
-        $9,
-        $10,
-        $11,
-        $12,
-        $13::timestamptz,
-        'pending',
-        now()
-      )
-      ON CONFLICT (cipherpay_invoice_id) DO UPDATE
-      SET
-        checkout_url = EXCLUDED.checkout_url,
-        cipherpay_memo_code = EXCLUDED.cipherpay_memo_code,
-        cipherpay_payment_address = EXCLUDED.cipherpay_payment_address,
-        cipherpay_zcash_uri = EXCLUDED.cipherpay_zcash_uri,
-        cipherpay_price_zec = EXCLUDED.cipherpay_price_zec,
-        cipherpay_expires_at = EXCLUDED.cipherpay_expires_at,
-        updated_at = now(),
-        synced_at = now()
-      RETURNING *
-    `,
-    [
-      viewer.email,
-      config.network,
-      payload.product_name,
-      payload.size,
-      payload.amount,
-      payload.currency,
-      checkoutUrl.toString(),
-      invoiceId,
-      asString(invoice.memo_code) || null,
-      asString(invoice.payment_address) || null,
-      asString(invoice.zcash_uri) || null,
-      asFiniteNumber(invoice.price_zec),
-      asIsoTimestamp(invoice.expires_at) || null,
-    ]
-  );
+  const checkoutUrl = buildCipherPayHostedCheckoutUrl(config, invoiceId, payload.return_url);
+  const session = await upsertSessionSnapshot({
+    product_name: payload.product_name,
+    size: payload.size,
+    amount: payload.amount,
+    currency: payload.currency,
+    checkout_url: checkoutUrl,
+    cipherpay_invoice_id: invoiceId,
+    cipherpay_memo_code: asString(invoice.memo_code) || null,
+    cipherpay_payment_address: asString(invoice.payment_address) || null,
+    cipherpay_zcash_uri: asString(invoice.zcash_uri) || null,
+    cipherpay_price_zec: asFiniteNumber(invoice.price_zec),
+    cipherpay_expires_at: asIsoTimestamp(invoice.expires_at) || null,
+    status: "pending",
+    synced_at: nowIso(),
+  });
 
   return {
-    session: rowToCipherPayTestSession(result.rows[0]),
+    session,
     invoice: {
       invoice_id: invoiceId,
       memo_code: asString(invoice.memo_code) || null,
@@ -7081,7 +7324,7 @@ async function createCipherPayTestCheckout(viewer, payload) {
       zcash_uri: asString(invoice.zcash_uri) || null,
       price_zec: asFiniteNumber(invoice.price_zec),
       expires_at: asIsoTimestamp(invoice.expires_at) || null,
-      checkout_url: checkoutUrl.toString(),
+      checkout_url: checkoutUrl,
     },
   };
 }
@@ -7269,6 +7512,24 @@ async function handleCipherPayTestDashboard(event) {
     return jsonOk(dashboard);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to load CipherPay Test dashboard", statusCodeForError(error, 503));
+  }
+}
+
+async function handleCipherPayTestStorefront(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  try {
+    const storefront = await listCipherPayTestStorefront(viewer.viewer);
+    return jsonOk(storefront);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to load CipherPay Test storefront", statusCodeForError(error, 503));
   }
 }
 
@@ -7890,6 +8151,10 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/cipherpay/dashboard") {
     return handleCipherPayTestDashboard(event);
+  }
+
+  if (method === "GET" && path === "/v1/cipherpay/storefront") {
+    return handleCipherPayTestStorefront(event);
   }
 
   if (method === "GET" && path === "/v1/cipherpay/config") {

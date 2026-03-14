@@ -23,6 +23,7 @@ export function CipherPayTestAdminClient() {
   const [defaultAmount, setDefaultAmount] = useState("1.00");
   const [defaultCurrency, setDefaultCurrency] = useState("USD");
   const [apiKey, setApiKey] = useState("");
+  const [dashboardToken, setDashboardToken] = useState("");
   const [webhookSecret, setWebhookSecret] = useState("");
   const [origin, setOrigin] = useState("");
   const [loading, setLoading] = useState(true);
@@ -71,6 +72,7 @@ export function CipherPayTestAdminClient() {
         default_currency: defaultCurrency.toUpperCase(),
       };
       if (apiKey.trim()) payload.api_key = apiKey.trim();
+      if (dashboardToken.trim()) payload.dashboard_token = dashboardToken.trim();
       if (webhookSecret.trim()) payload.webhook_secret = webhookSecret.trim();
 
       const response = await readJsonOrThrow<ConfigResponse>(
@@ -85,6 +87,7 @@ export function CipherPayTestAdminClient() {
 
       setConfig(response.config);
       setApiKey("");
+      setDashboardToken("");
       setWebhookSecret("");
       setNotice("CipherPay Test config saved.");
     } catch (saveError) {
@@ -102,7 +105,7 @@ export function CipherPayTestAdminClient() {
         <header className="cipherpay-section-header">
           <div>
             <h2>Admin</h2>
-            <p className="subtle-text">Store the test harness settings CipherPay needs: environment, API base URLs, API key, and webhook secret.</p>
+            <p className="subtle-text">Store the test harness settings CipherPay needs: environment, API base URLs, API key, dashboard token, and webhook secret.</p>
           </div>
         </header>
 
@@ -122,6 +125,7 @@ export function CipherPayTestAdminClient() {
           <article className="cipherpay-detail-card">
             <h3>Stored secret previews</h3>
             <p className="subtle-text">API key: {config?.api_key_preview || "not stored yet"}</p>
+            <p className="subtle-text">Dashboard token: {config?.dashboard_token_preview || "not stored yet"}</p>
             <p className="subtle-text">Webhook secret: {config?.webhook_secret_preview || "not stored yet"}</p>
             <p className="subtle-text">
               Last updated {config?.updated_at ? <LocalDateTime iso={config.updated_at} /> : "never"} by {config?.updated_by_email || "n/a"}.
@@ -140,7 +144,10 @@ export function CipherPayTestAdminClient() {
         <header className="cipherpay-section-header">
           <div>
             <h2>Configuration</h2>
-            <p className="subtle-text">Leave secret fields blank to keep the currently stored values. Switching networks will load the documented default API and checkout URLs.</p>
+            <p className="subtle-text">
+              Leave secret fields blank to keep the currently stored values. Switching networks will load the documented default API and checkout URLs.
+              The dashboard token is used server-side to sign into CipherPay and fetch your product catalog for the storefront.
+            </p>
           </div>
         </header>
 
@@ -209,6 +216,17 @@ export function CipherPayTestAdminClient() {
                 placeholder={config?.has_api_key ? "Stored server-side. Paste a new key to replace it." : "cpay_sk_..."}
                 type="password"
                 value={apiKey}
+              />
+            </label>
+
+            <label className="cipherpay-field">
+              <span>Dashboard token</span>
+              <input
+                className="cipherpay-input"
+                onChange={(event) => setDashboardToken(event.target.value)}
+                placeholder={config?.has_dashboard_token ? "Stored server-side. Paste a new token to replace it." : "Paste a CipherPay dashboard token"}
+                type="password"
+                value={dashboardToken}
               />
             </label>
 

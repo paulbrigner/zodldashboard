@@ -19,6 +19,8 @@ export type CipherPayTestConfig = {
   default_amount: number;
   has_api_key: boolean;
   api_key_preview: string | null;
+  has_dashboard_token: boolean;
+  dashboard_token_preview: string | null;
   has_webhook_secret: boolean;
   webhook_secret_preview: string | null;
   updated_by_email: string | null;
@@ -68,6 +70,30 @@ export type CipherPayWebhookEvent = {
   received_at: string | null;
 };
 
+export type CipherPayCatalogPrice = {
+  id: string;
+  product_id: string;
+  currency: string;
+  unit_amount: number;
+  price_type: string;
+  billing_interval: string | null;
+  interval_count: number | null;
+  active: boolean;
+  created_at: string | null;
+};
+
+export type CipherPayCatalogProduct = {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  default_price_id: string | null;
+  metadata: Record<string, unknown> | null;
+  active: boolean;
+  created_at: string | null;
+  prices: CipherPayCatalogPrice[];
+};
+
 export type CipherPayDashboardData = {
   viewer_email: string;
   config: CipherPayTestConfig;
@@ -81,4 +107,16 @@ export type CipherPayDashboardData = {
   };
   sessions: CipherPayTestSession[];
   recent_webhooks: CipherPayWebhookEvent[];
+};
+
+export type CipherPayStorefrontData = {
+  viewer_email: string;
+  config: CipherPayTestConfig;
+  sessions: CipherPayTestSession[];
+  catalog: {
+    has_dashboard_token: boolean;
+    loaded_at: string | null;
+    error: string | null;
+    products: CipherPayCatalogProduct[];
+  };
 };

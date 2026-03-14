@@ -129,6 +129,7 @@ export function CipherPayTestOverviewClient() {
               <article className="cipherpay-detail-card">
                 <h3>Stored secrets</h3>
                 <p className="subtle-text">API key: {config?.api_key_preview || "not saved yet"}</p>
+                <p className="subtle-text">Dashboard token: {config?.dashboard_token_preview || "not saved yet"}</p>
                 <p className="subtle-text">Webhook secret: {config?.webhook_secret_preview || "not saved yet"}</p>
                 <p className="subtle-text">
                   Last updated {config?.updated_at ? <LocalDateTime iso={config.updated_at} /> : "never"} by {config?.updated_by_email || "n/a"}.
