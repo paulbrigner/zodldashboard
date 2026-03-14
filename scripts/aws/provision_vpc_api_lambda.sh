@@ -551,6 +551,7 @@ cp "$ROOT_DIR/shared/xmonitor/ingest-policy.mjs" "$BUILD_DIR/shared/xmonitor/ing
 cp "$ROOT_DIR/shared/xmonitor/summary-taxonomy.mjs" "$BUILD_DIR/shared/xmonitor/summary-taxonomy.mjs"
 cp "$ROOT_DIR/shared/xmonitor/summary-trends.mjs" "$BUILD_DIR/shared/xmonitor/summary-trends.mjs"
 cp "$ROOT_DIR/shared/xmonitor/text-filter.mjs" "$BUILD_DIR/shared/xmonitor/text-filter.mjs"
+cp "$ROOT_DIR/shared/cipherpay-test/catalog.mjs" "$BUILD_DIR/shared/cipherpay-test/catalog.mjs"
 cp "$ROOT_DIR/shared/cipherpay-test/webhook.mjs" "$BUILD_DIR/shared/cipherpay-test/webhook.mjs"
 cp "$ROOT_DIR/config/xmonitor/omit-handles.json" "$BUILD_DIR/config/xmonitor/omit-handles.json"
 cp "$ROOT_DIR"/db/migrations/*.sql "$BUILD_DIR/db/migrations/"
