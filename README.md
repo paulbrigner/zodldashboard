@@ -17,6 +17,7 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
   - X Monitor at `/x-monitor`
   - Regulatory Risk at `/regulatory-risk`
   - App Stores workflows at `/app-stores`
+  - CipherPay Test at `/cipherpay-test`
 - X Monitor features:
   - keyword search as the default mode,
   - semantic search,
@@ -192,6 +193,7 @@ See [.env.example](.env.example) for the full current env template.
 - `/`
 - `/signin`
 - `/x-monitor`
+- `/cipherpay-test`
 - `/posts/{statusId}`
 - `/regulatory-risk`
 - `/app-stores`
@@ -203,6 +205,7 @@ See [.env.example](.env.example) for the full current env template.
 - `GET /api/v1/posts/{statusId}`
 - `GET /api/v1/trends`
 - `GET /api/v1/window-summaries/latest`
+- `POST /api/v1/cipherpay/webhook`
 - `POST /api/v1/query/semantic`
 - `POST /api/v1/query/compose`
 - `POST /api/v1/query/compose/jobs`
@@ -214,6 +217,11 @@ See [.env.example](.env.example) for the full current env template.
 - `POST /api/v1/ingest/embeddings/batch`
 - `POST /api/v1/ingest/window-summaries/batch`
 - `POST /api/v1/ingest/runs`
+- `GET /api/v1/cipherpay/dashboard`
+- `GET /api/v1/cipherpay/config`
+- `PUT /api/v1/cipherpay/config`
+- `POST /api/v1/cipherpay/checkout`
+- `POST /api/v1/cipherpay/sessions/{sessionId}/sync`
 
 ## NPM Scripts
 

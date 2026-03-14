@@ -2279,6 +2279,235 @@ p {
   gap: 0.8rem;
 }
 
+.cipherpay-shell {
+  width: min(1200px, 100%);
+}
+
+.cipherpay-source-text {
+  margin-top: 0.35rem;
+}
+
+.cipherpay-nav {
+  margin-top: 1.05rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.cipherpay-nav-link {
+  min-width: 148px;
+}
+
+.cipherpay-nav-link-active {
+  border-color: #1f7f63;
+  background: #daf5ec;
+  color: #155c48;
+}
+
+.cipherpay-content {
+  margin-top: 1.15rem;
+}
+
+.cipherpay-page-body {
+  display: grid;
+  gap: 1.2rem;
+}
+
+.cipherpay-section {
+  border: 1px solid var(--border);
+  border-radius: 0.95rem;
+  background: #ffffff;
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.88rem;
+}
+
+.cipherpay-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  flex-wrap: wrap;
+}
+
+.cipherpay-section-header h2,
+.cipherpay-section h3 {
+  margin: 0;
+}
+
+.cipherpay-kpi-grid,
+.cipherpay-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+}
+
+.cipherpay-kpi-card,
+.cipherpay-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: var(--surface-alt);
+  padding: 0.8rem;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.cipherpay-kpi-card p,
+.cipherpay-detail-card p,
+.cipherpay-detail-card h3 {
+  margin: 0;
+}
+
+.cipherpay-kpi-label {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #2d7b64;
+  font-weight: 700;
+}
+
+.cipherpay-kpi-value {
+  font-size: 1.32rem;
+  font-weight: 700;
+  color: #145743;
+}
+
+.cipherpay-kpi-detail {
+  font-size: 0.88rem;
+}
+
+.cipherpay-table-wrap {
+  overflow-x: auto;
+}
+
+.cipherpay-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.cipherpay-table th,
+.cipherpay-table td {
+  border-bottom: 1px solid #d8e4fb;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.58rem;
+}
+
+.cipherpay-table th {
+  font-size: 0.73rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #2d7b64;
+}
+
+.cipherpay-table-note {
+  margin-top: 0.28rem;
+  font-size: 0.82rem;
+}
+
+.cipherpay-form {
+  display: grid;
+  gap: 0.95rem;
+}
+
+.cipherpay-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.8rem;
+}
+
+.cipherpay-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cipherpay-field span {
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #2d7b64;
+  font-weight: 700;
+}
+
+.cipherpay-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.58rem;
+  padding: 0.58rem 0.65rem;
+  font-size: 0.95rem;
+  background: #ffffff;
+  color: var(--text-primary);
+}
+
+.cipherpay-inline-code,
+.cipherpay-mono-cell {
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+  font-size: 0.84rem;
+  word-break: break-word;
+}
+
+.cipherpay-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: #edf3ff;
+  color: #274f9c;
+  padding: 0.24rem 0.58rem;
+  font-size: 0.76rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+}
+
+.cipherpay-status-confirmed {
+  border-color: #b7e3d4;
+  background: #e8faf3;
+  color: #136448;
+}
+
+.cipherpay-status-detected {
+  border-color: #b7d8f6;
+  background: #eaf4ff;
+  color: #1d5d98;
+}
+
+.cipherpay-status-pending {
+  border-color: #ead7aa;
+  background: #fff8e8;
+  color: #8c5e0f;
+}
+
+.cipherpay-status-expired {
+  border-color: #edcad3;
+  background: #fff0f4;
+  color: #8b2040;
+}
+
+.cipherpay-callout {
+  border: 1px solid #cfe7df;
+  border-radius: 0.85rem;
+  background: #f3fcf8;
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cipherpay-callout p,
+.cipherpay-callout strong {
+  margin: 0;
+}
+
+.cipherpay-valid-text {
+  color: #116447;
+}
+
+.cipherpay-error-text {
+  color: #9e1835;
+}
+
 @media (max-width: 720px) {
   .page {
     padding: 1rem;
@@ -2333,6 +2562,11 @@ p {
     min-width: 0;
   }
 
+  .cipherpay-nav-link {
+    width: calc(50% - 0.3rem);
+    min-width: 0;
+  }
+
   .regulatory-two-column,
   .regulatory-kanban,
   .appstores-two-column {
@@ -2342,7 +2576,9 @@ p {
   .regulatory-table th,
   .regulatory-table td,
   .appstores-table th,
-  .appstores-table td {
+  .appstores-table td,
+  .cipherpay-table th,
+  .cipherpay-table td {
     padding: 0.48rem;
     font-size: 0.84rem;
   }

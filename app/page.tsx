@@ -34,11 +34,17 @@ const dashboards: DashboardCard[] = [
     workspaceOnly: true,
   },
   {
+    id: "cipherpay-test",
+    name: "CipherPay Test",
+    description: "Testnet-first CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
+    href: "/cipherpay-test",
+    workspaceOnly: true,
+  },
+  {
     id: "placeholder",
     name: "Dashboard Placeholder",
     description: "Reserved for a future dashboard.",
   },
-
 ];
 
 export default async function HomePage() {
