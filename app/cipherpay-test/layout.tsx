@@ -30,7 +30,7 @@ export default async function CipherPayTestLayout({
             <h1>CipherPay Test Dashboard</h1>
             <p className="subtle-text">{identityText}</p>
             <p className="subtle-text cipherpay-source-text">
-              Testnet-first admin, webhook, and checkout harness backed by the same AWS-hosted API stack as the X dashboard.
+              Admin, webhook, and checkout harness backed by the same AWS-hosted API stack as the X dashboard.
             </p>
           </div>
           <div className="button-row">
