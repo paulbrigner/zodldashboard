@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
-import Link from "next/link";
 import type {
   CipherPayCatalogPrice,
   CipherPayCatalogProduct,
@@ -202,14 +201,6 @@ export function CipherPayTestStorefrontClient() {
             </button>
           </div>
         </header>
-
-        <div className="cipherpay-callout">
-          <strong>Catalog-backed checkout</strong>
-          <p>
-            This storefront now reads active products and prices from CipherPay. Save a CipherPay dashboard token on the{" "}
-            <Link href="/cipherpay-test/admin">Admin</Link> tab so the server can fetch your catalog, then click a price below to launch a hosted checkout.
-          </p>
-        </div>
 
         {loading ? <p className="subtle-text">Loading storefront…</p> : null}
         {error ? <p className="cipherpay-error-text">{error}</p> : null}
