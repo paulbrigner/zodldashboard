@@ -730,6 +730,13 @@ function asFiniteFloatValue(value) {
 }
 
 function asIsoTimestamp(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? undefined : value.toISOString();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString();
+  }
   const text = asString(value);
   if (!text) return undefined;
   const parsed = new Date(text);

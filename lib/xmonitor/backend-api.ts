@@ -1,4 +1,14 @@
 const DEFAULT_PROXY_TIMEOUT_MS = 15000;
+const PROXY_REQUEST_HEADER_NAMES = [
+  "content-type",
+  "accept",
+  "authorization",
+  "x-api-key",
+  "x-cipherpay-signature",
+  "x-cipherpay-timestamp",
+  "user-agent",
+  "x-forwarded-for",
+];
 
 function trimBaseUrl(value: string | undefined): string | null {
   if (!value) return null;
@@ -39,14 +49,10 @@ export async function maybeProxyApiRequest(request: Request): Promise<Response |
   const targetUrl = new URL(`${targetPath}${sourceUrl.search}`, `${baseUrl}/`);
 
   const requestHeaders = new Headers();
-  const contentType = request.headers.get("content-type");
-  if (contentType) requestHeaders.set("content-type", contentType);
-  const accept = request.headers.get("accept");
-  if (accept) requestHeaders.set("accept", accept);
-  const authorization = request.headers.get("authorization");
-  if (authorization) requestHeaders.set("authorization", authorization);
-  const apiKey = request.headers.get("x-api-key");
-  if (apiKey) requestHeaders.set("x-api-key", apiKey);
+  for (const headerName of PROXY_REQUEST_HEADER_NAMES) {
+    const headerValue = request.headers.get(headerName);
+    if (headerValue) requestHeaders.set(headerName, headerValue);
+  }
 
   const method = request.method.toUpperCase();
   const init: RequestInit = {
