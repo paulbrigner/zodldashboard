@@ -45,7 +45,7 @@ Time/day scheduling extension: `db/migrations/010_shared_and_time_based_email_sc
     - `schedule_kind`
     - `schedule_days_json`
     - `schedule_time_local`
-    - legacy-compatible `schedule_interval_minutes`
+    - `schedule_interval_minutes`
 
 - `scheduled_email_runs`
   - one execution row per scheduled run

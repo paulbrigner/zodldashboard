@@ -1,6 +1,6 @@
 # X Monitor Capture Pipeline and Tuning (AWS X API)
 
-Last updated: 2026-03-02 (America/New_York)
+Last updated: 2026-03-14 (America/New_York)
 
 ## Purpose
 
@@ -29,14 +29,15 @@ This document describes the active capture/ingest pipeline, quality gates, and t
 3. Collector fetches and normalizes X posts.
 4. Collector applies gates:
    - language allowlist
-   - discovery-noise rejection
    - omit handles
-   - significance scoring
+   - required base-term relevance for discovery and term-constrained priority families
+   - empty or URL-only/media-stub rejection
 5. Collector ingests:
    - posts (`/ingest/posts/batch`)
    - embeddings (`/ingest/embeddings/batch`, when enabled)
    - run telemetry (`/ingest/runs`)
 6. Discovery collector also computes and ingests rolling summaries (`/ingest/window-summaries/batch`).
+7. Async significance classification runs after ingest and updates `classification_status`, `is_significant`, and related reason/confidence fields.
 
 ## Capture model
 
@@ -76,13 +77,6 @@ Operational guidance:
 - Controlled by `XMONITOR_INGEST_OMIT_HANDLES`
 - Intended to suppress persistent noisy keyword/discovery accounts
 - Watchlist-tier posts are not removed by omit-handle filtering
-
-### Discovery noise gate
-
-Discovery mode rejects common spam/signal patterns, including:
-- "trading signals" style promo text
-- high-density cashtag/hashtag blasts
-- TP/accuracy/VIP/Telegram signal patterns
 
 Rejected posts are limited to collector-side capture gates:
 - omit-list handles
@@ -149,12 +143,3 @@ aws --profile zodldashboard --region us-east-1 lambda invoke \
   --payload '{"source":"manual","mode":"priority"}' \
   /tmp/xmon-priority.json && cat /tmp/xmon-priority.json
 ```
-
-## Legacy local capture notes
-
-The previous local OpenClaw browser-snapshot capture path is no longer the active production ingest path.
-
-If local rollback is required temporarily:
-- disable AWS collector rules first,
-- ensure only one writer path is active per mode,
-- treat local launchd runtime as emergency fallback, not steady state.

@@ -1,6 +1,6 @@
-# XMonitor AWS Operations Runbook (Current)
+# XMonitor AWS Operations Runbook
 
-_Last updated: 2026-03-02 (ET)_
+_Last updated: 2026-03-14 (ET)_
 
 This runbook describes the active production architecture and operational controls.
 
@@ -11,18 +11,17 @@ Primary write path (AWS-only):
    - `xmonitor-xapi-priority-collector` (`rate(15 minutes)`)
    - `xmonitor-xapi-discovery-collector` (`rate(30 minutes)`)
 2. Collector Lambda fetches X posts from X API.
-3. Collector applies normalization, language/noise gates, omit-handle rules, and significance scoring.
+3. Collector applies normalization and active capture gates (language allowlist, omit handles, required base-term relevance, and empty/URL-only stub rejection).
 4. Collector ingests to hosted API (`/api/v1/ingest/*`) using shared-secret auth.
 5. Hosted API proxies to VPC API Lambda (`/v1/*`) and writes to RDS PostgreSQL.
-6. Discovery collector also generates/ingests `rolling_2h` + `rolling_12h` summaries (aligned windows, every 2 hours UTC).
-7. Email scheduler Lambda dispatches due scheduled-email jobs to SQS; compose worker executes runs and sends via SES.
+6. Async significance classification runs after ingest and updates significance fields in PostgreSQL.
+7. Discovery collector also generates/ingests `rolling_2h` + `rolling_12h` summaries (aligned windows, every 2 hours UTC).
+8. Email scheduler Lambda dispatches due scheduled-email jobs to SQS; compose worker executes runs and sends via SES.
 
 Read path:
 1. Browser requests Amplify-hosted Next.js app.
 2. App reads via `/api/v1/*` (or direct backend base URL when configured).
 3. Backend API reads RDS and returns feed/detail/summary/query responses.
-
-Local OpenClaw launchd collectors are fallback-only and are not part of normal production ingestion.
 
 ## 2) Canonical AWS resources
 
@@ -247,17 +246,8 @@ openssl rand -hex 32
 4. Update any operational shell/env values that send ingest writes (`XMONITOR_API_KEY`).
 5. Trigger Amplify release if web runtime env changed.
 
-## 11) Local fallback mode (only if needed)
+## 11) System status
 
-Use local OpenClaw launchd collectors only for explicit rollback/testing.
-
-Rules:
-1. Never run AWS collectors and local collectors as active writers for the same mode at the same time.
-2. Disable AWS EventBridge collector rules before enabling local launchd writers.
-3. Re-enable AWS rules and disable local launchd writers once rollback window ends.
-
-## 12) Migration status
-
-- SQLite -> Postgres migration is complete.
-- Production write path is AWS-side (X API collectors -> hosted ingest API -> VPC API -> RDS).
-- Local OpenClaw runtime is not required for normal ZODL Dashboard + X Monitor operation.
+- PostgreSQL is the system of record.
+- Production writes run through the AWS collector and backend stack.
+- The active read surface is the hosted web app and `/api/v1/*` APIs.

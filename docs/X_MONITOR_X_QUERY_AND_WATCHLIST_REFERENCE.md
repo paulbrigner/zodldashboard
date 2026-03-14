@@ -1,6 +1,6 @@
 # X Monitor — X Query + Watchlist Reference (AWS Collector)
 
-_Last updated: 2026-03-02 (ET)_
+_Last updated: 2026-03-14 (ET)_
 
 This document describes the query logic currently used by the AWS X API collectors.
 
@@ -50,15 +50,14 @@ For each handle chunk:
 
 (`-is:quote` is optional via env and defaults to off)
 
-### Priority reply query families
+### Priority reply query family
 
-Controlled by:
-- `XMON_X_API_REPLY_CAPTURE_ENABLED` (`true|false`)
-- `XMON_X_API_REPLY_MODE` (`off|term_constrained|selected_handles`)
-- `XMON_X_API_REPLY_TIERS`
-- `XMON_X_API_REPLY_SELECTED_HANDLES` (used only in `selected_handles`)
+Current priority-collector reply settings:
+- `XMON_X_API_REPLY_CAPTURE_ENABLED=true`
+- `XMON_X_API_REPLY_MODE=term_constrained`
+- `XMON_X_API_REPLY_TIERS=teammate,investor,influencer,ecosystem`
 
-`term_constrained` (`source_query=priority_reply_term`):
+Active reply query (`source_query=priority_reply_term`):
 
 ```text
 (from:<handles...>) is:reply (<base_terms>) -is:retweet
@@ -67,12 +66,6 @@ Controlled by:
 Note:
 - teammate/investor/ecosystem handles are excluded from reply-specific lanes because they are already captured by direct watchlist queries (including replies)
 - this reduces overlap without reducing teammate/investor/ecosystem reply coverage
-
-`selected_handles` (`source_query=priority_reply_selected`):
-
-```text
-(from:<selected_handles...>) is:reply -is:retweet
-```
 
 ### Discovery query family (`source_query=discovery`)
 
@@ -103,85 +96,14 @@ Applied in collector runtime before ingest:
 
 ## 4) Watchlist defaults in collector code
 
-Total default watchlist handles: **66**
+Current tier buckets:
+- `teammate`
+- `investor`
+- `influencer`
+- `ecosystem`
 
-### Teammate (10)
-- @bostonzcash
-- @jwihart
-- @lukaskorba
-- @nuttycom
-- @paulbrigner
-- @peacemongerz
-- @tonymargarit
-- @txds_
-- @zodl_co
-- @zodl_app
-
-### Investors (11)
-- @a16zcrypto
-- @balajis
-- @cbventures
-- @chapterone
-- @cypherpunk
-- @friedberg
-- @hosseeb
-- @jmj
-- @MaelstromFund
-- @paradigm
-- @winklevosscap
-
-### Influencer (39)
-- @_tomhoward
-- @agzt_111
-- @anonymist
-- @aquietinvestor
-- @arjunkhemani
-- @banthys
-- @bitlarrain
-- @btcturtle
-- @cipherscan_app
-- @colludingnode
-- @cq_elzz
-- @dignitycipher
-- @dismad8
-- @ebfull
-- @hedging_reality
-- @inthepixels
-- @ivydngg
-- @lucidzk
-- @maxdesalle
-- @mert
-- @mindsfiction
-- @minezcash
-- @nate_zec
-- @naval
-- @neuralunlock
-- @rargulati
-- @roommatemusing
-- @sacha
-- @seams5s
-- @shieldedmoney
-- @thecodebuffet
-- @thortorrens
-- @tipz_cash
-- @valkenburgh
-- @will_mcevoy
-- @zcashme
-- @zerodartz
-- @zooko
-- @zpartanll7
-
-### Ecosystem (6)
-- @genzcash
-- @shieldedlabs
-- @zcash
-- @zcashcommgrants
-- @zcashfoundation
-- @zechub
-
-Override options:
-- `XMON_X_API_WATCHLIST_TIERS_JSON` (full map override)
-- `XMON_X_API_WATCHLIST_INCLUDE_HANDLES` (subset include)
+The handle lists change over time, so the source of truth is the collector code in
+`services/x-api-collector-lambda/index.mjs` and the mirrored in-app Query Reference.
 
 ## 5) Paging and request tuning
 
