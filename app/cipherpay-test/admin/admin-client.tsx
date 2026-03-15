@@ -4,6 +4,7 @@ import { FormEvent, useEffect, useState } from "react";
 import type { CipherPayNetwork, CipherPayTestConfig } from "@/lib/cipherpay-test/types";
 import { LocalDateTime } from "../../components/local-date-time";
 import {
+  cipherPayDashboardLoginUrl,
   cipherPayDefaultsForNetwork,
   cipherPayWebhookCallbackUrl,
   formatFiatAmount,
@@ -98,6 +99,7 @@ export function CipherPayTestAdminClient() {
   }
 
   const webhookUrl = origin ? cipherPayWebhookCallbackUrl(origin) : "/api/v1/cipherpay/webhook";
+  const liveDashboardUrl = cipherPayDashboardLoginUrl(checkoutBaseUrl || config?.checkout_base_url, network);
 
   return (
     <div className="cipherpay-page-body">
@@ -136,6 +138,17 @@ export function CipherPayTestAdminClient() {
             <h3>Default storefront ticket</h3>
             <p>{formatFiatAmount(config?.default_amount ?? null, config?.default_currency ?? null)}</p>
             <p className="subtle-text">{config?.default_product_name || "CipherPay Test Purchase"}</p>
+          </article>
+
+          <article className="cipherpay-detail-card">
+            <h3>Live dashboard</h3>
+            <p className="subtle-text">Open the real CipherPay merchant dashboard for the currently selected network in a new tab.</p>
+            <p className="subtle-text">{network === "mainnet" ? "Mainnet merchant login" : "Testnet merchant login"}</p>
+            <div className="button-row">
+              <a className="button button-secondary button-small" href={liveDashboardUrl} rel="noreferrer noopener" target="_blank">
+                Open CipherPay dashboard
+              </a>
+            </div>
           </article>
         </div>
       </section>

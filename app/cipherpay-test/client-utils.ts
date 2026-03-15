@@ -35,6 +35,16 @@ export function cipherPayDefaultsForNetwork(network: CipherPayNetwork) {
   };
 }
 
+export function cipherPayDashboardLoginUrl(checkoutBaseUrl: string | null | undefined, network: CipherPayNetwork): string {
+  const fallback = cipherPayDefaultsForNetwork(network).checkoutBaseUrl;
+  try {
+    const origin = new URL((checkoutBaseUrl || fallback).trim()).origin;
+    return `${origin}/en/dashboard/login`;
+  } catch {
+    return `${fallback}/en/dashboard/login`;
+  }
+}
+
 export function cipherPayWebhookCallbackUrl(origin: string) {
   return `${origin.replace(/\/+$/, "")}/api/v1/cipherpay/webhook`;
 }
