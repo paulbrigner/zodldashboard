@@ -44,9 +44,9 @@ export default function SignInClient({ error, guestOauthEnabled, guestEmailEnabl
   return (
     <main className="page">
       <section className="card">
-        <p className="eyebrow">Google Workspace Login</p>
+        <p className="eyebrow">ZODL Dashboard Login</p>
         <h1>Sign in</h1>
-        <p>Use your company Google account to continue. Guest sign-in may also be available through Google or an emailed magic link when enabled.</p>
+        <p>Use your company Google account to continue. Guest sign-in may also be available through Google or an emailed magic link when pre-authorized. Email paul@zodl.com to request guest access.</p>
         <div className="button-row">
           <button className="button" onClick={() => signIn("google", { callbackUrl: "/" })} type="button">
             Continue with Google (zodl.com)
