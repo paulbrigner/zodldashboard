@@ -42,7 +42,15 @@ export function guestEmailAllowed(email: string): boolean {
 }
 
 export function guestMagicLinkEnabled(): boolean {
-  return parseBoolean(process.env.GUEST_MAGIC_LINK_ENABLED, false);
+  const explicit = trimValue(process.env.GUEST_MAGIC_LINK_ENABLED);
+  if (explicit != null) {
+    return parseBoolean(explicit, false);
+  }
+
+  // Amplify has been reliably surfacing the guest OAuth toggle and allowlist, so
+  // use those as a fallback signal when the dedicated magic-link flag is absent.
+  const guestOauthEnabled = parseBoolean(process.env.GUEST_GOOGLE_OAUTH_ENABLED, false);
+  return guestOauthEnabled && allowedGuestEmails().size > 0 && Boolean(backendApiBaseUrl()) && Boolean(proxySecret());
 }
 
 export function guestMagicLinkMaxAgeSeconds(): number {
