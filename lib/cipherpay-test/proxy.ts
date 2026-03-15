@@ -31,9 +31,6 @@ export async function proxyCipherPayViewerRequest(request: Request, targetPath: 
   if (!viewer) {
     return jsonError("authentication required", 401);
   }
-  if (viewer.accessLevel === "guest") {
-    return jsonError("workspace access required", 403);
-  }
 
   const secret = proxySecret();
   if (!secret) {

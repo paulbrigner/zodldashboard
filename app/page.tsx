@@ -20,6 +20,12 @@ const dashboards: DashboardCard[] = [
     href: "/x-monitor",
   },
   {
+    id: "cipherpay-test",
+    name: "CipherPay Test",
+    description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
+    href: "/cipherpay-test",
+  },
+  {
     id: "placeholder-1",
     name: "Regulatory Risk by Geography",
     description: "Tiered jurisdiction risk, recommendations, policy posture, and activity feed.",
@@ -31,13 +37,6 @@ const dashboards: DashboardCard[] = [
     name: "App Store Dashboard",
     description: "Compliance posture, declarations, submissions, reviewer cases, and evidence bundles.",
     href: "/app-stores",
-    workspaceOnly: true,
-  },
-  {
-    id: "cipherpay-test",
-    name: "CipherPay Test",
-    description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
-    href: "/cipherpay-test",
     workspaceOnly: true,
   },
   {

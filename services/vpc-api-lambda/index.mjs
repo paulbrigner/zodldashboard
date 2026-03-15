@@ -5067,8 +5067,8 @@ function ensureManageScheduledEmailPermission(viewer, jobRow) {
 }
 
 function ensureCipherPayTestPermission(viewer) {
-  if (!viewer?.is_workspace && viewer?.auth_mode !== "local-bypass") {
-    throw createStatusError(403, "CipherPay Test is only available to workspace users");
+  if (!viewer?.email && viewer?.auth_mode !== "local-bypass") {
+    throw createStatusError(403, "CipherPay Test requires an authenticated viewer");
   }
 }
 
