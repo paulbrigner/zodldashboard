@@ -7,11 +7,13 @@ const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const DEFAULT_TIMEOUT_MS = 5000;
 
 export type AuthLoginAccessLevel = "workspace" | "guest";
+export type AuthLoginMode = "oauth" | "email-link";
 
 type AuthLoginEventInput = {
   email: string;
   provider: string;
   accessLevel: AuthLoginAccessLevel;
+  authMode?: AuthLoginMode;
 };
 
 function normalizeEmail(value: string): string {
@@ -39,6 +41,7 @@ function authLoginEventPayload(input: AuthLoginEventInput) {
     email: normalizeEmail(input.email),
     provider: normalizeProvider(input.provider),
     accessLevel: input.accessLevel,
+    authMode: input.authMode || "oauth",
   };
 }
 
@@ -61,7 +64,7 @@ async function recordViaBackend(input: AuthLoginEventInput): Promise<boolean> {
         accept: "application/json",
         "content-type": "application/json",
         [VIEWER_EMAIL_HEADER]: payload.email,
-        [VIEWER_MODE_HEADER]: "oauth",
+        [VIEWER_MODE_HEADER]: payload.authMode,
         [VIEWER_PROXY_SECRET_HEADER]: secret,
       },
       body: JSON.stringify({
@@ -92,14 +95,14 @@ async function recordDirectly(input: AuthLoginEventInput): Promise<boolean> {
   await getDbPool().query(
     `
       INSERT INTO auth_login_events(email, provider, auth_mode, access_level)
-      VALUES ($1, $2, 'oauth', $3)
+      VALUES ($1, $2, $3, $4)
     `,
-    [payload.email, payload.provider, payload.accessLevel]
+    [payload.email, payload.provider, payload.authMode, payload.accessLevel]
   );
   return true;
 }
 
-export async function recordSuccessfulOAuthLogin(input: AuthLoginEventInput): Promise<void> {
+export async function recordSuccessfulAuthLogin(input: AuthLoginEventInput): Promise<void> {
   const payload = authLoginEventPayload(input);
   if (!payload.email || !payload.provider) {
     return;
@@ -136,4 +139,10 @@ export async function recordSuccessfulOAuthLogin(input: AuthLoginEventInput): Pr
       `[auth] login audit failed email=${payload.email} provider=${payload.provider} reason=${error instanceof Error ? error.message : "unknown"}`
     );
   }
+}
+
+export async function recordSuccessfulOAuthLogin(
+  input: Omit<AuthLoginEventInput, "authMode">
+): Promise<void> {
+  await recordSuccessfulAuthLogin({ ...input, authMode: "oauth" });
 }

@@ -73,6 +73,8 @@ const DEFAULT_EMAIL_MAX_RECIPIENTS = 10;
 const DEFAULT_EMAIL_MAX_JOBS_PER_USER = 25;
 const DEFAULT_EMAIL_MAX_BODY_CHARS = 20000;
 const DEFAULT_EMAIL_SCHEDULE_DISPATCH_LIMIT = 25;
+const DEFAULT_GUEST_MAGIC_LINK_ENABLED = false;
+const DEFAULT_GUEST_MAGIC_LINK_FROM_NAME = "ZODL Dashboard";
 const DEFAULT_CIPHERPAY_TEST_NETWORK = "testnet";
 const DEFAULT_CIPHERPAY_TEST_CURRENCY = "USD";
 const DEFAULT_CIPHERPAY_TEST_PRODUCT_NAME = "CipherPay Test Purchase";
@@ -357,6 +359,23 @@ function emailFromAddress() {
 
 function emailFromName() {
   return asString(process.env.XMONITOR_EMAIL_FROM_NAME) || "ZodlDashboard X Monitor";
+}
+
+function guestMagicLinkEnabled() {
+  const value = asString(process.env.GUEST_MAGIC_LINK_ENABLED);
+  if (!value) return DEFAULT_GUEST_MAGIC_LINK_ENABLED;
+  const normalized = value.toLowerCase();
+  if (normalized === "1" || normalized === "true" || normalized === "yes") return true;
+  if (normalized === "0" || normalized === "false" || normalized === "no") return false;
+  return DEFAULT_GUEST_MAGIC_LINK_ENABLED;
+}
+
+function guestMagicLinkFromAddress() {
+  return asString(process.env.GUEST_MAGIC_LINK_FROM_ADDRESS) || emailFromAddress();
+}
+
+function guestMagicLinkFromName() {
+  return asString(process.env.GUEST_MAGIC_LINK_FROM_NAME) || DEFAULT_GUEST_MAGIC_LINK_FROM_NAME;
 }
 
 function emailMaxRecipients() {
@@ -1361,6 +1380,25 @@ function computeScheduledEmailNextRunAtIso(schedule, referenceIso, nowMs = Date.
 function scheduleVisibilityValue(value, fallback = "personal") {
   const normalized = asString(value)?.toLowerCase() || fallback;
   return SCHEDULE_VISIBILITIES.has(normalized) ? normalized : null;
+}
+
+function requireProxySecret(event) {
+  const expectedSecret = emailProxySecret();
+  if (!expectedSecret) {
+    return {
+      ok: false,
+      status: 503,
+      error: "viewer proxy auth is not configured. Set XMONITOR_USER_PROXY_SECRET.",
+    };
+  }
+
+  const headers = event?.headers;
+  const presentedSecret = asString(headerValue(headers, VIEWER_PROXY_SECRET_HEADER));
+  if (!presentedSecret || !timingSafeMatch(expectedSecret, presentedSecret)) {
+    return { ok: false, status: 401, error: "unauthorized" };
+  }
+
+  return { ok: true };
 }
 
 function requireViewerContext(event, { oauthOnly = false } = {}) {
@@ -4505,6 +4543,187 @@ function parseAuthLoginEventBody(value) {
   };
 }
 
+function parseAuthGuestEmailSendBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const to = validateEmailAddress(body.to);
+  if (!to) return { ok: false, error: "to must be a valid email address" };
+
+  const fromAddress = validateEmailAddress(body.from_address);
+  if (!fromAddress) return { ok: false, error: "from_address must be a valid email address" };
+
+  const fromName = withLengthLimit(asString(body.from_name) || guestMagicLinkFromName(), 200);
+  const subject = withLengthLimit(asString(body.subject) || "", 500);
+  const text = withLengthLimit(asString(body.text) || "", 20_000);
+  const html = withLengthLimit(asString(body.html) || "", 50_000);
+
+  if (!subject || !text || !html) {
+    return { ok: false, error: "subject, text, and html are required" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      to,
+      from_address: fromAddress,
+      from_name: fromName,
+      subject,
+      text,
+      html,
+    },
+  };
+}
+
+function parseAuthUserByIdBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+  const id = asString(body.id);
+  if (!id) return { ok: false, error: "id is required" };
+  return { ok: true, data: { id } };
+}
+
+function parseAuthUserByEmailBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+  const email = validateEmailAddress(body.email);
+  if (!email) return { ok: false, error: "email must be a valid email address" };
+  return { ok: true, data: { email } };
+}
+
+function parseOptionalIsoTimestamp(value, fieldName) {
+  if (value === undefined) return { ok: true, data: undefined };
+  if (value === null || value === "") return { ok: true, data: null };
+  const parsed = asIsoTimestamp(value);
+  if (!parsed) return { ok: false, error: `${fieldName} must be an ISO timestamp when provided` };
+  return { ok: true, data: parsed };
+}
+
+function parseAuthUserCreateBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const email = validateEmailAddress(body.email);
+  if (!email) return { ok: false, error: "email must be a valid email address" };
+
+  const emailVerified = parseOptionalIsoTimestamp(body.email_verified, "email_verified");
+  if (!emailVerified.ok) return emailVerified;
+
+  return {
+    ok: true,
+    data: {
+      email,
+      email_verified: emailVerified.data,
+      name: asString(body.name) || null,
+      image: asString(body.image) || null,
+    },
+  };
+}
+
+function parseAuthUserUpdateBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const id = asString(body.id);
+  if (!id) return { ok: false, error: "id is required" };
+
+  let email;
+  if (Object.prototype.hasOwnProperty.call(body, "email")) {
+    const parsedEmail = validateEmailAddress(body.email);
+    if (!parsedEmail) return { ok: false, error: "email must be a valid email address when provided" };
+    email = parsedEmail;
+  }
+
+  const emailVerified = parseOptionalIsoTimestamp(body.email_verified, "email_verified");
+  if (!emailVerified.ok) return emailVerified;
+
+  const patch = { id };
+  if (email !== undefined) patch.email = email;
+  if (emailVerified.data !== undefined) patch.email_verified = emailVerified.data;
+  if (Object.prototype.hasOwnProperty.call(body, "name")) patch.name = asString(body.name);
+  if (Object.prototype.hasOwnProperty.call(body, "image")) patch.image = asString(body.image);
+
+  return { ok: true, data: patch };
+}
+
+function parseAuthUserByAccountBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const provider = asString(body.provider)?.toLowerCase();
+  const providerAccountId = asString(body.provider_account_id ?? body.providerAccountId);
+  if (!provider || !providerAccountId) {
+    return { ok: false, error: "provider and provider_account_id are required" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      provider,
+      provider_account_id: providerAccountId,
+    },
+  };
+}
+
+function parseAuthLinkAccountBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const userId = asString(body.user_id ?? body.userId);
+  const provider = asString(body.provider)?.toLowerCase();
+  const providerAccountId = asString(body.provider_account_id ?? body.providerAccountId);
+  const type = asString(body.type) || "oauth";
+  if (!userId || !provider || !providerAccountId) {
+    return { ok: false, error: "user_id, provider, and provider_account_id are required" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      user_id: userId,
+      type,
+      provider,
+      provider_account_id: providerAccountId,
+      refresh_token: asString(body.refresh_token ?? body.refreshToken),
+      access_token: asString(body.access_token ?? body.accessToken),
+      expires_at: asFiniteNumber(body.expires_at ?? body.expiresAt),
+      token_type: asString(body.token_type ?? body.tokenType),
+      scope: asString(body.scope),
+      id_token: asString(body.id_token ?? body.idToken),
+      session_state: asString(body.session_state ?? body.sessionState),
+    },
+  };
+}
+
+function parseAuthVerificationTokenCreateBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const identifier = validateEmailAddress(body.identifier);
+  if (!identifier) return { ok: false, error: "identifier must be a valid email address" };
+
+  const token = asString(body.token);
+  if (!token) return { ok: false, error: "token is required" };
+
+  const expires = asIsoTimestamp(body.expires);
+  if (!expires) return { ok: false, error: "expires must be an ISO timestamp" };
+
+  return { ok: true, data: { identifier, token, expires } };
+}
+
+function parseAuthVerificationTokenUseBody(value) {
+  const body = asObject(value);
+  if (!body) return { ok: false, error: "body must be an object" };
+
+  const identifier = validateEmailAddress(body.identifier);
+  if (!identifier) return { ok: false, error: "identifier must be a valid email address" };
+
+  const token = asString(body.token);
+  if (!token) return { ok: false, error: "token is required" };
+
+  return { ok: true, data: { identifier, token } };
+}
+
 function parseScheduledEmailJobCreateBody(value) {
   if (!isRecord(value)) return { ok: false, error: "body must be an object" };
 
@@ -5022,6 +5241,257 @@ async function recordAuthLoginEvent({
     [email, provider, authMode, accessLevel]
   );
   return result.rows[0] || null;
+}
+
+function rowToAuthUser(row) {
+  if (!row?.id || !row?.email) return null;
+  return {
+    id: String(row.id),
+    email: normalizeEmail(row.email),
+    email_verified: asIsoTimestamp(row.email_verified) || null,
+    name: row.name || null,
+    image: row.image || null,
+  };
+}
+
+function rowToAuthVerificationToken(row) {
+  if (!row?.identifier || !row?.token || !row?.expires) return null;
+  return {
+    identifier: normalizeEmail(row.identifier),
+    token: row.token,
+    expires: asIsoTimestamp(row.expires) || null,
+  };
+}
+
+async function fetchAuthUserById(userId) {
+  const result = await getPool().query(
+    `
+      SELECT id, email, email_verified, name, image
+      FROM auth_users
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [userId]
+  );
+  return rowToAuthUser(result.rows[0]);
+}
+
+async function fetchAuthUserByEmail(email) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) return null;
+  const result = await getPool().query(
+    `
+      SELECT id, email, email_verified, name, image
+      FROM auth_users
+      WHERE email = $1
+      LIMIT 1
+    `,
+    [normalizedEmail]
+  );
+  return rowToAuthUser(result.rows[0]);
+}
+
+async function fetchAuthUserByAccount({ provider, provider_account_id }) {
+  const normalizedProvider = asString(provider)?.toLowerCase();
+  const providerAccountId = asString(provider_account_id);
+  if (!normalizedProvider || !providerAccountId) return null;
+  const result = await getPool().query(
+    `
+      SELECT u.id, u.email, u.email_verified, u.name, u.image
+      FROM auth_accounts a
+      JOIN auth_users u ON u.id = a.user_id
+      WHERE a.provider = $1
+        AND a.provider_account_id = $2
+      LIMIT 1
+    `,
+    [normalizedProvider, providerAccountId]
+  );
+  return rowToAuthUser(result.rows[0]);
+}
+
+async function createAuthUser({ email, email_verified, name = null, image = null }) {
+  const normalizedEmail = normalizeEmail(email);
+  if (!normalizedEmail) {
+    throw new Error("valid email is required");
+  }
+  const result = await getPool().query(
+    `
+      INSERT INTO auth_users(email, email_verified, name, image)
+      VALUES ($1, $2::timestamptz, $3, $4)
+      ON CONFLICT (email) DO UPDATE
+      SET email_verified = EXCLUDED.email_verified,
+          name = EXCLUDED.name,
+          image = EXCLUDED.image,
+          updated_at = now()
+      RETURNING id, email, email_verified, name, image
+    `,
+    [normalizedEmail, email_verified || null, name, image]
+  );
+  return rowToAuthUser(result.rows[0]);
+}
+
+async function updateAuthUser({ id, email, email_verified, name, image }) {
+  const current = await fetchAuthUserById(id);
+  if (!current) return null;
+
+  const nextEmail = email === undefined ? current.email : normalizeEmail(email);
+  const nextEmailVerified = email_verified === undefined ? current.email_verified : email_verified;
+  const nextName = name === undefined ? current.name : name;
+  const nextImage = image === undefined ? current.image : image;
+
+  const result = await getPool().query(
+    `
+      UPDATE auth_users
+      SET email = $2,
+          email_verified = $3::timestamptz,
+          name = $4,
+          image = $5,
+          updated_at = now()
+      WHERE id = $1
+      RETURNING id, email, email_verified, name, image
+    `,
+    [id, nextEmail, nextEmailVerified || null, nextName, nextImage]
+  );
+  return rowToAuthUser(result.rows[0]);
+}
+
+async function linkAuthAccount(account) {
+  const userId = asString(account?.user_id ?? account?.userId);
+  const provider = asString(account?.provider)?.toLowerCase();
+  const providerAccountId = asString(account?.provider_account_id ?? account?.providerAccountId);
+  const type = asString(account?.type) || "oauth";
+  if (!userId || !provider || !providerAccountId) {
+    throw new Error("user_id, provider, and provider_account_id are required");
+  }
+
+  const result = await getPool().query(
+    `
+      INSERT INTO auth_accounts(
+        user_id,
+        type,
+        provider,
+        provider_account_id,
+        refresh_token,
+        access_token,
+        expires_at,
+        token_type,
+        scope,
+        id_token,
+        session_state
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      ON CONFLICT (provider, provider_account_id) DO UPDATE
+      SET user_id = EXCLUDED.user_id,
+          type = EXCLUDED.type,
+          refresh_token = EXCLUDED.refresh_token,
+          access_token = EXCLUDED.access_token,
+          expires_at = EXCLUDED.expires_at,
+          token_type = EXCLUDED.token_type,
+          scope = EXCLUDED.scope,
+          id_token = EXCLUDED.id_token,
+          session_state = EXCLUDED.session_state,
+          updated_at = now()
+      RETURNING
+        user_id,
+        type,
+        provider,
+        provider_account_id,
+        refresh_token,
+        access_token,
+        expires_at,
+        token_type,
+        scope,
+        id_token,
+        session_state
+    `,
+    [
+      userId,
+      type,
+      provider,
+      providerAccountId,
+      asString(account?.refresh_token ?? account?.refreshToken),
+      asString(account?.access_token ?? account?.accessToken),
+      asFiniteNumber(account?.expires_at ?? account?.expiresAt),
+      asString(account?.token_type ?? account?.tokenType),
+      asString(account?.scope),
+      asString(account?.id_token ?? account?.idToken),
+      asString(account?.session_state ?? account?.sessionState),
+    ]
+  );
+  return result.rows[0] || null;
+}
+
+async function createAuthVerificationToken({ identifier, token, expires }) {
+  const normalizedIdentifier = normalizeEmail(identifier);
+  if (!normalizedIdentifier || !asString(token) || !asString(expires)) {
+    throw new Error("identifier, token, and expires are required");
+  }
+  const result = await getPool().query(
+    `
+      INSERT INTO auth_verification_tokens(identifier, token, expires)
+      VALUES ($1, $2, $3::timestamptz)
+      RETURNING identifier, token, expires
+    `,
+    [normalizedIdentifier, token, expires]
+  );
+  return rowToAuthVerificationToken(result.rows[0]);
+}
+
+async function useAuthVerificationToken({ identifier, token }) {
+  const normalizedIdentifier = normalizeEmail(identifier);
+  if (!normalizedIdentifier || !asString(token)) {
+    throw new Error("identifier and token are required");
+  }
+  const result = await getPool().query(
+    `
+      DELETE FROM auth_verification_tokens
+      WHERE identifier = $1
+        AND token = $2
+      RETURNING identifier, token, expires
+    `,
+    [normalizedIdentifier, token]
+  );
+  return rowToAuthVerificationToken(result.rows[0]);
+}
+
+async function sendGuestMagicLinkEmail({ to, fromAddress, fromName, subject, text, html }) {
+  const recipient = validateEmailAddress(to);
+  const sourceAddress = validateEmailAddress(fromAddress);
+  if (!recipient || !sourceAddress) {
+    throw new Error("valid to and from addresses are required");
+  }
+
+  const composedSource = fromName ? `${fromName} <${sourceAddress}>` : sourceAddress;
+  const command = new SendEmailCommand({
+    FromEmailAddress: composedSource,
+    Destination: {
+      ToAddresses: [recipient],
+    },
+    Content: {
+      Simple: {
+        Subject: {
+          Data: subject,
+          Charset: "UTF-8",
+        },
+        Body: {
+          Text: {
+            Data: text,
+            Charset: "UTF-8",
+          },
+          Html: {
+            Data: html,
+            Charset: "UTF-8",
+          },
+        },
+      },
+    },
+  });
+
+  const response = await getSesClient().send(command);
+  return {
+    to: recipient,
+    provider_message_id: response.MessageId || null,
+  };
 }
 
 async function fetchScheduledEmailJobById(jobId) {
@@ -6365,7 +6835,7 @@ async function handleAuthLoginEventCreate(event) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
   }
 
-  const viewer = requireViewerContext(event, { oauthOnly: true });
+  const viewer = requireViewerContext(event);
   if (!viewer.ok) {
     return jsonError(viewer.error, viewer.status);
   }
@@ -6390,6 +6860,205 @@ async function handleAuthLoginEventCreate(event) {
     return jsonOk({ item }, 201);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to record auth login event", 503);
+  }
+}
+
+async function handleGuestEmailVerificationSend(event) {
+  if (!guestMagicLinkEnabled()) {
+    return jsonError("guest magic links are disabled", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) {
+    return jsonError(auth.error, auth.status);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+
+  const parsed = parseAuthGuestEmailSendBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await sendGuestMagicLinkEmail({
+      to: parsed.data.to,
+      fromAddress: parsed.data.from_address,
+      fromName: parsed.data.from_name,
+      subject: parsed.data.subject,
+      text: parsed.data.text,
+      html: parsed.data.html,
+    });
+    return jsonOk({ item }, 202);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to send guest magic-link email", 503);
+  }
+}
+
+async function handleGuestEmailUserGetById(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthUserByIdBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await fetchAuthUserById(parsed.data.id);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to fetch auth user", 503);
+  }
+}
+
+async function handleGuestEmailUserGetByEmail(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthUserByEmailBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await fetchAuthUserByEmail(parsed.data.email);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to fetch auth user", 503);
+  }
+}
+
+async function handleGuestEmailUserGetByAccount(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthUserByAccountBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await fetchAuthUserByAccount(parsed.data);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to fetch auth account user", 503);
+  }
+}
+
+async function handleGuestEmailUserCreate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthUserCreateBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await createAuthUser(parsed.data);
+    return jsonOk({ item }, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to create auth user", 503);
+  }
+}
+
+async function handleGuestEmailUserUpdate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthUserUpdateBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await updateAuthUser(parsed.data);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to update auth user", 503);
+  }
+}
+
+async function handleGuestEmailLinkAccount(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthLinkAccountBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await linkAuthAccount(parsed.data);
+    return jsonOk({ item }, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to link auth account", 503);
+  }
+}
+
+async function handleGuestEmailTokenCreate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthVerificationTokenCreateBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await createAuthVerificationToken(parsed.data);
+    return jsonOk({ item }, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to create auth verification token", 503);
+  }
+}
+
+async function handleGuestEmailTokenUse(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseAuthVerificationTokenUseBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const item = await useAuthVerificationToken(parsed.data);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to consume auth verification token", 503);
   }
 }
 
@@ -8123,6 +8792,42 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/auth/login-events") {
     return handleAuthLoginEventCreate(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/send-verification") {
+    return handleGuestEmailVerificationSend(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/users/get-by-id") {
+    return handleGuestEmailUserGetById(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/users/get-by-email") {
+    return handleGuestEmailUserGetByEmail(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/users/get-by-account") {
+    return handleGuestEmailUserGetByAccount(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/users/create") {
+    return handleGuestEmailUserCreate(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/users/update") {
+    return handleGuestEmailUserUpdate(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/accounts/link") {
+    return handleGuestEmailLinkAccount(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/tokens/create") {
+    return handleGuestEmailTokenCreate(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/guest-email/tokens/use") {
+    return handleGuestEmailTokenUse(event);
   }
 
   if (method === "GET" && path === "/v1/email/schedules") {

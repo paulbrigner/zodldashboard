@@ -1,38 +1,32 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
-import { recordSuccessfulOAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
+import EmailProvider from "next-auth/providers/email";
+import { recordSuccessfulAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
+import {
+  GUEST_EMAIL_PROVIDER_ID,
+  guestEmailAllowed,
+  guestMagicLinkEnabled,
+  guestMagicLinkMaxAgeSeconds,
+  normalizeEmail,
+  parseBoolean,
+  parseEmailAllowlist,
+  sendGuestMagicLinkVerificationRequest,
+} from "@/lib/auth-guest-email";
+import { createGuestEmailAdapter } from "@/lib/auth-guest-email-adapter";
 
-const allowedDomain = (process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com").toLowerCase();
+const allowedDomain = normalizeEmail(process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com");
 const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 const guestOauthEnabled = parseBoolean(process.env.GUEST_GOOGLE_OAUTH_ENABLED, false);
 const googleGuestClientId = process.env.GOOGLE_GUEST_CLIENT_ID || "";
 const googleGuestClientSecret = process.env.GOOGLE_GUEST_CLIENT_SECRET || "";
 const allowedGuestEmails = parseEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
-
-function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (typeof value !== "string") return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return fallback;
-  return ["1", "true", "yes", "y", "on"].includes(normalized);
-}
-
-function parseEmailAllowlist(value: string): Set<string> {
-  return new Set(
-    value
-      .split(/[,\s]+/)
-      .map((entry) => entry.trim().toLowerCase())
-      .filter(Boolean)
-  );
-}
-
-function normalizeEmail(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
+const guestMagicLinksEnabled = guestMagicLinkEnabled();
 
 function accessLevelForProvider(provider: string): AuthLoginAccessLevel | null {
   if (provider === "google") return "workspace";
   if (provider === "google-guest") return "guest";
+  if (provider === GUEST_EMAIL_PROVIDER_ID) return "guest";
   return null;
 }
 
@@ -67,7 +61,11 @@ if (guestOauthEnabled) {
   }
 }
 
-const providers = [
+if (guestMagicLinksEnabled && allowedGuestEmails.size === 0) {
+  console.warn("[auth] GUEST_MAGIC_LINK_ENABLED=true but ALLOWED_GUEST_GOOGLE_EMAILS is empty.");
+}
+
+const providers: NonNullable<NextAuthOptions["providers"]> = [
   GoogleProvider({
     clientId: googleClientId,
     clientSecret: googleClientSecret,
@@ -98,31 +96,58 @@ if (guestOauthEnabled && googleGuestClientId && googleGuestClientSecret) {
   );
 }
 
+if (guestMagicLinksEnabled) {
+  providers.push(
+    EmailProvider({
+      maxAge: guestMagicLinkMaxAgeSeconds(),
+      sendVerificationRequest: sendGuestMagicLinkVerificationRequest,
+    })
+  );
+}
+
 export const authOptions: NextAuthOptions = {
+  adapter: createGuestEmailAdapter(),
   session: { strategy: "jwt" },
   debug: process.env.NODE_ENV !== "production",
   providers,
   callbacks: {
-    async signIn({ account, profile, user }) {
+    async signIn({ account, profile, user, email: emailContext }) {
       const provider = account?.provider || "";
-      const email = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
-      const emailVerified = isEmailVerified(profile);
+      const normalizedEmail = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
+      const emailVerified = provider === GUEST_EMAIL_PROVIDER_ID ? true : isEmailVerified(profile);
+      const verificationRequest = emailContext?.verificationRequest === true;
 
-      if (!email || !emailVerified) {
+      if (!normalizedEmail || !emailVerified) {
         console.warn(`[auth] denied provider=${provider || "unknown"} reason=unverified_or_missing_email`);
         return false;
       }
 
       if (provider === "google") {
-        const allowed = email.endsWith(`@${allowedDomain}`);
-        console.info(`[auth] ${allowed ? "allow" : "deny"} provider=google email=${email} reason=domain_${allowed ? "match" : "mismatch"}`);
+        const allowed = normalizedEmail.endsWith(`@${allowedDomain}`);
+        console.info(
+          `[auth] ${allowed ? "allow" : "deny"} provider=google email=${normalizedEmail} reason=domain_${allowed ? "match" : "mismatch"}`
+        );
         return allowed;
       }
 
       if (provider === "google-guest") {
-        const allowed = guestOauthEnabled && allowedGuestEmails.has(email);
+        const allowed = guestOauthEnabled && allowedGuestEmails.has(normalizedEmail);
         console.info(
-          `[auth] ${allowed ? "allow" : "deny"} provider=google-guest email=${email} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+          `[auth] ${allowed ? "allow" : "deny"} provider=google-guest email=${normalizedEmail} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+        );
+        return allowed;
+      }
+
+      if (provider === GUEST_EMAIL_PROVIDER_ID) {
+        const allowed = guestMagicLinksEnabled && guestEmailAllowed(normalizedEmail);
+        if (verificationRequest) {
+          console.info(
+            `[auth] ${allowed ? "allow" : "suppress"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+          );
+          return guestMagicLinksEnabled;
+        }
+        console.info(
+          `[auth] ${allowed ? "allow" : "deny"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
         );
         return allowed;
       }
@@ -146,16 +171,18 @@ export const authOptions: NextAuthOptions = {
       const email = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
       if (!email) return;
 
-      await recordSuccessfulOAuthLogin({
+      await recordSuccessfulAuthLogin({
         email,
         provider,
         accessLevel,
+        authMode: provider === GUEST_EMAIL_PROVIDER_ID ? "email-link" : "oauth",
       });
     },
   },
   pages: {
     signIn: "/signin",
     error: "/signin",
+    verifyRequest: "/signin/verify-request",
   },
   logger: {
     error(code, metadata) {

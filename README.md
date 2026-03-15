@@ -12,7 +12,7 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 
 ## Current Product Surface
 
-- Google Workspace sign-in (`@zodl.com` by default), with optional guest OAuth and optional local-network bypass.
+- Google Workspace sign-in (`@zodl.com` by default), with optional guest OAuth, optional guest magic-link sign-in, and optional local-network bypass.
 - Dashboard hub with:
   - X Monitor at `/x-monitor`
   - Regulatory Risk at `/regulatory-risk`
@@ -67,6 +67,8 @@ Primary tables currently used by the live system:
 - `scheduled_email_jobs`
 - `scheduled_email_runs`
 - `email_deliveries`
+- `auth_users`
+- `auth_verification_tokens`
 - `auth_login_events`
 
 ## Local Development
@@ -135,6 +137,9 @@ Commonly used variables:
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`
   - `ALLOWED_GOOGLE_DOMAIN`
+  - `GUEST_GOOGLE_OAUTH_ENABLED`
+  - `GUEST_MAGIC_LINK_ENABLED`
+  - `ALLOWED_GUEST_GOOGLE_EMAILS`
 - Read/proxy routing:
   - `XMONITOR_READ_API_BASE_URL`
   - `XMONITOR_BACKEND_API_BASE_URL`
@@ -284,7 +289,7 @@ curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
 
 - Verify `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_URL`, and callback URLs.
 - Verify internal users match `ALLOWED_GOOGLE_DOMAIN`.
-- Verify guest users are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS` when guest OAuth is enabled.
+- Verify guest users are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS` when guest OAuth or guest magic links are enabled.
 
 ### Read path issues
 
