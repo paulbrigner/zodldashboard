@@ -324,14 +324,16 @@ export function createGuestEmailAdapter(): Adapter {
       }
     },
     async updateUser(user: Partial<AdapterUser> & Pick<AdapterUser, "id">) {
+      const payload: Record<string, unknown> = { id: user.id };
+      if (user.email !== undefined) payload.email = user.email;
+      if (user.emailVerified !== undefined) {
+        payload.email_verified = user.emailVerified ? user.emailVerified.toISOString() : null;
+      }
+      if (user.name !== undefined) payload.name = user.name;
+      if (user.image !== undefined) payload.image = user.image;
+
       try {
-        const response = await callBackend<{ item: AdapterUserRow }>("/auth/guest-email/users/update", {
-          id: user.id,
-          email: user.email ?? null,
-          email_verified: user.emailVerified ? user.emailVerified.toISOString() : user.emailVerified === null ? null : undefined,
-          name: user.name ?? undefined,
-          image: user.image ?? undefined,
-        });
+        const response = await callBackend<{ item: AdapterUserRow }>("/auth/guest-email/users/update", payload);
         if (response?.item) {
           const updated = adapterUserRowToValue(response.item);
           if (updated) return updated;
