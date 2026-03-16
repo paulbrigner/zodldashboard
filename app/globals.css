@@ -1621,6 +1621,14 @@ p {
 .feed-body {
   margin-top: 0.65rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.detail-post-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .feed-item-actions {

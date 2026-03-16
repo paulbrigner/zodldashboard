@@ -110,7 +110,7 @@ export default async function PostPage({ params }: PostPageProps) {
         <p className="subtle-text">
           Discovered: <LocalDateTime iso={detail.post.discovered_at} />
         </p>
-        <p>{detail.post.body_text || "(no text captured)"}</p>
+        <p className="detail-post-body">{detail.post.body_text || "(no text captured)"}</p>
 
         <div className="feed-tags">
           <span className="pill">status_id: {detail.post.status_id}</span>
