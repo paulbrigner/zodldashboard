@@ -331,17 +331,61 @@ p {
   transform: rotate(0deg);
 }
 
-.summary-panel-grid {
+.summary-panel-stack {
   padding: 0.95rem;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 0.8rem;
 }
 
-.summary-card {
+.summary-subpanel {
   border: 1px solid var(--border);
-  border-radius: 0.75rem;
+  border-radius: 0.8rem;
   background: #ffffff;
+  overflow: hidden;
+}
+
+.summary-subpanel-header {
+  list-style: none;
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+  padding: 0.8rem 0.9rem;
+}
+
+.summary-subpanel-header::-webkit-details-marker {
+  display: none;
+}
+
+.summary-subpanel-title-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+}
+
+.summary-subpanel-title {
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.summary-subpanel-meta {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.summary-subpanel[open] .summary-subpanel-header {
+  border-bottom: 1px solid var(--border);
+}
+
+.summary-subpanel[open] .disclosure-caret {
+  transform: rotate(0deg);
+}
+
+.summary-card {
   padding: 0.8rem;
   display: flex;
   flex-direction: column;
@@ -361,7 +405,8 @@ p {
 
 .summary-window,
 .summary-counts,
-.summary-empty {
+.summary-empty,
+.summary-description {
   margin: 0;
   font-size: 0.87rem;
 }

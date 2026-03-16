@@ -112,7 +112,9 @@ const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
 const DEFAULT_SUMMARY_LLM_URL = "https://api.venice.ai/api/v1";
-const DEFAULT_SUMMARY_LLM_MODEL = "zai-org-glm-5";
+const DEFAULT_SUMMARY_LLM_MODEL = "openai-gpt-54";
+const WEEKLY_SUMMARY_TIMEZONE = "America/New_York";
+const WEEKLY_SUMMARY_HOUR = 6;
 
 const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b)/i;
 
@@ -461,6 +463,7 @@ function getConfig() {
     summaryAlignHours: asPositiveInt(process.env.XMON_SUMMARY_ALIGN_HOURS, 2),
     summaryTopPosts2h: asPositiveInt(process.env.XMON_SUMMARY_TOP_POSTS_2H, 8),
     summaryTopPosts12h: asPositiveInt(process.env.XMON_SUMMARY_TOP_POSTS_12H, 8),
+    summaryTopPosts7d: asPositiveInt(process.env.XMON_SUMMARY_TOP_POSTS_7D, 12),
     summaryFeedPageLimit: asPositiveInt(process.env.XMON_SUMMARY_FEED_PAGE_LIMIT, 20),
     summaryFeedMaxItemsPerWindow: asPositiveInt(process.env.XMON_SUMMARY_FEED_MAX_ITEMS_PER_WINDOW, 2000),
     summaryLlmBackend: asString(process.env.XMON_SUMMARY_LLM_BACKEND || "auto").toLowerCase(),
@@ -478,12 +481,13 @@ function getConfig() {
   };
 }
 
-function requireConfig(config) {
+function requireConfig(config, options = {}) {
+  const summaryOnly = Boolean(options.summaryOnly);
   const missing = [];
-  if (!config.xApiBearerToken) missing.push("XMON_X_API_BEARER_TOKEN");
   if (!config.ingestApiKey && config.writeEnabled) missing.push("XMONITOR_API_KEY");
   if (!config.ingestApiBaseUrl && config.writeEnabled) missing.push("XMONITOR_API_BASE_URL");
-  if (config.embeddingEnabled && config.writeEnabled) {
+  if (!summaryOnly && !config.xApiBearerToken) missing.push("XMON_X_API_BEARER_TOKEN");
+  if (!summaryOnly && config.embeddingEnabled && config.writeEnabled) {
     if (!config.embeddingApiKey) missing.push("XMONITOR_EMBEDDING_API_KEY");
     if (!config.embeddingModel) missing.push("XMONITOR_EMBEDDING_MODEL");
   }
@@ -600,6 +604,119 @@ function alignWindowEndUtc(now, alignHours) {
 function shouldGenerateWindowSummaries(now, alignHours) {
   const safeAlignHours = Math.max(1, alignHours);
   return now.getUTCHours() % safeAlignHours === 0;
+}
+
+function parseSummaryWindowTypes(value) {
+  if (Array.isArray(value)) {
+    return value.flatMap((item) => parseSummaryWindowTypes(item));
+  }
+
+  const text = asString(value);
+  if (!text) return [];
+
+  return text
+    .split(/[,\s]+/)
+    .map((item) => asString(item).toLowerCase())
+    .filter(Boolean);
+}
+
+function getTimeZoneParts(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+
+  const parts = {};
+  for (const part of formatter.formatToParts(date)) {
+    if (part.type !== "literal") {
+      parts[part.type] = part.value;
+    }
+  }
+
+  return {
+    year: Number(parts.year || "0"),
+    month: Number(parts.month || "0"),
+    day: Number(parts.day || "0"),
+    hour: Number(parts.hour || "0"),
+    minute: Number(parts.minute || "0"),
+    second: Number(parts.second || "0"),
+  };
+}
+
+function getTimeZoneOffsetString(date, timeZone) {
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "shortOffset",
+    hour: "2-digit",
+    hour12: false,
+  });
+  const zonePart = formatter.formatToParts(date).find((part) => part.type === "timeZoneName")?.value || "GMT+0";
+  const match = zonePart.match(/^GMT([+-])(\d{1,2})(?::?(\d{2}))?$/i);
+  if (!match) return "+00:00";
+  const sign = match[1] === "-" ? "-" : "+";
+  const hours = String(match[2]).padStart(2, "0");
+  const minutes = String(match[3] || "0").padStart(2, "0");
+  return `${sign}${hours}:${minutes}`;
+}
+
+function buildTimeZoneIso(date, timeZone, hour, minute = 0, second = 0) {
+  const parts = getTimeZoneParts(date, timeZone);
+  const offset = getTimeZoneOffsetString(date, timeZone);
+  return [
+    `${String(parts.year).padStart(4, "0")}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`,
+    "T",
+    `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}:${String(second).padStart(2, "0")}`,
+    offset,
+  ].join("");
+}
+
+function getSummaryTargetWords(windowType) {
+  if (windowType === "rolling_2h") return 95;
+  if (windowType === "rolling_12h") return 150;
+  if (windowType === "rolling_7d_daily") return 240;
+  return 150;
+}
+
+function buildSummaryRequests(config, event, now) {
+  const requestByType = {
+    rolling_2h: {
+      windowType: "rolling_2h",
+      windowHours: 2,
+      topPosts: config.summaryTopPosts2h,
+      windowEndIso: toOffsetIso(alignWindowEndUtc(now, config.summaryAlignHours)),
+    },
+    rolling_12h: {
+      windowType: "rolling_12h",
+      windowHours: 12,
+      topPosts: config.summaryTopPosts12h,
+      windowEndIso: toOffsetIso(alignWindowEndUtc(now, config.summaryAlignHours)),
+    },
+    rolling_7d_daily: {
+      windowType: "rolling_7d_daily",
+      windowHours: 24 * 7,
+      topPosts: config.summaryTopPosts7d,
+      windowEndIso: buildTimeZoneIso(now, WEEKLY_SUMMARY_TIMEZONE, WEEKLY_SUMMARY_HOUR),
+    },
+  };
+
+  const requestedTypes = [
+    ...parseSummaryWindowTypes(event?.summaryWindowTypes),
+    ...parseSummaryWindowTypes(event?.summary_window_types),
+  ];
+
+  if (requestedTypes.length === 0) {
+    return [requestByType.rolling_2h, requestByType.rolling_12h];
+  }
+
+  return requestedTypes
+    .map((type) => requestByType[type])
+    .filter(Boolean);
 }
 
 async function fetchWindowFeedPosts(config, windowStartIso, windowEndIso) {
@@ -812,7 +929,7 @@ function buildWindowSummaryPrompt({
   topAuthors,
   notablePosts,
 }) {
-  const targetWords = windowType === "rolling_2h" ? 95 : 150;
+  const targetWords = getSummaryTargetWords(windowType);
   const postLines = [];
   for (const post of (notablePosts || []).slice(0, 8)) {
     postLines.push(
@@ -1128,8 +1245,14 @@ async function maybeGenerateWindowSummaries(config, collectorMode, dryRun, event
   }
 
   const now = new Date();
+  const requests = buildSummaryRequests(config, event, now);
+  if (requests.length === 0) {
+    return { skipped: true, reason: "no_summary_requests", windows: [] };
+  }
+
   const force = asBool(event?.forceWindowSummaries ?? event?.force_window_summaries, false);
-  const shouldGenerate = force || shouldGenerateWindowSummaries(now, config.summaryAlignHours);
+  const includesWeekly = requests.some((request) => request.windowType === "rolling_7d_daily");
+  const shouldGenerate = force || includesWeekly || shouldGenerateWindowSummaries(now, config.summaryAlignHours);
   if (!shouldGenerate) {
     return {
       skipped: true,
@@ -1142,10 +1265,6 @@ async function maybeGenerateWindowSummaries(config, collectorMode, dryRun, event
 
   const alignedWindowEnd = alignWindowEndUtc(now, config.summaryAlignHours);
   const alignedWindowEndIso = toOffsetIso(alignedWindowEnd);
-  const requests = [
-    { windowType: "rolling_2h", windowHours: 2, topPosts: config.summaryTopPosts2h },
-    { windowType: "rolling_12h", windowHours: 12, topPosts: config.summaryTopPosts12h },
-  ];
 
   const items = [];
   const windows = [];
@@ -1156,7 +1275,7 @@ async function maybeGenerateWindowSummaries(config, collectorMode, dryRun, event
         req.windowType,
         req.windowHours,
         req.topPosts,
-        alignedWindowEndIso
+        req.windowEndIso || alignedWindowEndIso
       );
       items.push(built.item);
       windows.push({ ok: true, ...built.metrics });
@@ -1940,8 +2059,9 @@ export async function handler(event = {}) {
   const dryRun = asBool(event?.dryRun ?? process.env.XMON_COLLECTOR_DRY_RUN, false);
   const requestedMode = normalizeCollectorMode(event?.mode ?? event?.collector_mode ?? "", "");
   const collectorMode = requestedMode || config.collectorMode;
+  const summaryOnly = asBool(event?.summaryOnly ?? event?.summary_only, false);
 
-  if (!config.collectorEnabled) {
+  if (!config.collectorEnabled && !summaryOnly) {
     const skipped = {
       ok: true,
       skipped: true,
@@ -1952,7 +2072,98 @@ export async function handler(event = {}) {
     return skipped;
   }
 
-  requireConfig(config);
+  requireConfig(config, { summaryOnly });
+
+  if (summaryOnly) {
+    let summaryResult = { skipped: true, reason: "not_attempted", windows: [] };
+    try {
+      summaryResult = await maybeGenerateWindowSummaries(config, collectorMode, dryRun, event);
+    } catch (error) {
+      summaryResult = {
+        skipped: true,
+        reason: "summary_generation_error",
+        error: error instanceof Error ? error.message : "summary_generation_error",
+        windows: [],
+      };
+    }
+
+    const summaryOnlyResponse = summarizeResult(
+      config,
+      [],
+      {
+        queryCount: 0,
+        pageCount: 0,
+        rawTweets: 0,
+        uniqueTweets: 0,
+        skippedMalformed: 0,
+        skippedRetweet: 0,
+        skippedNonWatchlist: 0,
+        skippedLang: 0,
+        skippedDiscoveryWatchlist: 0,
+        skippedKeywordOmit: 0,
+        skippedMissingDiscoveryBaseTerm: 0,
+        skippedMissingPriorityBaseTerm: 0,
+        skippedEmptyOrStub: 0,
+        querySinceIdApplied: 0,
+        querySinceIdMissing: 0,
+        familyCounts: {},
+        sourceCounts: {},
+      },
+      [],
+      {
+        skipped: true,
+        reason: dryRun ? "dry_run" : "summary_only",
+        inserted: 0,
+        updated: 0,
+        skipped_items: 0,
+        errors: [],
+        inserted_status_ids: [],
+        updated_status_ids: [],
+      },
+      {
+        skipped: true,
+        reason: "summary_only",
+        selected_candidates: 0,
+        embedded_candidates: 0,
+        capped_candidates: 0,
+        request_failures: [],
+        inserted: 0,
+        updated: 0,
+        skipped_items: 0,
+        errors: [],
+      },
+      {
+        skipped: true,
+        reason: "summary_only",
+        known_count: 0,
+      },
+      {
+        skipped: true,
+        reason: "summary_only",
+        inserted: 0,
+        updated: 0,
+        skipped_items: 0,
+        errors: [],
+      },
+      {
+        skipped: true,
+        reason: "summary_only",
+        payload: {
+          run_at: nowIso(),
+          mode: collectorMode,
+          fetched_count: 0,
+          significant_count: 0,
+          note: "summary_only",
+          source: config.collectorSource,
+        },
+      },
+      summaryResult,
+      dryRun,
+      collectorMode
+    );
+    console.log(JSON.stringify(summaryOnlyResponse));
+    return summaryOnlyResponse;
+  }
 
   const watchlistMap = buildWatchlistTierMap();
   if (collectorMode === "priority" && Object.keys(watchlistMap).length === 0) {

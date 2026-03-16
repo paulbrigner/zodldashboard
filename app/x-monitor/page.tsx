@@ -28,7 +28,7 @@ type HomePageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
-const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h"] as const;
+const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h", "rolling_7d_daily"] as const;
 type SearchMode = "keyword" | "semantic";
 type TrendRangeKey = "24h" | "7d" | "30d";
 type SignificantFilterMode = "default_true" | "any" | "true" | "false";
@@ -37,6 +37,13 @@ const MULTI_VALUE_FILTER_KEYS = new Set(["tier", "theme", "debate_issue"]);
 const SUMMARY_LABELS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
   rolling_2h: "2-hour rolling summary",
   rolling_12h: "12-hour rolling summary",
+  rolling_7d_daily: "Weekly summary",
+};
+
+const SUMMARY_DESCRIPTIONS: Record<(typeof SUMMARY_WINDOW_TYPES)[number], string> = {
+  rolling_2h: "Latest short-window conversation summary.",
+  rolling_12h: "Latest broader half-day summary.",
+  rolling_7d_daily: "Trailing 7-day summary refreshed daily at 6:00 AM ET.",
 };
 
 function asString(value: string | string[] | undefined): string | undefined {
@@ -618,34 +625,49 @@ export default async function HomePage({ searchParams }: HomePageProps) {
             </span>
             <span className="summary-panel-state">{summaries.length} loaded</span>
           </summary>
-          <div className="summary-panel-grid">
+          <div className="summary-panel-stack">
             {SUMMARY_WINDOW_TYPES.map((windowType) => {
               const summary = summariesByType.get(windowType);
               return (
-                <article className="summary-card" key={windowType}>
-                  <div className="summary-card-top">
-                    <h3>{SUMMARY_LABELS[windowType]}</h3>
+                <details className="summary-subpanel" key={windowType}>
+                  <summary className="summary-subpanel-header">
+                    <span className="summary-subpanel-title-wrap">
+                      <span className="summary-subpanel-title">{SUMMARY_LABELS[windowType]}</span>
+                      <span aria-hidden className="disclosure-caret">
+                        ▾
+                      </span>
+                    </span>
+                    <span className="summary-subpanel-meta">
+                      {summary ? (
+                        <>
+                          Generated <LocalDateTime iso={summary.generated_at} />
+                        </>
+                      ) : (
+                        "Not generated yet"
+                      )}
+                    </span>
+                  </summary>
+                  <div className="summary-card">
+                    <div className="summary-card-top">
+                      <h3>{SUMMARY_LABELS[windowType]}</h3>
+                      <p className="subtle-text summary-description">{SUMMARY_DESCRIPTIONS[windowType]}</p>
+                    </div>
                     {summary ? (
-                      <p className="subtle-text">
-                        Generated <LocalDateTime iso={summary.generated_at} />
-                      </p>
-                    ) : null}
+                      <>
+                        <p className="subtle-text summary-window">
+                          Window <LocalDateTime iso={summary.window_start} /> -{" "}
+                          <LocalDateTime iso={summary.window_end} />
+                        </p>
+                        <p className="subtle-text summary-counts">
+                          {summary.post_count} posts, {summary.significant_count} significant
+                        </p>
+                        <p className="summary-text">{renderSummaryTextWithHandleLinks(summary.summary_text)}</p>
+                      </>
+                    ) : (
+                      <p className="subtle-text summary-empty">No summary available yet for this window.</p>
+                    )}
                   </div>
-                  {summary ? (
-                    <>
-                      <p className="subtle-text summary-window">
-                        Window <LocalDateTime iso={summary.window_start} /> -{" "}
-                        <LocalDateTime iso={summary.window_end} />
-                      </p>
-                      <p className="subtle-text summary-counts">
-                        {summary.post_count} posts, {summary.significant_count} significant
-                      </p>
-                      <p className="summary-text">{renderSummaryTextWithHandleLinks(summary.summary_text)}</p>
-                    </>
-                  ) : (
-                    <p className="subtle-text summary-empty">No summary available yet for this window.</p>
-                  )}
-                </article>
+                </details>
               );
             })}
           </div>

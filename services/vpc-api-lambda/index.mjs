@@ -6462,7 +6462,7 @@ async function getLatestWindowSummaries() {
   const result = await db.query(
     `
       WITH requested(window_type, ord) AS (
-        VALUES ('rolling_2h'::text, 1), ('rolling_12h'::text, 2)
+        VALUES ('rolling_2h'::text, 1), ('rolling_12h'::text, 2), ('rolling_7d_daily'::text, 3)
       )
       SELECT
         ws.summary_key,

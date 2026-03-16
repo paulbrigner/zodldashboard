@@ -15,7 +15,7 @@ Primary write path (AWS-only):
 4. Collector ingests to hosted API (`/api/v1/ingest/*`) using shared-secret auth.
 5. Hosted API proxies to VPC API Lambda (`/v1/*`) and writes to RDS PostgreSQL.
 6. Async significance classification runs after ingest and updates significance fields in PostgreSQL.
-7. Discovery collector also generates/ingests `rolling_2h` + `rolling_12h` summaries (aligned windows, every 2 hours UTC).
+7. Discovery collector also generates/ingests `rolling_2h` + `rolling_12h` summaries (aligned windows, every 2 hours UTC), plus a `rolling_7d_daily` summary on a dedicated daily `6:00 AM America/New_York` schedule.
 8. Email scheduler Lambda dispatches due scheduled-email jobs to SQS; compose worker executes runs and sends via SES.
 
 Read path:

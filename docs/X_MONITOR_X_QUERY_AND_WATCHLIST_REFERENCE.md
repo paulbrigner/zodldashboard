@@ -20,7 +20,7 @@ This document describes the query logic currently used by the AWS X API collecto
 - `discovery` mode:
   - broad base-term discovery only
   - no reply-capture path by default
-  - rolling summary generation (`rolling_2h`, `rolling_12h`)
+  - rolling summary generation (`rolling_2h`, `rolling_12h`, `rolling_7d_daily`)
 
 Event schedules (default):
 - priority: `rate(15 minutes)`
@@ -127,9 +127,10 @@ Embeddings (collector-side ingest):
 Summaries (discovery mode):
 - `XMON_SUMMARY_ENABLED=true`
 - aligned windows every `XMON_SUMMARY_ALIGN_HOURS` (default `2`)
+- weekly summary generated daily at `6:00 AM America/New_York`
 - LLM defaults:
   - backend: `auto`
-  - model: `zai-org-glm-5`
+  - model: `openai-gpt-54`
   - max tokens: `900`
   - timeout: `180000 ms`
 - fallback behavior: if narrative synthesis fails, collector emits stats-style summary text.

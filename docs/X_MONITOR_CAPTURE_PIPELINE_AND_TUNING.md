@@ -103,15 +103,21 @@ Lambda. New posts enter the system as `classification_status=pending`, then the 
 - Generated in discovery mode on aligned windows:
   - `rolling_2h`
   - `rolling_12h`
+  - `rolling_7d_daily`
 - Narrative synthesis uses configured summary LLM settings.
 - If synthesis fails/timeouts/truncates after retries, collector falls back to stats-style summary text.
 
 Key summary tuning:
-- `XMON_SUMMARY_LLM_MODEL` (default `zai-org-glm-5`)
+- `XMON_SUMMARY_LLM_MODEL` (default `openai-gpt-54`)
 - `XMON_SUMMARY_LLM_MAX_TOKENS` (default `900`)
 - `XMON_SUMMARY_LLM_TIMEOUT_MS` (default `180000`)
 - `XMON_SUMMARY_LLM_MAX_ATTEMPTS` (default `3`)
 - `XMON_SUMMARY_LLM_INITIAL_BACKOFF_MS` (default `1000`)
+- `XMON_SUMMARY_TOP_POSTS_7D` (default `12`)
+
+Weekly summary scheduling:
+- `rolling_7d_daily` is generated daily at `6:00 AM America/New_York`
+- the weekly summary uses the discovery collector Lambda in `summary_only` mode, so it does not perform a normal X API collection pass
 
 ## Monitoring commands
 
