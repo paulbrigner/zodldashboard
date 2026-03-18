@@ -13,6 +13,30 @@ type PostPageProps = {
   params: Promise<{ statusId: string }>;
 };
 
+function formatFollowersCount(value: number | null | undefined): string {
+  if (value === null || value === undefined) return "Not captured yet";
+  return new Intl.NumberFormat("en-US").format(value);
+}
+
+function describeAccountAge(iso: string | null | undefined): string {
+  if (!iso) return "Not captured yet";
+  const createdAt = new Date(iso);
+  if (Number.isNaN(createdAt.getTime())) return "Not captured yet";
+
+  const diffMs = Date.now() - createdAt.getTime();
+  if (diffMs < 0) return "Not captured yet";
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const totalDays = Math.max(1, Math.floor(diffMs / dayMs));
+  if (totalDays < 30) return `${totalDays} day${totalDays === 1 ? "" : "s"} old`;
+
+  const totalMonths = Math.floor(totalDays / 30);
+  if (totalMonths < 24) return `${totalMonths} month${totalMonths === 1 ? "" : "s"} old`;
+
+  const totalYears = Math.floor(totalDays / 365);
+  return `${totalYears} year${totalYears === 1 ? "" : "s"} old`;
+}
+
 function buildPostApiUrl(baseUrl: string, statusId: string): string {
   const normalizedBase = baseUrl.replace(/\/+$/, "");
   const url = new URL(`${normalizedBase}/posts/${encodeURIComponent(statusId)}`);
@@ -122,6 +146,26 @@ export default async function PostPage({ params }: PostPageProps) {
           <span className="pill">replies: {detail.post.replies}</span>
           <span className="pill">views: {detail.post.views}</span>
         </div>
+
+        <section>
+          <h2>Author details</h2>
+          <p>
+            <strong>Followers:</strong> {formatFollowersCount(detail.post.followers_count)}
+          </p>
+          <p>
+            <strong>Account age:</strong> {describeAccountAge(detail.post.account_created_at)}
+            {detail.post.account_created_at ? (
+              <>
+                {" "}(
+                created <LocalDateTime iso={detail.post.account_created_at} />
+                )
+              </>
+            ) : null}
+          </p>
+          <p>
+            <strong>Location:</strong> {detail.post.author_location || "Not captured yet"}
+          </p>
+        </section>
 
         <section>
           <h2>Classification details</h2>
