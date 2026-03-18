@@ -39,6 +39,9 @@ export type PostUpsert = {
   url: string;
   author_handle: string;
   author_display?: string | null;
+  followers_count?: number | null;
+  account_created_at?: string | null;
+  author_location?: string | null;
   body_text?: string | null;
   posted_relative?: string | null;
   source_query?: string | null;
@@ -222,6 +225,9 @@ export type FeedItem = {
   discovered_at: string;
   author_handle: string;
   watch_tier: string | null;
+  followers_count?: number | null;
+  account_created_at?: string | null;
+  author_location?: string | null;
   body_text: string | null;
   url: string;
   is_significant: boolean;
@@ -409,6 +415,11 @@ export type FeedQuery = {
   debate_issues?: string[];
   handle?: string;
   significant?: boolean;
+  min_followers?: number;
+  max_followers?: number;
+  min_account_age_days?: number;
+  max_account_age_days?: number;
+  location?: string;
   q?: string;
   limit?: number;
   cursor?: string;
@@ -421,6 +432,11 @@ export type SemanticQueryRequest = {
   tiers?: WatchTierFilter[];
   handle?: string;
   significant?: boolean;
+  min_followers?: number;
+  max_followers?: number;
+  min_account_age_days?: number;
+  max_account_age_days?: number;
+  location?: string;
   limit?: number;
 };
 
@@ -437,6 +453,11 @@ export type ComposeQueryRequest = {
   tiers?: WatchTierFilter[];
   handle?: string;
   significant?: boolean;
+  min_followers?: number;
+  max_followers?: number;
+  min_account_age_days?: number;
+  max_account_age_days?: number;
+  location?: string;
   retrieval_limit?: number;
   context_limit?: number;
   answer_style?: ComposeAnswerStyle;

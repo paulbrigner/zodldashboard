@@ -1486,7 +1486,7 @@ function buildSearchUrl(config, query, sinceId, nextToken) {
   url.searchParams.set("query", query);
   url.searchParams.set("max_results", String(config.maxResultsPerPage));
   url.searchParams.set("tweet.fields", "author_id,created_at,lang,public_metrics,referenced_tweets");
-  url.searchParams.set("user.fields", "id,name,username");
+  url.searchParams.set("user.fields", "id,name,username,public_metrics,created_at,location");
   url.searchParams.set("expansions", "author_id");
   if (sinceId) {
     url.searchParams.set("since_id", sinceId);
@@ -1521,12 +1521,16 @@ function buildPostRecord(tweet, user, sourceQuery, watchTier, seenAtIso) {
   const authorHandle = normalizeHandle(user?.username);
   const authorDisplay = asString(user?.name) || null;
   const metrics = tweet?.public_metrics || {};
+  const authorMetrics = user?.public_metrics || {};
 
   return {
     status_id: String(tweet.id),
     url: `https://x.com/${authorHandle}/status/${tweet.id}`,
     author_handle: authorHandle,
     author_display: authorDisplay,
+    followers_count: Number.isFinite(Number(authorMetrics?.followers_count)) ? coerceInt(authorMetrics.followers_count) : null,
+    account_created_at: toIso(user?.created_at, null),
+    author_location: cleanupText(user?.location),
     body_text: cleanupText(tweet.text),
     posted_relative: null,
     source_query: sourceQuery,

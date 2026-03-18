@@ -149,6 +149,9 @@ function rowToFeedItem(row: QueryResultRow): FeedItem {
     discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
     author_handle: String(row.author_handle),
     watch_tier: row.watch_tier ? String(row.watch_tier) : null,
+    followers_count: row.followers_count === null || row.followers_count === undefined ? null : Number(row.followers_count),
+    account_created_at: toIso(row.account_created_at),
+    author_location: row.author_location ? String(row.author_location) : null,
     body_text: row.body_text ? String(row.body_text) : null,
     url: String(row.url),
     is_significant: Boolean(row.is_significant),
@@ -168,6 +171,42 @@ function rowToFeedItem(row: QueryResultRow): FeedItem {
 
 function classifiedSignificantPredicate(postAlias = "p"): string {
   return `${postAlias}.classification_status = 'classified' AND ${postAlias}.is_significant`;
+}
+
+function appendAuthorMetadataFilters(
+  query: FeedQuery,
+  params: unknown[],
+  where: string[],
+  postAlias = "p"
+): void {
+  if (query.min_followers !== undefined) {
+    params.push(query.min_followers);
+    where.push(`${postAlias}.followers_count IS NOT NULL AND ${postAlias}.followers_count >= $${params.length}`);
+  }
+
+  if (query.max_followers !== undefined) {
+    params.push(query.max_followers);
+    where.push(`${postAlias}.followers_count IS NOT NULL AND ${postAlias}.followers_count <= $${params.length}`);
+  }
+
+  if (query.min_account_age_days !== undefined) {
+    params.push(query.min_account_age_days);
+    where.push(
+      `${postAlias}.account_created_at IS NOT NULL AND ${postAlias}.account_created_at <= now() - make_interval(days => $${params.length})`
+    );
+  }
+
+  if (query.max_account_age_days !== undefined) {
+    params.push(query.max_account_age_days);
+    where.push(
+      `${postAlias}.account_created_at IS NOT NULL AND ${postAlias}.account_created_at >= now() - make_interval(days => $${params.length})`
+    );
+  }
+
+  if (query.location) {
+    params.push(`%${escapeLikePattern(query.location)}%`);
+    where.push(`${postAlias}.author_location IS NOT NULL AND ${postAlias}.author_location ILIKE $${params.length} ESCAPE '\\'`);
+  }
 }
 
 function isClassificationRelevantChangeSql(): string {
@@ -252,6 +291,9 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
       url,
       author_handle,
       author_display,
+      followers_count,
+      account_created_at,
+      author_location,
       body_text,
       posted_relative,
       source_query,
@@ -268,14 +310,18 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
       last_seen_at
     )
     VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-      $12, $13, $14, $15, $16,
-      $17, $18
+      $1, $2, $3, $4, $5, $6, $7,
+      $8, $9, $10, $11, $12, $13, $14,
+      $15, $16, $17, $18, $19,
+      $20, $21
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
       author_handle = EXCLUDED.author_handle,
       author_display = EXCLUDED.author_display,
+      followers_count = EXCLUDED.followers_count,
+      account_created_at = EXCLUDED.account_created_at,
+      author_location = EXCLUDED.author_location,
       body_text = EXCLUDED.body_text,
       posted_relative = EXCLUDED.posted_relative,
       source_query = EXCLUDED.source_query,
@@ -349,6 +395,9 @@ export async function upsertPosts(items: PostUpsert[]): Promise<BatchUpsertResul
         item.url,
         authorHandle,
         item.author_display || null,
+        item.followers_count ?? null,
+        item.account_created_at ?? null,
+        item.author_location || null,
         item.body_text || null,
         item.posted_relative || null,
         item.source_query || null,
@@ -948,6 +997,7 @@ function buildFeedWhereClause(query: FeedQuery, options: FeedWhereBuildOptions =
     where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
+  appendAuthorMetadataFilters(query, params, where, "p");
   appendSummaryMatcherFilter(where, params, buildSummaryThemeMatcherGroups(query.themes), "p");
   appendSummaryMatcherFilter(where, params, buildSummaryDebateMatcherGroups(query.debate_issues), "p");
 
@@ -1058,6 +1108,9 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
       p.discovered_at,
       p.author_handle,
       p.watch_tier,
+      p.followers_count,
+      p.account_created_at,
+      p.author_location,
       p.body_text,
       p.url,
       p.is_significant,
@@ -1458,6 +1511,9 @@ export async function getPostDetail(statusId: string): Promise<PostDetail | null
         p.discovered_at,
         p.author_handle,
         p.watch_tier,
+        p.followers_count,
+        p.account_created_at,
+        p.author_location,
         p.body_text,
         p.url,
         p.is_significant,

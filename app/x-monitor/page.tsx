@@ -163,6 +163,11 @@ function buildQuery(
     "theme",
     "debate_issue",
     "handle",
+    "min_followers",
+    "max_followers",
+    "min_account_age_days",
+    "max_account_age_days",
+    "location",
     "significant",
     "q",
     "limit",
@@ -210,6 +215,11 @@ function buildFilterSearchParams(
   query.themes?.forEach((theme) => params.append("theme", theme));
   query.debate_issues?.forEach((issue) => params.append("debate_issue", issue));
   if (query.handle) params.set("handle", query.handle);
+  if (query.min_followers !== undefined) params.set("min_followers", String(query.min_followers));
+  if (query.max_followers !== undefined) params.set("max_followers", String(query.max_followers));
+  if (query.min_account_age_days !== undefined) params.set("min_account_age_days", String(query.min_account_age_days));
+  if (query.max_account_age_days !== undefined) params.set("max_account_age_days", String(query.max_account_age_days));
+  if (query.location) params.set("location", query.location);
   appendSignificantParam(params, significantMode);
   if (query.q) params.set("q", query.q);
 
@@ -272,6 +282,11 @@ function buildFeedApiUrl(
   query.themes?.forEach((theme) => url.searchParams.append("theme", theme));
   query.debate_issues?.forEach((issue) => url.searchParams.append("debate_issue", issue));
   if (query.handle) url.searchParams.set("handle", query.handle);
+  if (query.min_followers !== undefined) url.searchParams.set("min_followers", String(query.min_followers));
+  if (query.max_followers !== undefined) url.searchParams.set("max_followers", String(query.max_followers));
+  if (query.min_account_age_days !== undefined) url.searchParams.set("min_account_age_days", String(query.min_account_age_days));
+  if (query.max_account_age_days !== undefined) url.searchParams.set("max_account_age_days", String(query.max_account_age_days));
+  if (query.location) url.searchParams.set("location", query.location);
   appendSignificantParam(url.searchParams, significantMode);
   if (query.q) url.searchParams.set("q", query.q);
   if (query.limit) url.searchParams.set("limit", String(query.limit));
@@ -301,6 +316,11 @@ function buildTrendsApiUrl(
   query.themes?.forEach((theme) => url.searchParams.append("theme", theme));
   query.debate_issues?.forEach((issue) => url.searchParams.append("debate_issue", issue));
   if (query.handle) url.searchParams.set("handle", query.handle);
+  if (query.min_followers !== undefined) url.searchParams.set("min_followers", String(query.min_followers));
+  if (query.max_followers !== undefined) url.searchParams.set("max_followers", String(query.max_followers));
+  if (query.min_account_age_days !== undefined) url.searchParams.set("min_account_age_days", String(query.min_account_age_days));
+  if (query.max_account_age_days !== undefined) url.searchParams.set("max_account_age_days", String(query.max_account_age_days));
+  if (query.location) url.searchParams.set("location", query.location);
   appendSignificantParam(url.searchParams, significantMode);
   if (query.q) url.searchParams.set("q", query.q);
   if (searchMode === "semantic") url.searchParams.set("search_mode", "semantic");
@@ -348,6 +368,11 @@ function buildFilterPanelKey(
     themes: query.themes || [],
     debateIssues: query.debate_issues || [],
     handle: query.handle || "",
+    minFollowers: query.min_followers || 0,
+    maxFollowers: query.max_followers || 0,
+    minAccountAgeDays: query.min_account_age_days || 0,
+    maxAccountAgeDays: query.max_account_age_days || 0,
+    location: query.location || "",
     q: query.q || "",
     limit: query.limit || 0,
   });
@@ -413,6 +438,11 @@ async function fetchSemanticViaApi(baseUrl: string, query: ReturnType<typeof par
       debate_issues: query.debate_issues,
       handle: query.handle,
       significant: query.significant,
+      min_followers: query.min_followers,
+      max_followers: query.max_followers,
+      min_account_age_days: query.min_account_age_days,
+      max_account_age_days: query.max_account_age_days,
+      location: query.location,
       limit: query.limit,
     }),
   });
@@ -577,6 +607,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       (query.themes && query.themes.length > 0) ||
       (query.debate_issues && query.debate_issues.length > 0) ||
       query.handle ||
+      query.min_followers !== undefined ||
+      query.max_followers !== undefined ||
+      query.min_account_age_days !== undefined ||
+      query.max_account_age_days !== undefined ||
+      query.location ||
       significantMode === "false" ||
       significantMode === "any" ||
       query.since ||
@@ -682,6 +717,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           initialHandle={qsValue(query.handle)}
           initialHasActiveFilters={hasActiveFilters}
           initialLimit={query.limit || 50}
+          initialLocation={qsValue(query.location)}
+          initialMaxAccountAgeDays={query.max_account_age_days}
+          initialMaxFollowers={query.max_followers}
+          initialMinAccountAgeDays={query.min_account_age_days}
+          initialMinFollowers={query.min_followers}
           initialQuery={qsValue(query.q)}
           initialSearchMode={searchMode}
           initialSignificant={query.significant}
@@ -696,6 +736,11 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           emailEnabled={emailFeatureEnabled}
           emailSchedulesEnabled={emailSchedulesFeatureEnabled}
           initialHandle={query.handle}
+          initialLocation={query.location}
+          initialMaxAccountAgeDays={query.max_account_age_days}
+          initialMaxFollowers={query.max_followers}
+          initialMinAccountAgeDays={query.min_account_age_days}
+          initialMinFollowers={query.min_followers}
           initialSignificant={query.significant}
           initialSince={query.since}
           initialTiers={query.tiers}

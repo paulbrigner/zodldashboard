@@ -14,6 +14,11 @@ type FilterPanelProps = {
   initialDebateIssues?: string[];
   initialHandle?: string;
   initialSignificant?: boolean;
+  initialMinFollowers?: number;
+  initialMaxFollowers?: number;
+  initialMinAccountAgeDays?: number;
+  initialMaxAccountAgeDays?: number;
+  initialLocation?: string;
   initialSince?: string;
   initialUntil?: string;
   initialQuery?: string;
@@ -28,6 +33,11 @@ export function FilterPanel({
   initialDebateIssues,
   initialHandle,
   initialSignificant,
+  initialMinFollowers,
+  initialMaxFollowers,
+  initialMinAccountAgeDays,
+  initialMaxAccountAgeDays,
+  initialLocation,
   initialSince,
   initialUntil,
   initialQuery,
@@ -146,6 +156,16 @@ export function FilterPanel({
             </label>
 
             <label>
+              <span>Location contains</span>
+              <input
+                name="location"
+                defaultValue={initialLocation || ""}
+                placeholder="singapore"
+                type="text"
+              />
+            </label>
+
+            <label>
               <div className="filter-label-row">
                 <span>Significant</span>
                 <details className="field-help">
@@ -165,6 +185,67 @@ export function FilterPanel({
                 <option value="true">True</option>
                 <option value="false">False</option>
               </select>
+            </label>
+
+            <label>
+              <span>Min followers</span>
+              <input
+                name="min_followers"
+                defaultValue={initialMinFollowers ? String(initialMinFollowers) : ""}
+                min={1}
+                placeholder="10000"
+                step={1}
+                type="number"
+              />
+            </label>
+
+            <label>
+              <span>Max followers</span>
+              <input
+                name="max_followers"
+                defaultValue={initialMaxFollowers ? String(initialMaxFollowers) : ""}
+                min={1}
+                placeholder="500000"
+                step={1}
+                type="number"
+              />
+            </label>
+
+            <label>
+              <div className="filter-label-row">
+                <span>Min account age (days)</span>
+                <details className="field-help">
+                  <summary aria-label="Account age help" className="field-help-trigger" title="Account age help">
+                    i
+                  </summary>
+                  <div className="field-help-popover">
+                    <p>
+                      Filters by the age of the poster&apos;s X account using the author profile creation date returned by
+                      X. For example, <code>365</code> means at least one year old.
+                    </p>
+                  </div>
+                </details>
+              </div>
+              <input
+                name="min_account_age_days"
+                defaultValue={initialMinAccountAgeDays ? String(initialMinAccountAgeDays) : ""}
+                min={1}
+                placeholder="365"
+                step={1}
+                type="number"
+              />
+            </label>
+
+            <label>
+              <span>Max account age (days)</span>
+              <input
+                name="max_account_age_days"
+                defaultValue={initialMaxAccountAgeDays ? String(initialMaxAccountAgeDays) : ""}
+                min={1}
+                placeholder="30"
+                step={1}
+                type="number"
+              />
             </label>
 
             <DateRangeFields initialSince={initialSince} initialUntil={initialUntil} />

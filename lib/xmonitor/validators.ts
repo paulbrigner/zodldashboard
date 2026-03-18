@@ -142,6 +142,9 @@ export function parsePostUpsert(value: unknown): { ok: true; data: PostUpsert } 
       url,
       author_handle: authorHandle,
       author_display: asNullableString(value.author_display),
+      followers_count: value.followers_count === null ? null : asInteger(value.followers_count),
+      account_created_at: value.account_created_at === null ? null : asIsoTimestamp(value.account_created_at) ?? null,
+      author_location: asNullableString(value.author_location),
       body_text: asNullableString(value.body_text),
       posted_relative: asNullableString(value.posted_relative),
       source_query: asNullableString(value.source_query),
@@ -481,6 +484,26 @@ function firstValue(value: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
+function normalizeHandleFilter(value: unknown): string | undefined {
+  return asString(value)
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
+}
+
+function normalizeLocationFilter(value: unknown): string | undefined {
+  return asString(value)
+    ?.replace(/\s+/g, " ")
+    .trim();
+}
+
+function positiveInteger(value: unknown): number | undefined {
+  const parsed = asInteger(value);
+  if (parsed === undefined || parsed <= 0) return undefined;
+  return parsed;
+}
+
 function tierValues(value: unknown): FeedQuery["tiers"] {
   const rawValues = Array.isArray(value) ? value : value === undefined ? [] : [value];
   if (rawValues.length === 0) return undefined;
@@ -505,17 +528,17 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
   const tiers = tierValues(input.tier);
   const themes = normalizeSummaryThemeFilters(input.theme);
   const debateIssues = normalizeSummaryDebateFilters(input.debate_issue);
-
   const significant = asBoolean(firstValue(input.significant));
+  const minFollowers = positiveInteger(firstValue(input.min_followers));
+  const maxFollowers = positiveInteger(firstValue(input.max_followers));
+  const minAccountAgeDays = positiveInteger(firstValue(input.min_account_age_days));
+  const maxAccountAgeDays = positiveInteger(firstValue(input.max_account_age_days));
+  const normalizedLocation = normalizeLocationFilter(firstValue(input.location));
 
   const limitValue = asInteger(firstValue(input.limit));
   const maxLimit = maxFeedLimit();
   const finalLimit = limitValue ? Math.min(Math.max(limitValue, 1), maxLimit) : defaultFeedLimit();
-  const normalizedHandle = asString(firstValue(input.handle))
-    ?.toLowerCase()
-    .split(/\s+/)
-    .filter((item) => item.length > 0)
-    .join(" ");
+  const normalizedHandle = normalizeHandleFilter(firstValue(input.handle));
 
   return {
     since,
@@ -525,6 +548,11 @@ export function parseFeedQuery(input: Record<string, string | string[] | undefin
     debate_issues: debateIssues.length > 0 ? debateIssues : undefined,
     handle: normalizedHandle || undefined,
     significant,
+    min_followers: minFollowers,
+    max_followers: maxFollowers,
+    min_account_age_days: minAccountAgeDays,
+    max_account_age_days: maxAccountAgeDays,
+    location: normalizedLocation,
     q: asString(firstValue(input.q)),
     limit: finalLimit,
     cursor: asString(firstValue(input.cursor)),
@@ -545,16 +573,17 @@ export function parseSemanticQueryRequest(
   const until = asIsoTimestamp(value.until);
   const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
+  const minFollowers = positiveInteger(value.min_followers);
+  const maxFollowers = positiveInteger(value.max_followers);
+  const minAccountAgeDays = positiveInteger(value.min_account_age_days);
+  const maxAccountAgeDays = positiveInteger(value.max_account_age_days);
+  const location = normalizeLocationFilter(value.location);
 
   const limitValue = asInteger(value.limit);
   const maxLimit = maxFeedLimit();
   const finalLimit = limitValue ? Math.min(Math.max(limitValue, 1), maxLimit) : defaultFeedLimit();
 
-  const normalizedHandle = asString(value.handle)
-    ?.toLowerCase()
-    .split(/\s+/)
-    .filter((item) => item.length > 0)
-    .join(" ");
+  const normalizedHandle = normalizeHandleFilter(value.handle);
 
   return {
     ok: true,
@@ -565,6 +594,11 @@ export function parseSemanticQueryRequest(
       tiers,
       handle: normalizedHandle || undefined,
       significant,
+      min_followers: minFollowers,
+      max_followers: maxFollowers,
+      min_account_age_days: minAccountAgeDays,
+      max_account_age_days: maxAccountAgeDays,
+      location,
       limit: finalLimit,
     },
   };
@@ -584,6 +618,11 @@ export function parseComposeQueryRequest(
   const until = asIsoTimestamp(value.until);
   const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
+  const minFollowers = positiveInteger(value.min_followers);
+  const maxFollowers = positiveInteger(value.max_followers);
+  const minAccountAgeDays = positiveInteger(value.min_account_age_days);
+  const maxAccountAgeDays = positiveInteger(value.max_account_age_days);
+  const location = normalizeLocationFilter(value.location);
 
   const retrievalLimitRaw = asInteger(value.retrieval_limit);
   const retrievalLimit = retrievalLimitRaw
@@ -618,11 +657,7 @@ export function parseComposeQueryRequest(
     ? (draftFormatRaw as (typeof COMPOSE_DRAFT_FORMATS)[number])
     : "email";
 
-  const normalizedHandle = asString(value.handle)
-    ?.toLowerCase()
-    .split(/\s+/)
-    .filter((item) => item.length > 0)
-    .join(" ");
+  const normalizedHandle = normalizeHandleFilter(value.handle);
 
   return {
     ok: true,
@@ -633,6 +668,11 @@ export function parseComposeQueryRequest(
       tiers,
       handle: normalizedHandle || undefined,
       significant,
+      min_followers: minFollowers,
+      max_followers: maxFollowers,
+      min_account_age_days: minAccountAgeDays,
+      max_account_age_days: maxAccountAgeDays,
+      location,
       retrieval_limit: retrievalLimit,
       context_limit: contextLimit,
       answer_style: answerStyle,

@@ -794,6 +794,26 @@ function firstValue(value) {
   return undefined;
 }
 
+function normalizeHandleFilter(value) {
+  return asString(value)
+    ?.toLowerCase()
+    .split(/\s+/)
+    .filter((item) => item.length > 0)
+    .join(" ");
+}
+
+function normalizeLocationFilter(value) {
+  return asString(value)
+    ?.replace(/\s+/g, " ")
+    .trim();
+}
+
+function positiveInteger(value) {
+  const parsed = asInteger(value);
+  if (parsed === undefined || parsed <= 0) return undefined;
+  return parsed;
+}
+
 function tierValues(value) {
   const rawValues = Array.isArray(value) ? value : value === undefined ? [] : [value];
   if (rawValues.length === 0) return undefined;
@@ -861,6 +881,9 @@ function rowToFeedItem(row) {
     discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
     author_handle: String(row.author_handle),
     watch_tier: row.watch_tier ? String(row.watch_tier) : null,
+    followers_count: row.followers_count === undefined || row.followers_count === null ? null : Number(row.followers_count),
+    account_created_at: toIso(row.account_created_at),
+    author_location: row.author_location ? String(row.author_location) : null,
     body_text: row.body_text ? String(row.body_text) : null,
     url: String(row.url),
     is_significant: Boolean(row.is_significant),
@@ -881,6 +904,37 @@ function rowToFeedItem(row) {
 
 function classifiedSignificantPredicate(postAlias = "p") {
   return `${postAlias}.classification_status = 'classified' AND ${postAlias}.is_significant`;
+}
+
+function appendAuthorMetadataFilters(query, params, where, postAlias = "p") {
+  if (query.min_followers !== undefined) {
+    params.push(query.min_followers);
+    where.push(`${postAlias}.followers_count IS NOT NULL AND ${postAlias}.followers_count >= $${params.length}`);
+  }
+
+  if (query.max_followers !== undefined) {
+    params.push(query.max_followers);
+    where.push(`${postAlias}.followers_count IS NOT NULL AND ${postAlias}.followers_count <= $${params.length}`);
+  }
+
+  if (query.min_account_age_days !== undefined) {
+    params.push(query.min_account_age_days);
+    where.push(
+      `${postAlias}.account_created_at IS NOT NULL AND ${postAlias}.account_created_at <= now() - make_interval(days => $${params.length})`
+    );
+  }
+
+  if (query.max_account_age_days !== undefined) {
+    params.push(query.max_account_age_days);
+    where.push(
+      `${postAlias}.account_created_at IS NOT NULL AND ${postAlias}.account_created_at >= now() - make_interval(days => $${params.length})`
+    );
+  }
+
+  if (query.location) {
+    params.push(`%${escapeLikePattern(query.location)}%`);
+    where.push(`${postAlias}.author_location IS NOT NULL AND ${postAlias}.author_location ILIKE $${params.length} ESCAPE '\\'`);
+  }
 }
 
 function rowToWindowSummary(row) {
@@ -1487,6 +1541,9 @@ function parsePostUpsert(value) {
       url,
       author_handle: authorHandle,
       author_display: asNullableString(value.author_display),
+      followers_count: value.followers_count === null ? null : asInteger(value.followers_count),
+      account_created_at: value.account_created_at === null ? null : asIsoTimestamp(value.account_created_at) ?? null,
+      author_location: asNullableString(value.author_location),
       body_text: asNullableString(value.body_text),
       posted_relative: asNullableString(value.posted_relative),
       source_query: asNullableString(value.source_query),
@@ -1793,6 +1850,11 @@ function parseFeedQuery(input) {
   const themes = normalizeSummaryThemeFilters(input.theme);
   const debateIssues = normalizeSummaryDebateFilters(input.debate_issue);
   const significant = asBoolean(firstValue(input.significant));
+  const minFollowers = positiveInteger(firstValue(input.min_followers));
+  const maxFollowers = positiveInteger(firstValue(input.max_followers));
+  const minAccountAgeDays = positiveInteger(firstValue(input.min_account_age_days));
+  const maxAccountAgeDays = positiveInteger(firstValue(input.max_account_age_days));
+  const location = normalizeLocationFilter(firstValue(input.location));
 
   const limitValue = asInteger(firstValue(input.limit));
   const finalLimit = limitValue
@@ -1805,8 +1867,13 @@ function parseFeedQuery(input) {
     tiers,
     themes: themes.length > 0 ? themes : undefined,
     debate_issues: debateIssues.length > 0 ? debateIssues : undefined,
-    handle: asString(firstValue(input.handle))?.toLowerCase(),
+    handle: normalizeHandleFilter(firstValue(input.handle)),
     significant,
+    min_followers: minFollowers,
+    max_followers: maxFollowers,
+    min_account_age_days: minAccountAgeDays,
+    max_account_age_days: maxAccountAgeDays,
+    location,
     q: asString(firstValue(input.q)),
     limit: finalLimit,
     cursor: asString(firstValue(input.cursor)),
@@ -1845,6 +1912,7 @@ function buildFeedWhereClause(query, options = {}) {
     where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
+  appendAuthorMetadataFilters(query, params, where, "p");
   appendSummaryMatcherFilter(where, params, buildSummaryThemeMatcherGroups(query.themes), "p");
   appendSummaryMatcherFilter(where, params, buildSummaryDebateMatcherGroups(query.debate_issues), "p");
 
@@ -1997,17 +2065,18 @@ function parseSemanticQueryBody(value) {
   const until = asIsoTimestamp(value.until);
   const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
+  const minFollowers = positiveInteger(value.min_followers);
+  const maxFollowers = positiveInteger(value.max_followers);
+  const minAccountAgeDays = positiveInteger(value.min_account_age_days);
+  const maxAccountAgeDays = positiveInteger(value.max_account_age_days);
+  const location = normalizeLocationFilter(value.location);
 
   const limitValue = asInteger(value.limit);
   const maxLimit = semanticMaxLimit();
   const finalLimit = limitValue ? Math.min(Math.max(limitValue, 1), maxLimit) : semanticDefaultLimit();
   const minScoreRaw = parseFloatOr(value.min_score, Number.NaN);
 
-  const normalizedHandle = asString(value.handle)
-    ?.toLowerCase()
-    .split(/\s+/)
-    .filter((item) => item.length > 0)
-    .join(" ");
+  const normalizedHandle = normalizeHandleFilter(value.handle);
 
   return {
     ok: true,
@@ -2019,6 +2088,11 @@ function parseSemanticQueryBody(value) {
       tiers,
       handle: normalizedHandle || undefined,
       significant,
+      min_followers: minFollowers,
+      max_followers: maxFollowers,
+      min_account_age_days: minAccountAgeDays,
+      max_account_age_days: maxAccountAgeDays,
+      location,
       limit: finalLimit,
       min_score: Number.isFinite(minScoreRaw) ? minScoreRaw : undefined,
     },
@@ -2042,6 +2116,11 @@ function parseComposeQueryBody(value) {
   const until = asIsoTimestamp(value.until);
   const tiers = tierValues(value.tiers ?? value.tier);
   const significant = asBoolean(value.significant);
+  const minFollowers = positiveInteger(value.min_followers);
+  const maxFollowers = positiveInteger(value.max_followers);
+  const minAccountAgeDays = positiveInteger(value.min_account_age_days);
+  const maxAccountAgeDays = positiveInteger(value.max_account_age_days);
+  const location = normalizeLocationFilter(value.location);
 
   const retrievalLimitValue = asInteger(value.retrieval_limit);
   const maxRetrievalLimit = composeMaxRetrievalLimit();
@@ -2068,11 +2147,7 @@ function parseComposeQueryBody(value) {
   }
   const draftFormat = draftFormatRaw || "email";
 
-  const normalizedHandle = asString(value.handle)
-    ?.toLowerCase()
-    .split(/\s+/)
-    .filter((item) => item.length > 0)
-    .join(" ");
+  const normalizedHandle = normalizeHandleFilter(value.handle);
 
   return {
     ok: true,
@@ -2084,6 +2159,11 @@ function parseComposeQueryBody(value) {
       tiers,
       handle: normalizedHandle || undefined,
       significant,
+      min_followers: minFollowers,
+      max_followers: maxFollowers,
+      min_account_age_days: minAccountAgeDays,
+      max_account_age_days: maxAccountAgeDays,
+      location,
       retrieval_limit: retrievalLimit,
       context_limit: contextLimit,
       answer_style: answerStyle,
@@ -2438,6 +2518,9 @@ async function upsertPosts(items) {
       url,
       author_handle,
       author_display,
+      followers_count,
+      account_created_at,
+      author_location,
       body_text,
       posted_relative,
       source_query,
@@ -2454,14 +2537,18 @@ async function upsertPosts(items) {
       last_seen_at
     )
     VALUES (
-      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-      $12, $13, $14, $15, $16,
-      $17, $18
+      $1, $2, $3, $4, $5, $6, $7,
+      $8, $9, $10, $11, $12, $13, $14,
+      $15, $16, $17, $18, $19,
+      $20, $21
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
       author_handle = EXCLUDED.author_handle,
       author_display = EXCLUDED.author_display,
+      followers_count = EXCLUDED.followers_count,
+      account_created_at = EXCLUDED.account_created_at,
+      author_location = EXCLUDED.author_location,
       body_text = EXCLUDED.body_text,
       posted_relative = EXCLUDED.posted_relative,
       source_query = EXCLUDED.source_query,
@@ -2535,6 +2622,9 @@ async function upsertPosts(items) {
         item.url,
         authorHandle,
         item.author_display || null,
+        item.followers_count ?? null,
+        item.account_created_at ?? null,
+        item.author_location || null,
         item.body_text || null,
         item.posted_relative || null,
         item.source_query || null,
@@ -3208,6 +3298,8 @@ async function querySemanticFeed(query, embeddingVector) {
     where.push(`p.classification_status = 'classified' AND p.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
 
+  appendAuthorMetadataFilters(query, params, where, "p");
+
   const requestedLimit = query.limit || semanticDefaultLimit();
   const finalLimit = Math.min(Math.max(requestedLimit, 1), semanticMaxLimit());
   const retrievalLimit = Math.min(finalLimit * semanticRetrievalFactor(), semanticMaxLimit() * 5);
@@ -3241,6 +3333,9 @@ async function querySemanticFeed(query, embeddingVector) {
       p.discovered_at,
       p.author_handle,
       p.watch_tier,
+      p.followers_count,
+      p.account_created_at,
+      p.author_location,
       p.body_text,
       p.url,
       p.is_significant,
@@ -3296,6 +3391,8 @@ function addStandardPostFilters(query, params, where, postAlias) {
   if (query.significant !== undefined) {
     where.push(`${postAlias}.classification_status = 'classified' AND ${postAlias}.is_significant = ${query.significant ? "TRUE" : "FALSE"}`);
   }
+
+  appendAuthorMetadataFilters(query, params, where, postAlias);
 }
 
 function buildLexicalPatterns(taskText) {
@@ -3393,6 +3490,9 @@ async function queryComposeEvidence(query, embeddingVector) {
       p.discovered_at,
       p.author_handle,
       p.watch_tier,
+      p.followers_count,
+      p.account_created_at,
+      p.author_location,
       p.body_text,
       p.url,
       p.is_significant,
@@ -3450,6 +3550,9 @@ async function queryComposeEvidence(query, embeddingVector) {
           p.discovered_at,
           p.author_handle,
           p.watch_tier,
+          p.followers_count,
+          p.account_created_at,
+          p.author_location,
           p.body_text,
           p.url,
           p.is_significant,
@@ -6073,6 +6176,9 @@ async function getFeed(query) {
       p.discovered_at,
       p.author_handle,
       p.watch_tier,
+      p.followers_count,
+      p.account_created_at,
+      p.author_location,
       p.body_text,
       p.url,
       p.is_significant,
@@ -6506,16 +6612,19 @@ async function getPostDetail(statusId) {
         p.discovered_at,
         p.author_handle,
         p.watch_tier,
+        p.followers_count,
+        p.account_created_at,
+        p.author_location,
         p.body_text,
-      p.url,
-      p.is_significant,
-      p.significance_reason,
-      p.classification_status,
-      p.classified_at,
-      p.classification_model,
-      p.classification_confidence,
-      p.likes,
-      p.reposts,
+        p.url,
+        p.is_significant,
+        p.significance_reason,
+        p.classification_status,
+        p.classified_at,
+        p.classification_model,
+        p.classification_confidence,
+        p.likes,
+        p.reposts,
         p.replies,
         p.views
       FROM posts p

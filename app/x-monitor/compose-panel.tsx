@@ -31,6 +31,11 @@ type ComposePanelProps = {
   initialTiers?: string[];
   initialHandle?: string;
   initialSignificant?: boolean;
+  initialMinFollowers?: number;
+  initialMaxFollowers?: number;
+  initialMinAccountAgeDays?: number;
+  initialMaxAccountAgeDays?: number;
+  initialLocation?: string;
   emailEnabled?: boolean;
   emailSchedulesEnabled?: boolean;
   viewerEmail?: string | null;
@@ -110,6 +115,11 @@ function summarizeScope(props: ComposePanelProps): string {
   if (props.initialTiers && props.initialTiers.length > 0) parts.push(`tiers ${props.initialTiers.join(", ")}`);
   if (props.initialHandle) parts.push(`handle ${props.initialHandle}`);
   if (props.initialSignificant !== undefined) parts.push(`significant=${String(props.initialSignificant)}`);
+  if (props.initialMinFollowers !== undefined) parts.push(`min followers ${props.initialMinFollowers}`);
+  if (props.initialMaxFollowers !== undefined) parts.push(`max followers ${props.initialMaxFollowers}`);
+  if (props.initialMinAccountAgeDays !== undefined) parts.push(`min age ${props.initialMinAccountAgeDays}d`);
+  if (props.initialMaxAccountAgeDays !== undefined) parts.push(`max age ${props.initialMaxAccountAgeDays}d`);
+  if (props.initialLocation) parts.push(`location contains ${props.initialLocation}`);
   if (parts.length === 0) return "Scope: all posts in current corpus.";
   return `Scope: ${parts.join(" | ")}`;
 }
@@ -579,6 +589,11 @@ export function ComposePanel(props: ComposePanelProps) {
       tiers: props.initialTiers,
       handle: props.initialHandle,
       significant: props.initialSignificant,
+      min_followers: props.initialMinFollowers,
+      max_followers: props.initialMaxFollowers,
+      min_account_age_days: props.initialMinAccountAgeDays,
+      max_account_age_days: props.initialMaxAccountAgeDays,
+      location: props.initialLocation,
     };
 
     const payload: Record<string, unknown> = {
@@ -846,6 +861,11 @@ export function ComposePanel(props: ComposePanelProps) {
       tiers: props.initialTiers,
       handle: props.initialHandle,
       significant: props.initialSignificant,
+      min_followers: props.initialMinFollowers,
+      max_followers: props.initialMaxFollowers,
+      min_account_age_days: props.initialMinAccountAgeDays,
+      max_account_age_days: props.initialMaxAccountAgeDays,
+      location: props.initialLocation,
     };
 
     const runToken = runTokenRef.current + 1;
