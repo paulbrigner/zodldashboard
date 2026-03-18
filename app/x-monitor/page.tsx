@@ -4,9 +4,10 @@ import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
-import { getFeed, getLatestWindowSummaries, getTrends } from "@/lib/xmonitor/repository";
+import { getAuthorLocationSuggestions, getFeed, getLatestWindowSummaries, getTrends } from "@/lib/xmonitor/repository";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
 import type {
+  AuthorLocationSuggestionResponse,
   FeedResponse,
   SemanticQueryResponse,
   TrendsResponse,
@@ -300,6 +301,13 @@ function buildWindowSummariesApiUrl(baseUrl: string): string {
   return `${normalizedBase}/window-summaries/latest`;
 }
 
+function buildAuthorLocationsApiUrl(baseUrl: string, limit = 8): string {
+  const normalizedBase = baseUrl.replace(/\/+$/, "");
+  const url = new URL(`${normalizedBase}/author-locations`);
+  url.searchParams.set("limit", String(limit));
+  return url.toString();
+}
+
 function buildTrendsApiUrl(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
@@ -479,6 +487,23 @@ async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummar
   return payload.items;
 }
 
+async function fetchAuthorLocationsViaApi(baseUrl: string): Promise<string[]> {
+  const response = await fetch(buildAuthorLocationsApiUrl(baseUrl), {
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(await readApiError(response));
+  }
+
+  const payload = (await response.json()) as AuthorLocationSuggestionResponse;
+  if (!payload || !Array.isArray(payload.items)) {
+    throw new Error("Invalid author location response payload");
+  }
+
+  return payload.items.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
+}
+
 async function fetchTrendsViaApi(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
@@ -541,6 +566,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   let summariesError: string | null = null;
   let trends: TrendsResponse | null = null;
   let trendsError: string | null = null;
+  let locationSuggestions: string[] = [];
 
   if (apiBaseUrl) {
     try {
@@ -568,6 +594,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
     } catch (error) {
       trendsError = error instanceof Error ? error.message : "Failed to load trends";
     }
+
+    try {
+      locationSuggestions = await fetchAuthorLocationsViaApi(apiBaseUrl);
+    } catch {
+      locationSuggestions = [];
+    }
   } else if (hasDatabaseConfig()) {
     try {
       if (useSemanticRetrieval) {
@@ -592,6 +624,12 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       });
     } catch (error) {
       trendsError = error instanceof Error ? error.message : "Failed to load trends";
+    }
+
+    try {
+      locationSuggestions = await getAuthorLocationSuggestions();
+    } catch {
+      locationSuggestions = [];
     }
   } else {
     feedError = "No feed backend configured. Set XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL or DATABASE_URL/PG*.";
@@ -729,6 +767,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
           initialThemes={query.themes}
           initialTiers={query.tiers}
           initialUntil={query.until}
+          locationSuggestions={locationSuggestions}
         />
 
         <ComposePanel

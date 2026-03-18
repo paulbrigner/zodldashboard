@@ -1143,6 +1143,30 @@ export async function getFeed(query: FeedQuery): Promise<FeedResponse> {
   return { items, next_cursor: nextCursor };
 }
 
+export async function getAuthorLocationSuggestions(limit = 8): Promise<string[]> {
+  const pool = getDbPool();
+  const boundedLimit = Math.min(Math.max(limit, 1), 20);
+  const result = await pool.query(
+    `
+      SELECT
+        p.author_location,
+        COUNT(*)::bigint AS usage_count,
+        MAX(p.discovered_at) AS latest_discovered_at
+      FROM posts p
+      WHERE p.author_location IS NOT NULL
+        AND btrim(p.author_location) <> ''
+      GROUP BY p.author_location
+      ORDER BY usage_count DESC, latest_discovered_at DESC, p.author_location ASC
+      LIMIT $1
+    `,
+    [boundedLimit]
+  );
+
+  return result.rows
+    .map((row) => (row.author_location ? String(row.author_location).trim() : ""))
+    .filter((value) => value.length > 0);
+}
+
 export async function getTrends(
   query: FeedQuery,
   options: { applyTextQuery?: boolean; rangeKey?: string | null } = {}

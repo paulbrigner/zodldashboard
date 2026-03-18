@@ -6211,6 +6211,30 @@ async function getFeed(query) {
   return { items, next_cursor: nextCursor };
 }
 
+async function getAuthorLocationSuggestions(limit = 8) {
+  const db = getPool();
+  const boundedLimit = Math.min(Math.max(limit, 1), 20);
+  const result = await db.query(
+    `
+      SELECT
+        p.author_location,
+        COUNT(*)::bigint AS usage_count,
+        MAX(p.discovered_at) AS latest_discovered_at
+      FROM posts p
+      WHERE p.author_location IS NOT NULL
+        AND btrim(p.author_location) <> ''
+      GROUP BY p.author_location
+      ORDER BY usage_count DESC, latest_discovered_at DESC, p.author_location ASC
+      LIMIT $1
+    `,
+    [boundedLimit]
+  );
+
+  return result.rows
+    .map((row) => (row.author_location ? String(row.author_location).trim() : ""))
+    .filter((value) => value.length > 0);
+}
+
 async function getEngagement(query, options = {}) {
   const db = getPool();
   const range = normalizeEngagementRange(query, { rangeKey: options.rangeKey });
@@ -6715,6 +6739,23 @@ async function handleFeed(event) {
     return jsonOk(feed);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to query feed", 503);
+  }
+}
+
+async function handleAuthorLocations(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const params = event?.queryStringParameters || {};
+  const limitRaw = asInteger(firstValue(params.limit));
+  const limit = limitRaw ? Math.min(Math.max(limitRaw, 1), 20) : 8;
+
+  try {
+    const items = await getAuthorLocationSuggestions(limit);
+    return jsonOk({ items });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to query author locations", 503);
   }
 }
 
@@ -8869,6 +8910,10 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/feed") {
     return handleFeed(event);
+  }
+
+  if (method === "GET" && path === "/v1/author-locations") {
+    return handleAuthorLocations(event);
   }
 
   if (method === "GET" && path === "/v1/engagement") {

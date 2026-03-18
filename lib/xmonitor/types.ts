@@ -248,6 +248,10 @@ export type FeedResponse = {
   next_cursor: string | null;
 };
 
+export type AuthorLocationSuggestionResponse = {
+  items: string[];
+};
+
 export type TrendScope = {
   since: string;
   until: string;

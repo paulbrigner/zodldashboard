@@ -19,6 +19,7 @@ type FilterPanelProps = {
   initialMinAccountAgeDays?: number;
   initialMaxAccountAgeDays?: number;
   initialLocation?: string;
+  locationSuggestions?: string[];
   initialSince?: string;
   initialUntil?: string;
   initialQuery?: string;
@@ -38,6 +39,7 @@ export function FilterPanel({
   initialMinAccountAgeDays,
   initialMaxAccountAgeDays,
   initialLocation,
+  locationSuggestions,
   initialSince,
   initialUntil,
   initialQuery,
@@ -156,13 +158,36 @@ export function FilterPanel({
             </label>
 
             <label>
-              <span>Location contains</span>
-              <input
-                name="location"
-                defaultValue={initialLocation || ""}
-                placeholder="singapore"
-                type="text"
-              />
+              <div className="filter-label-row">
+                <span>Location contains</span>
+                <details className="field-help">
+                  <summary aria-label="Location help" className="field-help-trigger" title="Location help">
+                    i
+                  </summary>
+                  <div className="field-help-popover">
+                    <p>
+                      Matches the poster&apos;s free-form X profile location text. These examples come from captured posts,
+                      but they are not validated locations and may not be geographic areas.
+                    </p>
+                  </div>
+                </details>
+              </div>
+              <>
+                <input
+                  list="xmonitor-location-suggestions"
+                  name="location"
+                  defaultValue={initialLocation || ""}
+                  placeholder="singapore"
+                  type="text"
+                />
+                {locationSuggestions && locationSuggestions.length > 0 ? (
+                  <datalist id="xmonitor-location-suggestions">
+                    {locationSuggestions.map((location) => (
+                      <option key={location} value={location} />
+                    ))}
+                  </datalist>
+                ) : null}
+              </>
             </label>
 
             <label>
