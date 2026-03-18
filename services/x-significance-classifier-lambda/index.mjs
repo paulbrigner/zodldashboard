@@ -31,6 +31,12 @@ function nowIso() {
   return new Date().toISOString();
 }
 
+function toIso(value) {
+  if (!value) return null;
+  const date = new Date(String(value));
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -58,6 +64,15 @@ function chunkArray(items, chunkSize) {
   return chunks;
 }
 
+function computeAccountAgeDays(accountCreatedAt, observedAt) {
+  const createdMs = Date.parse(String(accountCreatedAt || ""));
+  const observedMs = Date.parse(String(observedAt || ""));
+  if (!Number.isFinite(createdMs) || !Number.isFinite(observedMs) || observedMs < createdMs) {
+    return null;
+  }
+  return Math.floor((observedMs - createdMs) / 86400000);
+}
+
 function getConfig(event = {}) {
   return {
     enabled: asBool(process.env.XMON_SIGNIFICANCE_ENABLED, true),
@@ -76,7 +91,7 @@ function getConfig(event = {}) {
     maxPostsPerRun: Math.min(Math.max(asPositiveInt(event.max_posts_per_run ?? process.env.XMON_SIGNIFICANCE_MAX_POSTS_PER_RUN, 24), 1), 500),
     maxAttempts: Math.min(Math.max(asPositiveInt(event.max_attempts ?? process.env.XMON_SIGNIFICANCE_MAX_ATTEMPTS, 3), 1), 10),
     leaseSeconds: Math.min(Math.max(asPositiveInt(event.lease_seconds ?? process.env.XMON_SIGNIFICANCE_LEASE_SECONDS, 300), 30), 3600),
-    significanceVersion: asString(process.env.XMON_SIGNIFICANCE_VERSION) || "ai_v1",
+    significanceVersion: asString(process.env.XMON_SIGNIFICANCE_VERSION) || "ai_v2",
   };
 }
 
@@ -159,6 +174,8 @@ function buildClassificationMessages(items) {
         + "A post is significant only if it is likely worth operator attention because it contains material product, governance, ecosystem, regulatory, security, adoption, or strategy information or informed commentary. "
         + "Not significant includes casual chatter, memes, hype, generic market talk, incidental mentions, low-information replies, and routine reactions. "
         + "Use only the provided text and metadata. Do not use likes, reposts, replies, or views. "
+        + "High follower counts and long-established accounts can raise significance when the post is relevant, substantive, or likely to influence the conversation, but they are supporting signals rather than automatic overrides. "
+        + "Location can matter when it adds regulatory, geographic, or ecosystem context, but free-form profile locations are often noisy. "
         + "Watchlist/source metadata is context, not an automatic reason to mark a post significant. "
         + "Return concise reasons.",
     },
@@ -170,6 +187,10 @@ function buildClassificationMessages(items) {
           status_id: item.status_id,
           author_handle: item.author_handle,
           author_display: item.author_display || null,
+          followers_count: item.followers_count ?? null,
+          account_created_at: toIso(item.account_created_at),
+          account_age_days_at_capture: computeAccountAgeDays(item.account_created_at, item.discovered_at),
+          author_location: item.author_location || null,
           watch_tier: item.watch_tier || null,
           source_query: item.source_query || null,
           discovered_at: item.discovered_at,

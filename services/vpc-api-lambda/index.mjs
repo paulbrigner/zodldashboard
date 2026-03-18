@@ -1550,7 +1550,7 @@ function parsePostUpsert(value) {
       watch_tier: watchTier,
       is_significant: asBoolean(value.is_significant) ?? false,
       significance_reason: asNullableString(value.significance_reason),
-      significance_version: asNullableString(value.significance_version) ?? "ai_v1",
+      significance_version: asNullableString(value.significance_version) ?? "ai_v2",
       likes: asInteger(value.likes) ?? 0,
       reposts: asInteger(value.reposts) ?? 0,
       replies: asInteger(value.replies) ?? 0,
@@ -1621,7 +1621,7 @@ function parseSignificanceResultUpsert(value) {
       classification_status: classificationStatus,
       is_significant: asBoolean(value.is_significant) ?? false,
       significance_reason: asNullableString(value.significance_reason),
-      significance_version: asNullableString(value.significance_version) ?? "ai_v1",
+      significance_version: asNullableString(value.significance_version) ?? "ai_v2",
       classification_model: asNullableString(value.classification_model),
       classification_confidence: confidence ?? null,
       classification_error: asNullableString(value.classification_error),
@@ -2562,8 +2562,8 @@ async function upsertPosts(items) {
         ELSE posts.significance_reason
       END,
       significance_version = CASE
-        WHEN ${classificationResetSql} THEN 'ai_v1'
-        ELSE COALESCE(posts.significance_version, 'ai_v1')
+        WHEN ${classificationResetSql} THEN 'ai_v2'
+        ELSE COALESCE(posts.significance_version, 'ai_v2')
       END,
       classification_status = CASE
         WHEN ${classificationResetSql} THEN 'pending'
@@ -2631,7 +2631,7 @@ async function upsertPosts(items) {
         item.watch_tier || null,
         false,
         null,
-        "ai_v1",
+        "ai_v2",
         "pending",
         item.likes ?? 0,
         item.reposts ?? 0,
@@ -2695,6 +2695,9 @@ async function claimPostsForClassification(request = {}) {
       p.status_id,
       p.author_handle,
       p.author_display,
+      p.followers_count,
+      p.account_created_at,
+      p.author_location,
       p.body_text,
       p.source_query,
       p.watch_tier,
@@ -2708,6 +2711,9 @@ async function claimPostsForClassification(request = {}) {
       status_id: String(row.status_id),
       author_handle: String(row.author_handle),
       author_display: row.author_display ? String(row.author_display) : null,
+      followers_count: row.followers_count === null || row.followers_count === undefined ? null : Number(row.followers_count),
+      account_created_at: toIso(row.account_created_at),
+      author_location: row.author_location ? String(row.author_location) : null,
       body_text: row.body_text ? String(row.body_text) : null,
       source_query: row.source_query ? String(row.source_query) : null,
       watch_tier: row.watch_tier ? String(row.watch_tier) : null,
@@ -2752,7 +2758,7 @@ async function applySignificanceResults(items) {
         item.status_id,
         item.classification_status === "classified" ? Boolean(item.is_significant) : false,
         item.classification_status === "classified" ? item.significance_reason || null : null,
-        item.significance_version || "ai_v1",
+        item.significance_version || "ai_v2",
         item.classification_status,
         item.classified_at || null,
         item.classification_model || null,

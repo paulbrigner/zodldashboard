@@ -67,6 +67,9 @@ export type SignificanceCandidate = {
   status_id: string;
   author_handle: string;
   author_display: string | null;
+  followers_count: number | null;
+  account_created_at: string | null;
+  author_location: string | null;
   body_text: string | null;
   source_query: string | null;
   watch_tier: WatchTier | null;

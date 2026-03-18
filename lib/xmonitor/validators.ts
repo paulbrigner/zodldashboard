@@ -233,7 +233,7 @@ export function parseSignificanceResultUpsert(
       classification_status: normalizedStatus,
       is_significant: asBoolean(value.is_significant) ?? false,
       significance_reason: asNullableString(value.significance_reason),
-      significance_version: asNullableString(value.significance_version) ?? "ai_v1",
+      significance_version: asNullableString(value.significance_version) ?? "ai_v2",
       classification_model: asNullableString(value.classification_model),
       classification_confidence: confidence ?? null,
       classification_error: asNullableString(value.classification_error),

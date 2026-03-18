@@ -1676,6 +1676,10 @@ p {
   word-break: break-word;
 }
 
+.detail-section-spaced {
+  margin-top: 1.15rem;
+}
+
 .feed-item-actions {
   margin-top: 0.7rem;
   display: flex;

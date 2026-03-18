@@ -167,7 +167,7 @@ export default async function PostPage({ params }: PostPageProps) {
           </p>
         </section>
 
-        <section>
+        <section className="detail-section-spaced">
           <h2>Classification details</h2>
           <p>
             <strong>Reason:</strong>{" "}
