@@ -325,7 +325,7 @@ Current architecture and operations:
 - Restrict DB network access to trusted AWS resources.
 - Keep local bypass disabled by default.
 
-## License
+## License Options
 
 All code in this workspace is licensed under either of:
 
