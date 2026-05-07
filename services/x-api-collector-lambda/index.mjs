@@ -1383,6 +1383,11 @@ async function fetchJsonWithTimeout(url, options, timeoutMs) {
   }
 }
 
+function isStaleSinceIdSearchError(error) {
+  const message = asString(error?.message).toLowerCase();
+  return message.includes("since_id") && message.includes("must be a tweet id created after");
+}
+
 function compareStatusIds(a, b) {
   const left = asString(a);
   const right = asString(b);
@@ -1600,6 +1605,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
     skippedEmptyOrStub: 0,
     querySinceIdApplied: 0,
     querySinceIdMissing: 0,
+    querySinceIdStaleRetries: 0,
     familyCounts: {},
     sourceCounts: {},
   };
@@ -1608,6 +1614,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
     const existingCheckpoint = checkpointByKey.get(entry.queryKey);
     const querySinceId = config.sinceIdEnabled ? (asString(existingCheckpoint?.since_id) || null) : null;
     let queryNewestId = querySinceId;
+    let activeSinceId = querySinceId;
     if (querySinceId) counters.querySinceIdApplied += 1;
     else counters.querySinceIdMissing += 1;
 
@@ -1615,19 +1622,42 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
     let page = 0;
 
     do {
-      const url = buildSearchUrl(config, entry.query, querySinceId, nextToken);
-      const payload = await fetchJsonWithTimeout(
-        url,
-        {
-          method: "GET",
-          headers: {
-            authorization: `Bearer ${config.xApiBearerToken}`,
-            "content-type": "application/json",
-            "user-agent": "xmonitor-xapi-collector/1.0",
+      const fetchPage = () => {
+        const url = buildSearchUrl(config, entry.query, activeSinceId, nextToken);
+        return fetchJsonWithTimeout(
+          url,
+          {
+            method: "GET",
+            headers: {
+              authorization: `Bearer ${config.xApiBearerToken}`,
+              "content-type": "application/json",
+              "user-agent": "xmonitor-xapi-collector/1.0",
+            },
           },
-        },
-        config.queryTimeoutMs
-      );
+          config.queryTimeoutMs
+        );
+      };
+
+      let payload;
+      try {
+        payload = await fetchPage();
+      } catch (error) {
+        if (activeSinceId && !nextToken && page === 0 && isStaleSinceIdSearchError(error)) {
+          counters.querySinceIdStaleRetries += 1;
+          console.warn(JSON.stringify({
+            event: "x_api_stale_since_id_retry",
+            collector_mode: collectorMode,
+            query_family: entry.family,
+            query_key: entry.queryKey,
+            stale_since_id: activeSinceId,
+          }));
+          activeSinceId = null;
+          queryNewestId = null;
+          payload = await fetchPage();
+        } else {
+          throw error;
+        }
+      }
 
       counters.pageCount += 1;
       page += 1;
@@ -1702,7 +1732,7 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
       query_family: entry.family,
       query_text_hash: entry.queryTextHash,
       query_handles_hash: entry.queryHandlesHash,
-      since_id: queryNewestId || querySinceId || null,
+      since_id: queryNewestId || activeSinceId || null,
       last_newest_id: queryNewestId || null,
       last_seen_at: seenAtIso,
       last_run_at: seenAtIso,
@@ -1971,6 +2001,7 @@ function buildRunNote(config, counters, posts, collectorMode) {
     `since_id_enabled=${config.sinceIdEnabled ? 1 : 0}`,
     `since_id_applied=${counters.querySinceIdApplied}`,
     `since_id_missing=${counters.querySinceIdMissing}`,
+    `since_id_stale_retries=${counters.querySinceIdStaleRetries}`,
     `skipped_lang=${counters.skippedLang}`,
     `skipped_non_watchlist=${counters.skippedNonWatchlist}`,
     `skipped_keyword_omit=${counters.skippedKeywordOmit}`,
