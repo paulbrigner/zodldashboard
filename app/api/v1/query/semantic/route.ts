@@ -1,11 +1,23 @@
+import { resolveApiRouteViewer } from "@/lib/api-route-viewer";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { jsonError } from "@/lib/xmonitor/http";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
 import { parseSemanticQueryRequest } from "@/lib/xmonitor/validators";
+import { buildViewerProxyHeaders } from "@/lib/xmonitor/viewer-proxy";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const viewer = await resolveApiRouteViewer(new URL(request.url).pathname);
+  if (!viewer) {
+    return jsonError("authentication required", 401);
+  }
+
+  const viewerHeaders = buildViewerProxyHeaders(viewer);
+  if (!viewerHeaders) {
+    return jsonError("XMONITOR_USER_PROXY_SECRET is not configured", 503);
+  }
+
   if (!semanticEnabled()) {
     return jsonError("semantic query is disabled", 503);
   }
@@ -35,6 +47,7 @@ export async function POST(request: Request) {
       headers: {
         "content-type": "application/json",
         accept: "application/json",
+        ...viewerHeaders,
       },
       body: JSON.stringify({
         query_text: parsed.data.query_text,

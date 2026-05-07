@@ -862,7 +862,8 @@ function composeFallbackForNoEvidence(evidencePayload: ComposeQueryResponse): Co
 export async function executeComposeQuery(
   backendBaseUrl: string,
   input: ComposeQueryRequest,
-  requestId?: string
+  requestId?: string,
+  upstreamHeaders: Record<string, string> = {}
 ): Promise<ComposeQueryResponse> {
   const releasePermit = acquireComposePermit();
   const startedAt = Date.now();
@@ -877,6 +878,7 @@ export async function executeComposeQuery(
       headers: {
         accept: "application/json",
         "content-type": "application/json",
+        ...upstreamHeaders,
       },
       body: JSON.stringify({
         task_text: input.task_text,

@@ -156,6 +156,7 @@ Commonly used variables:
   - `XMONITOR_COMPOSE_API_KEY`
   - `XMONITOR_COMPOSE_ASYNC_ENABLED`
   - `XMONITOR_COMPOSE_JOBS_QUEUE_URL`
+  - `XMONITOR_USER_PROXY_SECRET` (required by hosted semantic/compose routes)
 - Email:
   - `XMONITOR_USER_PROXY_SECRET`
   - `XMONITOR_EMAIL_ENABLED`

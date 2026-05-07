@@ -15,6 +15,7 @@ import type {
   WindowSummary,
 } from "@/lib/xmonitor/types";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
+import { buildViewerProxyHeaders } from "@/lib/xmonitor/viewer-proxy";
 import { ComposePanel } from "./compose-panel";
 import { FeedUpdateIndicator } from "./feed-update-indicator";
 import { FilterPanel } from "./filter-panel";
@@ -422,9 +423,18 @@ async function fetchFeedViaApi(
   };
 }
 
-async function fetchSemanticViaApi(baseUrl: string, query: ReturnType<typeof parseFeedQuery>): Promise<FeedResponse> {
+async function fetchSemanticViaApi(
+  baseUrl: string,
+  query: ReturnType<typeof parseFeedQuery>,
+  viewer: { email: string; mode: "oauth" | "local-bypass" }
+): Promise<FeedResponse> {
   if (!query.q) {
     return { items: [], next_cursor: null };
+  }
+
+  const viewerHeaders = buildViewerProxyHeaders(viewer);
+  if (!viewerHeaders) {
+    throw new Error("XMONITOR_USER_PROXY_SECRET is not configured");
   }
 
   const normalizedBase = baseUrl.replace(/\/+$/, "");
@@ -435,6 +445,7 @@ async function fetchSemanticViaApi(baseUrl: string, query: ReturnType<typeof par
     headers: {
       accept: "application/json",
       "content-type": "application/json",
+      ...viewerHeaders,
     },
     body: JSON.stringify({
       query_text: query.q,
@@ -574,7 +585,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
         if (!semanticAvailable) {
           feedError = "Semantic mode is disabled.";
         } else {
-          feed = await fetchSemanticViaApi(apiBaseUrl, query);
+          feed = await fetchSemanticViaApi(apiBaseUrl, query, viewer);
         }
       } else {
         feed = await fetchFeedViaApi(apiBaseUrl, query, significantMode);

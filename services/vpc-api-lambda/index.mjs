@@ -4303,6 +4303,8 @@ async function createComposeJob(parsedInput, requestId, owner = null) {
 
 async function getComposeJobById(jobId, ownerEmail = null) {
   await ensureComposeJobsSchema();
+  if (!ownerEmail) return null;
+
   const db = getPool();
 
   await db.query(
@@ -4335,7 +4337,7 @@ async function getComposeJobById(jobId, ownerEmail = null) {
         expires_at
       FROM compose_jobs
       WHERE job_id = $1
-        AND ($2::citext IS NULL OR owner_email IS NULL OR owner_email = $2::citext)
+        AND owner_email = $2::citext
       LIMIT 1
     `,
     [jobId, ownerEmail]
@@ -6818,6 +6820,11 @@ async function handleTrends(event) {
 }
 
 async function handleSemanticQuery(event) {
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
   if (!semanticEnabled()) {
     return jsonError("semantic query is disabled", 503);
   }
@@ -6846,6 +6853,11 @@ async function handleSemanticQuery(event) {
 }
 
 async function handleComposeQuery(event) {
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
   if (!composeEnabled()) {
     return jsonError("compose query is disabled", 503);
   }
@@ -6874,6 +6886,11 @@ async function handleComposeQuery(event) {
 }
 
 async function handleComposeJobCreate(event) {
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
   if (!composeEnabled()) {
     return jsonError("compose query is disabled", 503);
   }
@@ -6901,10 +6918,9 @@ async function handleComposeJobCreate(event) {
   }
 
   const requestId = asString(headerValue(event?.headers, "x-request-id")) || randomUUID();
-  const viewer = optionalViewerContext(event);
 
   try {
-    const created = await createComposeJob(parsedQuery.data, requestId, viewer);
+    const created = await createComposeJob(parsedQuery.data, requestId, viewer.viewer);
     return jsonOk(created, 202);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to enqueue compose job", 503);
@@ -6912,6 +6928,11 @@ async function handleComposeJobCreate(event) {
 }
 
 async function handleComposeJobGet(event, path) {
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
   if (!composeEnabled()) {
     return jsonError("compose query is disabled", 503);
   }
@@ -6929,10 +6950,9 @@ async function handleComposeJobGet(event, path) {
   if (!isUuid(jobId)) {
     return jsonError("invalid compose job id", 400);
   }
-  const viewer = optionalViewerContext(event);
 
   try {
-    const row = await getComposeJobById(jobId, viewer?.email || null);
+    const row = await getComposeJobById(jobId, viewer.viewer.email);
     if (!row) {
       return jsonError("compose job not found", 404);
     }

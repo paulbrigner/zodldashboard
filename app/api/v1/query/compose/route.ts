@@ -1,12 +1,24 @@
+import { resolveApiRouteViewer } from "@/lib/api-route-viewer";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { ComposeExecutionError, composeEnabled, executeComposeQuery } from "@/lib/xmonitor/compose";
 import { jsonError, jsonOk } from "@/lib/xmonitor/http";
 import { semanticEnabled } from "@/lib/xmonitor/semantic";
 import { parseComposeQueryRequest } from "@/lib/xmonitor/validators";
+import { buildViewerProxyHeaders } from "@/lib/xmonitor/viewer-proxy";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  const viewer = await resolveApiRouteViewer(new URL(request.url).pathname);
+  if (!viewer) {
+    return jsonError("authentication required", 401);
+  }
+
+  const viewerHeaders = buildViewerProxyHeaders(viewer);
+  if (!viewerHeaders) {
+    return jsonError("XMONITOR_USER_PROXY_SECRET is not configured", 503);
+  }
+
   if (!composeEnabled()) {
     return jsonError("compose query is disabled", 503);
   }
@@ -35,7 +47,7 @@ export async function POST(request: Request) {
 
   try {
     const requestId = request.headers.get("x-request-id") || crypto.randomUUID();
-    const result = await executeComposeQuery(backendBase, parsed.data, requestId);
+    const result = await executeComposeQuery(backendBase, parsed.data, requestId, viewerHeaders);
     return jsonOk(result);
   } catch (error) {
     if (error instanceof ComposeExecutionError) {
