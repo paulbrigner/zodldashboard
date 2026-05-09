@@ -108,7 +108,7 @@ Lambda. New posts enter the system as `classification_status=pending`, then the 
 - If synthesis fails/timeouts/truncates after retries, collector falls back to stats-style summary text.
 
 Key summary tuning:
-- `XMON_SUMMARY_LLM_MODEL` (default `openai-gpt-54`)
+- `XMON_SUMMARY_LLM_MODEL` (default `openai-gpt-55`)
 - `XMON_SUMMARY_LLM_MAX_TOKENS` (default `900`)
 - `XMON_SUMMARY_LLM_TIMEOUT_MS` (default `180000`)
 - `XMON_SUMMARY_LLM_MAX_ATTEMPTS` (default `3`)

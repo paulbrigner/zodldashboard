@@ -130,7 +130,7 @@ Summaries (discovery mode):
 - weekly summary generated daily at `6:00 AM America/New_York`
 - LLM defaults:
   - backend: `auto`
-  - model: `openai-gpt-54`
+  - model: `openai-gpt-55`
   - max tokens: `900`
   - timeout: `180000 ms`
 - fallback behavior: if narrative synthesis fails, collector emits stats-style summary text.

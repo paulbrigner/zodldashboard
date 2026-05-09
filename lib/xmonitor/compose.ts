@@ -9,7 +9,7 @@ import type {
 } from "@/lib/xmonitor/types";
 
 const DEFAULT_COMPOSE_BASE_URL = "https://api.venice.ai/api/v1";
-const DEFAULT_COMPOSE_MODEL = "openai-gpt-54";
+const DEFAULT_COMPOSE_MODEL = "openai-gpt-55";
 const DEFAULT_COMPOSE_TIMEOUT_MS = 20000;
 const COMPOSE_TOTAL_TIMEOUT_BUDGET_MS = 26000;
 const ASSUMED_MAX_OUTPUT_TOKENS_FOR_COST_ESTIMATE = 1200;

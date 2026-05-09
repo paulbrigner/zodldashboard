@@ -112,7 +112,7 @@ const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
 const DEFAULT_SUMMARY_LLM_URL = "https://api.venice.ai/api/v1";
-const DEFAULT_SUMMARY_LLM_MODEL = "openai-gpt-54";
+const DEFAULT_SUMMARY_LLM_MODEL = "openai-gpt-55";
 const WEEKLY_SUMMARY_TIMEZONE = "America/New_York";
 const WEEKLY_SUMMARY_HOUR = 6;
 
