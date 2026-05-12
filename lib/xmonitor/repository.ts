@@ -481,6 +481,32 @@ export async function claimPostsForClassification(
       p.classification_attempts
   `;
   const result = await pool.query(sql, [limit, leaseSeconds, maxAttempts]);
+  const backlogResult = await pool.query(`
+    WITH retryable AS (
+      SELECT p.classification_status, p.discovered_at
+      FROM posts p
+      WHERE p.classification_attempts < $2
+        AND (
+          p.classification_status = 'pending'
+          OR p.classification_status = 'failed'
+          OR (
+            p.classification_status = 'processing'
+            AND (
+              p.classification_leased_at IS NULL
+              OR p.classification_leased_at < now() - make_interval(secs => $1)
+            )
+          )
+        )
+    )
+    SELECT
+      COUNT(*) FILTER (WHERE classification_status = 'pending') AS pending_count,
+      COUNT(*) FILTER (WHERE classification_status = 'processing') AS processing_count,
+      COUNT(*) FILTER (WHERE classification_status = 'failed') AS failed_count,
+      COUNT(*) AS retryable_count,
+      COALESCE(EXTRACT(EPOCH FROM (now() - MIN(discovered_at))), 0) AS oldest_retryable_age_seconds
+    FROM retryable
+  `, [leaseSeconds, maxAttempts]);
+  const backlogRow = backlogResult.rows[0] || {};
   const items: SignificanceCandidate[] = result.rows.map((row) => ({
     status_id: String(row.status_id),
     author_handle: String(row.author_handle),
@@ -495,7 +521,16 @@ export async function claimPostsForClassification(
     last_seen_at: toIso(row.last_seen_at) || new Date(0).toISOString(),
     classification_attempts: Number(row.classification_attempts || 0),
   }));
-  return { items };
+  return {
+    items,
+    backlog: {
+      pending_count: Number(backlogRow.pending_count || 0),
+      processing_count: Number(backlogRow.processing_count || 0),
+      failed_count: Number(backlogRow.failed_count || 0),
+      retryable_count: Number(backlogRow.retryable_count || 0),
+      oldest_retryable_age_seconds: Number(backlogRow.oldest_retryable_age_seconds || 0),
+    },
+  };
 }
 
 export async function applySignificanceResults(items: SignificanceResultUpsert[]): Promise<SignificanceBatchResult> {

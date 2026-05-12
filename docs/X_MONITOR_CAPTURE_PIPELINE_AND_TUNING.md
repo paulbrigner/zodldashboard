@@ -1,6 +1,6 @@
 # X Monitor Capture Pipeline and Tuning (AWS X API)
 
-Last updated: 2026-03-14 (America/New_York)
+Last updated: 2026-05-08 (America/New_York)
 
 ## Purpose
 
@@ -88,6 +88,18 @@ Rejected posts are limited to collector-side capture gates:
 `is_significant` is now assigned asynchronously after ingest by a dedicated significance-classifier
 Lambda. New posts enter the system as `classification_status=pending`, then the classifier writes
 `classified` or `failed` along with `is_significant`, `significance_reason`, model, and confidence.
+
+Timeout mitigation (2026-05-12): keep the provider request timeout below the Lambda
+timeout so slow LLM calls can be caught and recorded instead of letting Lambda kill
+the invocation. The deployed guardrail is `XMON_SIGNIFICANCE_LLM_TIMEOUT_MS=30000`,
+`XMON_SIGNIFICANCE_LLM_MAX_ATTEMPTS=1`, `XMON_SIGNIFICANCE_BATCH_SIZE=1`,
+`XMON_SIGNIFICANCE_MAX_POSTS_PER_RUN=8`, and `XMON_SIGNIFICANCE_MAX_ATTEMPTS=10`
+with a 120-second Lambda timeout. The classifier checks remaining Lambda time before
+each AI batch, applies partial results before returning, emits structured batch logs,
+and emits CloudWatch embedded metrics for failed batches, time-budget skips, and
+retryable classification backlog. The classifier model is `qwen3-235b-a22b-instruct-2507`
+because it passed Venice structured-output smoke testing without the cost profile of
+`openai-gpt-55`.
 
 ## Embeddings and summary generation
 

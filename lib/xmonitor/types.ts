@@ -78,8 +78,17 @@ export type SignificanceCandidate = {
   classification_attempts: number;
 };
 
+export type SignificanceBacklogStats = {
+  pending_count: number;
+  processing_count: number;
+  failed_count: number;
+  retryable_count: number;
+  oldest_retryable_age_seconds: number;
+};
+
 export type SignificanceClaimResponse = {
   items: SignificanceCandidate[];
+  backlog: SignificanceBacklogStats;
 };
 
 export type SignificanceResultUpsert = {
