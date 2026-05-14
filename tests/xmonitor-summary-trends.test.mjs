@@ -94,3 +94,35 @@ test("buildSummaryTrends aggregates 2h windows into 12h buckets for 7d range", (
   assert.equal(result.debate_trends.buckets[0].issues["Governance legitimacy"].mentions, 6);
   assert.equal(result.debate_trends.buckets[0].issues["Governance legitimacy"].contra, 6);
 });
+
+test("buildSummaryTrends aggregates 90d range into 48h buckets", () => {
+  const rows = [];
+  for (let index = 0; index < 24; index += 1) {
+    const start = new Date(Date.UTC(1970, 0, 1, index * 2));
+    const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+    rows.push(
+      buildRow({
+        window_start: start.toISOString(),
+        window_end: end.toISOString(),
+        post_count: 3,
+        significant_count: 1,
+        tier_counts_json: { teammate: 1, other: 2 },
+        top_themes_json: [{ theme: "Product / ecosystem", count: 2 }],
+        debates_json: [{ issue: "Execution readiness", mentions: 1, pro: 1, contra: 0 }],
+      })
+    );
+  }
+
+  const result = buildSummaryTrends(rows, {
+    rangeKey: "90d",
+    since: "1969-10-05T00:00:00.000Z",
+    until: "1970-01-03T00:00:00.000Z",
+  });
+
+  assert.equal(result.scope.bucket_hours, 48);
+  assert.equal(result.theme_mix.buckets.length, 1);
+  assert.equal(result.theme_mix.buckets[0].post_count, 72);
+  assert.equal(result.theme_mix.buckets[0].total_count, 48);
+  assert.equal(result.tier_mix.buckets[0].counts.teammate, 24);
+  assert.equal(result.debate_trends.buckets[0].issues["Execution readiness"].mentions, 24);
+});

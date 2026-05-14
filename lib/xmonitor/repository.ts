@@ -50,19 +50,20 @@ import type {
 } from "@/lib/xmonitor/types";
 
 const DEFAULT_TREND_LOOKBACK_HOURS = 24 * 7;
-const MAX_TREND_LOOKBACK_HOURS = 24 * 30;
+const MAX_TREND_LOOKBACK_HOURS = 24 * 90;
 const MAX_ENGAGEMENT_TOP_ITEMS = 12;
 const TREND_RANGE_HOURS = {
   "24h": 24,
   "7d": 24 * 7,
   "30d": 24 * 30,
+  "90d": 24 * 90,
 } as const;
 
 type TrendRangeKey = keyof typeof TREND_RANGE_HOURS;
 
 function parseTrendRangeKey(value: string | undefined): TrendRangeKey | null {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
+  if (normalized === "24h" || normalized === "7d" || normalized === "30d" || normalized === "90d") {
     return normalized;
   }
   return null;
@@ -1083,7 +1084,7 @@ function parseDateOrNull(value: string | undefined): Date | null {
 function normalizeTrendRange(
   query: FeedQuery,
   options: { rangeKey?: string | null } = {}
-): { since: string; until: string; bucketHours: number; rangeKey: "24h" | "7d" | "30d" | "custom" } {
+): { since: string; until: string; bucketHours: number; rangeKey: "24h" | "7d" | "30d" | "90d" | "custom" } {
   const now = new Date();
   const requestedUntil = parseDateOrNull(query.until);
   const requestedSince = parseDateOrNull(query.since);
@@ -1092,7 +1093,7 @@ function normalizeTrendRange(
   const explicitRangeKey = parseTrendRangeKey(options.rangeKey || undefined);
   const explicitRangeHours = explicitRangeKey ? TREND_RANGE_HOURS[explicitRangeKey] : null;
   let since = requestedSince || new Date(until.getTime() - (explicitRangeHours || DEFAULT_TREND_LOOKBACK_HOURS) * 60 * 60 * 1000);
-  let resolvedRangeKey: "24h" | "7d" | "30d" | "custom" = explicitRangeKey || "7d";
+  let resolvedRangeKey: "24h" | "7d" | "30d" | "90d" | "custom" = explicitRangeKey || "7d";
 
   if (since > until) {
     const originalSince = since;
@@ -1117,6 +1118,7 @@ function normalizeTrendRange(
   if (durationHours > 24 * 7) bucketHours = 6;
   if (durationHours > 24 * 14) bucketHours = 12;
   if (durationHours > 24 * 21) bucketHours = 24;
+  if (durationHours > 24 * 45) bucketHours = 48;
 
   return {
     since: since.toISOString(),

@@ -34,12 +34,13 @@ const DEFAULT_API_VERSION = "v1";
 const DEFAULT_FEED_LIMIT = 50;
 const DEFAULT_MAX_FEED_LIMIT = 200;
 const DEFAULT_ENGAGEMENT_LOOKBACK_HOURS = 24 * 7;
-const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 30;
+const MAX_ENGAGEMENT_LOOKBACK_HOURS = 24 * 90;
 const MAX_ENGAGEMENT_TOP_ITEMS = 12;
 const ENGAGEMENT_RANGE_HOURS = {
   "24h": 24,
   "7d": 24 * 7,
   "30d": 24 * 30,
+  "90d": 24 * 90,
 };
 const DEFAULT_SEMANTIC_DEFAULT_LIMIT = 25;
 const DEFAULT_SEMANTIC_MAX_LIMIT = 100;
@@ -1989,7 +1990,7 @@ function parseDateOrNull(value) {
 
 function parseEngagementRangeKey(value) {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
+  if (normalized === "24h" || normalized === "7d" || normalized === "30d" || normalized === "90d") {
     return normalized;
   }
   return null;
@@ -2029,6 +2030,7 @@ function normalizeEngagementRange(query, options = {}) {
   if (durationHours > 24 * 7) bucketHours = 6;
   if (durationHours > 24 * 14) bucketHours = 12;
   if (durationHours > 24 * 21) bucketHours = 24;
+  if (durationHours > 24 * 45) bucketHours = 48;
 
   return {
     since: since.toISOString(),

@@ -13,9 +13,9 @@ function firstString(value: string | string[] | undefined): string | undefined {
   return undefined;
 }
 
-function parseTrendRange(value: string | undefined): "24h" | "7d" | "30d" | null {
+function parseTrendRange(value: string | undefined): "24h" | "7d" | "30d" | "90d" | null {
   const normalized = String(value || "").trim().toLowerCase();
-  if (normalized === "24h" || normalized === "7d" || normalized === "30d") {
+  if (normalized === "24h" || normalized === "7d" || normalized === "30d" || normalized === "90d") {
     return normalized;
   }
   return null;

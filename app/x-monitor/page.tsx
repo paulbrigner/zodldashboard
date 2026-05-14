@@ -32,7 +32,7 @@ type HomePageProps = {
 
 const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h", "rolling_7d_daily"] as const;
 type SearchMode = "keyword" | "semantic";
-type TrendRangeKey = "24h" | "7d" | "30d";
+type TrendRangeKey = "24h" | "7d" | "30d" | "90d";
 type SignificantFilterMode = "default_true" | "any" | "true" | "false";
 const MULTI_VALUE_FILTER_KEYS = new Set(["tier", "theme", "debate_issue"]);
 
@@ -147,7 +147,7 @@ function parseSearchMode(value: string | string[] | undefined): SearchMode {
 
 function parseTrendRange(value: string | string[] | undefined): TrendRangeKey {
   const text = asString(value);
-  if (text === "24h" || text === "30d") return text;
+  if (text === "24h" || text === "30d" || text === "90d") return text;
   return "7d";
 }
 
@@ -669,7 +669,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
       (query.limit && query.limit !== 50)
   );
   const hasActiveFilters = searchMode === "semantic" ? Boolean(query.q) : keywordHasActiveFilters;
-  const trendRangeOptions = (["24h", "7d", "30d"] as const).map((range) => ({
+  const trendRangeOptions = (["24h", "7d", "30d", "90d"] as const).map((range) => ({
     key: range,
     label: range.toUpperCase(),
     href: buildTrendRangeUrl(params, range, significantMode),

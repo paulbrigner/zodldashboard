@@ -98,6 +98,7 @@ function getSummaryBucketHours(rangeKey, since, until) {
   if (rangeKey === "24h") return 2;
   if (rangeKey === "7d") return 12;
   if (rangeKey === "30d") return 24;
+  if (rangeKey === "90d") return 48;
 
   const sinceDate = new Date(String(since || ""));
   const untilDate = new Date(String(until || ""));
@@ -106,7 +107,8 @@ function getSummaryBucketHours(rangeKey, since, until) {
   const durationHours = Math.max((untilDate.getTime() - sinceDate.getTime()) / (60 * 60 * 1000), 1);
   if (durationHours <= 48) return 2;
   if (durationHours <= 24 * 14) return 12;
-  return 24;
+  if (durationHours <= 24 * 45) return 24;
+  return 48;
 }
 
 function buildMixBuckets(sourceBuckets, key) {

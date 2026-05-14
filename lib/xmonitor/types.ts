@@ -268,7 +268,7 @@ export type TrendScope = {
   since: string;
   until: string;
   bucket_hours: number;
-  range_key: "24h" | "7d" | "30d" | "custom";
+  range_key: "24h" | "7d" | "30d" | "90d" | "custom";
   text_filter_applied: boolean;
 };
 

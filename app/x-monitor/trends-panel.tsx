@@ -5,7 +5,7 @@ import { useState, type CSSProperties } from "react";
 import { LocalDateTime } from "@/app/components/local-date-time";
 import type { TrendsResponse } from "@/lib/xmonitor/types";
 
-type TrendRangeKey = "24h" | "7d" | "30d";
+type TrendRangeKey = "24h" | "7d" | "30d" | "90d";
 
 type TrendsPanelProps = {
   payload: TrendsResponse | null;
@@ -68,7 +68,7 @@ function formatBucketLabelForRange(iso: string, rangeKey: string | undefined): s
   if (rangeKey === "24h") {
     return `${hour}:00`;
   }
-  if (rangeKey === "7d" || rangeKey === "30d") {
+  if (rangeKey === "7d" || rangeKey === "30d" || rangeKey === "90d") {
     return `${month}/${day}`;
   }
   return `${month}/${day} ${hour}:00`;
