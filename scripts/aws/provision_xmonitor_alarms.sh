@@ -209,9 +209,9 @@ put_classifier_metric_alarm \
   "Sum" \
   0 \
   "GreaterThanThreshold" \
-  1 \
-  1 \
-  "$CLASSIFIER_FUNCTION_NAME skipped one or more batches because the Lambda time budget was too low."
+  2 \
+  2 \
+  "$CLASSIFIER_FUNCTION_NAME skipped one or more batches because the Lambda time budget was too low for two consecutive periods."
 
 put_classifier_metric_alarm \
   "FailedCount" \

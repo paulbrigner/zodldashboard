@@ -2680,7 +2680,7 @@ async function claimPostsForClassification(request = {}) {
             )
           )
         )
-      ORDER BY p.discovered_at DESC, p.status_id DESC
+      ORDER BY p.discovered_at ASC, p.status_id ASC
       LIMIT $1
       FOR UPDATE SKIP LOCKED
     )
