@@ -115,6 +115,10 @@ const DEFAULT_SUMMARY_LLM_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_SUMMARY_LLM_MODEL = "openai-gpt-55";
 const WEEKLY_SUMMARY_TIMEZONE = "America/New_York";
 const WEEKLY_SUMMARY_HOUR = 6;
+const TWEET_FIELDS = "article,author_id,created_at,entities,lang,public_metrics,referenced_tweets";
+const ARTICLE_SIGNIFICANCE_REASON = "x_article";
+const ARTICLE_SIGNIFICANCE_VERSION = "article_v1";
+const ARTICLE_CLASSIFICATION_MODEL = "x_article_metadata";
 
 const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b)/i;
 
@@ -270,6 +274,14 @@ function buildPriorityHandlesOnlyQuery(handles, options) {
   return clauses.join(" ");
 }
 
+function buildPriorityArticleQuery(handles, options) {
+  const handlesExpr = handles.map((handle) => `from:${handle}`).join(" OR ");
+  const clauses = [`(${handlesExpr})`, "has:links"];
+  if (options.excludeRetweets) clauses.push("-is:retweet");
+  if (options.excludeQuotes) clauses.push("-is:quote");
+  return clauses.join(" ");
+}
+
 function buildDiscoveryQuery(baseTerms, options) {
   const clauses = [`(${baseTerms})`];
   if (options.excludeRetweets) clauses.push("-is:retweet");
@@ -342,6 +354,21 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
         buildPriorityHandlesOnlyQuery(chunk, config)
       )
     );
+  }
+
+  if (config.articleCaptureEnabled) {
+    const articleCaptureChunks = chunkHandles(handles, config.handleChunkSize);
+    for (const chunk of articleCaptureChunks) {
+      queries.push(
+        buildQueryPlanEntry(
+          collectorMode,
+          "priority_article",
+          "priority_article_watchlist",
+          chunk,
+          buildPriorityArticleQuery(chunk, config)
+        )
+      );
+    }
   }
 
   // Influencer captures remain term-constrained to prioritize relevant topic coverage.
@@ -440,6 +467,7 @@ function getConfig() {
     queryTimeoutMs: asPositiveInt(process.env.XMON_X_API_QUERY_TIMEOUT_MS, 15000),
     ingestTimeoutMs: asPositiveInt(process.env.XMON_INGEST_TIMEOUT_MS, 20000),
     handleChunkSize: asPositiveInt(process.env.XMON_X_API_HANDLE_CHUNK_SIZE, 16),
+    articleCaptureEnabled: asBool(process.env.XMON_X_API_ARTICLE_CAPTURE_ENABLED, true),
     replyCaptureEnabled: asBool(process.env.XMON_X_API_REPLY_CAPTURE_ENABLED, true),
     replyMode: normalizedReplyMode,
     excludeRetweets: asBool(process.env.XMON_X_API_EXCLUDE_RETWEETS, true),
@@ -585,6 +613,38 @@ function hasConfiguredBaseTerm(text, baseTermRegex) {
 function isEmptyOrStubText(text) {
   const normalized = normalizeSubstanceText(text);
   return !normalized;
+}
+
+function getArticleTitle(tweet) {
+  return cleanupText(tweet?.article?.title);
+}
+
+function getArticleUrl(tweet) {
+  const urls = Array.isArray(tweet?.entities?.urls) ? tweet.entities.urls : [];
+  for (const item of urls) {
+    const candidates = [
+      asString(item?.unwound_url),
+      asString(item?.expanded_url),
+      asString(item?.url),
+    ].filter(Boolean);
+    const articleUrl = candidates.find((candidate) => /(?:^https?:\/\/)?(?:mobile\.)?(?:www\.)?x\.com\/i\/article\//i.test(candidate));
+    if (articleUrl) return articleUrl.replace(/^http:\/\//i, "https://");
+  }
+  return null;
+}
+
+function isArticleTweet(tweet) {
+  return Boolean(getArticleTitle(tweet) || getArticleUrl(tweet));
+}
+
+function buildArticleBodyText(tweet) {
+  if (!isArticleTweet(tweet)) return null;
+  const title = getArticleTitle(tweet);
+  const url = getArticleUrl(tweet);
+  return cleanupText([
+    title ? `X Article: ${title}` : "X Article",
+    url,
+  ].filter(Boolean).join(" "));
 }
 
 function toOffsetIso(value) {
@@ -1344,6 +1404,7 @@ async function maybeGenerateWindowSummaries(config, collectorMode, dryRun, event
 
 function comparePriority(existing, incoming) {
   const sourceRank = (sourceQuery) => {
+    if (sourceQuery === "priority_article") return 4;
     if (sourceQuery === "priority") return 3;
     if (sourceQuery === "priority_reply_selected") return 2;
     if (sourceQuery === "priority_reply_term") return 1;
@@ -1490,7 +1551,7 @@ function buildSearchUrl(config, query, sinceId, nextToken) {
   const url = new URL(`${config.xApiBaseUrl}/tweets/search/recent`);
   url.searchParams.set("query", query);
   url.searchParams.set("max_results", String(config.maxResultsPerPage));
-  url.searchParams.set("tweet.fields", "author_id,created_at,lang,public_metrics,referenced_tweets");
+  url.searchParams.set("tweet.fields", TWEET_FIELDS);
   url.searchParams.set("user.fields", "id,name,username,public_metrics,created_at,location");
   url.searchParams.set("expansions", "author_id");
   if (sinceId) {
@@ -1527,6 +1588,8 @@ function buildPostRecord(tweet, user, sourceQuery, watchTier, seenAtIso) {
   const authorDisplay = asString(user?.name) || null;
   const metrics = tweet?.public_metrics || {};
   const authorMetrics = user?.public_metrics || {};
+  const articleBodyText = buildArticleBodyText(tweet);
+  const articleTweet = Boolean(articleBodyText);
 
   return {
     status_id: String(tweet.id),
@@ -1536,12 +1599,17 @@ function buildPostRecord(tweet, user, sourceQuery, watchTier, seenAtIso) {
     followers_count: Number.isFinite(Number(authorMetrics?.followers_count)) ? coerceInt(authorMetrics.followers_count) : null,
     account_created_at: toIso(user?.created_at, null),
     author_location: cleanupText(user?.location),
-    body_text: cleanupText(tweet.text),
+    body_text: articleBodyText || cleanupText(tweet.text),
     posted_relative: null,
     source_query: sourceQuery,
     watch_tier: watchTier,
-    is_significant: false,
-    significance_reason: null,
+    is_significant: articleTweet,
+    significance_reason: articleTweet ? ARTICLE_SIGNIFICANCE_REASON : null,
+    significance_version: articleTweet ? ARTICLE_SIGNIFICANCE_VERSION : undefined,
+    classification_status: articleTweet ? "classified" : "pending",
+    classification_model: articleTweet ? ARTICLE_CLASSIFICATION_MODEL : null,
+    classification_confidence: articleTweet ? 1 : null,
+    classified_at: articleTweet ? seenAtIso : null,
     likes: coerceInt(metrics.like_count),
     reposts: coerceInt(metrics.retweet_count),
     replies: coerceInt(metrics.reply_count),
@@ -1573,7 +1641,8 @@ function shouldKeepTweet(tweet, user, watchlistMap, config, counters, collectorM
     return false;
   }
 
-  if (config.enforceLangAllowlist) {
+  const articleTweet = isArticleTweet(tweet);
+  if (config.enforceLangAllowlist && !articleTweet) {
     const lang = asString(tweet?.lang).toLowerCase();
     if (!lang || !config.langAllowlist.has(lang)) {
       counters.skippedLang += 1;
@@ -1603,6 +1672,8 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
     skippedMissingDiscoveryBaseTerm: 0,
     skippedMissingPriorityBaseTerm: 0,
     skippedEmptyOrStub: 0,
+    skippedNonArticle: 0,
+    acceptedArticles: 0,
     querySinceIdApplied: 0,
     querySinceIdMissing: 0,
     querySinceIdStaleRetries: 0,
@@ -1671,6 +1742,11 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
         queryNewestId = maxStatusId(queryNewestId, asString(tweet?.id) || null);
         const user = userMap.get(String(tweet.author_id));
         if (!shouldKeepTweet(tweet, user, watchlistMap, config, counters, collectorMode)) continue;
+        const articleTweet = isArticleTweet(tweet);
+        if (entry.family === "priority_article_watchlist" && !articleTweet) {
+          counters.skippedNonArticle += 1;
+          continue;
+        }
 
         const authorHandle = normalizeHandle(user.username);
         const watchTier = watchlistMap[authorHandle] || null;
@@ -1682,11 +1758,13 @@ async function runSearchPlan(config, watchlistMap, queryPlan, collectorMode, che
         if (
           collectorMode === "priority" &&
           (entry.family === "priority_influencer_term" || entry.family === "priority_reply_term") &&
+          !articleTweet &&
           !hasConfiguredBaseTerm(record.body_text || "", config.baseTermRegex)
         ) {
           counters.skippedMissingPriorityBaseTerm += 1;
           continue;
         }
+        if (articleTweet) counters.acceptedArticles += 1;
         if (collectorMode === "discovery" && watchTier) {
           counters.skippedDiscoveryWatchlist += 1;
           continue;
@@ -2069,8 +2147,8 @@ function summarizeResult(
     counters,
     post_summary: {
       total: posts.length,
-      significant: 0,
-      pending_classification: posts.length,
+      significant: posts.filter((item) => Boolean(item.is_significant)).length,
+      pending_classification: posts.filter((item) => item.classification_status !== "classified").length,
       by_tier: posts.reduce((acc, item) => {
         const tier = asString(item.watch_tier) || "other";
         acc[tier] = (acc[tier] || 0) + 1;
@@ -2139,6 +2217,8 @@ export async function handler(event = {}) {
         skippedMissingDiscoveryBaseTerm: 0,
         skippedMissingPriorityBaseTerm: 0,
         skippedEmptyOrStub: 0,
+        skippedNonArticle: 0,
+        acceptedArticles: 0,
         querySinceIdApplied: 0,
         querySinceIdMissing: 0,
         familyCounts: {},
@@ -2388,3 +2468,21 @@ export async function handler(event = {}) {
   console.log(JSON.stringify(summary));
   return summary;
 }
+
+export {
+  ARTICLE_CLASSIFICATION_MODEL,
+  ARTICLE_SIGNIFICANCE_REASON,
+  ARTICLE_SIGNIFICANCE_VERSION,
+  DEFAULT_WATCHLIST_TIERS,
+  TWEET_FIELDS,
+  buildArticleBodyText,
+  buildPostRecord,
+  buildQueryPlan,
+  buildSearchUrl,
+  buildWatchlistTierMap,
+  getArticleTitle,
+  getArticleUrl,
+  getConfig,
+  isArticleTweet,
+  shouldKeepTweet,
+};

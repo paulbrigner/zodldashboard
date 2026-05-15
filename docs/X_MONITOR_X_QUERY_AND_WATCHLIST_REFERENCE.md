@@ -1,6 +1,6 @@
 # X Monitor — X Query + Watchlist Reference (AWS Collector)
 
-_Last updated: 2026-03-14 (ET)_
+_Last updated: 2026-05-15 (ET)_
 
 This document describes the query logic currently used by the AWS X API collectors.
 
@@ -15,7 +15,9 @@ This document describes the query logic currently used by the AWS X API collecto
 ## 1) Active collector modes
 
 - `priority` mode:
-  - watchlist posts using base terms
+  - teammate, investor, and ecosystem watchlist posts
+  - influencer watchlist posts using base terms
+  - watchlist Article capture
   - optional watchlist reply capture
 - `discovery` mode:
   - broad base-term discovery only
@@ -40,7 +42,17 @@ Discovery base terms:
 Zcash OR Zodl OR Zashi
 ```
 
-### Priority query family (`source_query=priority`)
+### Priority direct watchlist query family (`source_query=priority`)
+
+For teammate, investor, and ecosystem handle chunks:
+
+```text
+(from:<handle1> OR from:<handle2> OR ... ) -is:retweet
+```
+
+(`-is:quote` is optional via env and defaults to off)
+
+### Priority influencer query family (`source_query=priority`)
 
 For each handle chunk:
 
@@ -49,6 +61,16 @@ For each handle chunk:
 ```
 
 (`-is:quote` is optional via env and defaults to off)
+
+### Priority Article query family (`source_query=priority_article`)
+
+For all watchlist handle chunks:
+
+```text
+(from:<handle1> OR from:<handle2> OR ... ) has:links -is:retweet
+```
+
+The collector keeps only X Article posts from this lane, then stores the article title plus canonical Article URL.
 
 ### Priority reply query family
 
@@ -82,17 +104,21 @@ Applied in collector runtime before ingest:
 1. Lang allowlist gate:
    - `XMON_X_API_ENFORCE_LANG_ALLOWLIST=true`
    - `XMON_X_API_LANG_ALLOWLIST=en`
+   - X Article posts are exempt because the X API may mark them as `zxx`
 2. Omit-handle gate:
    - `XMONITOR_INGEST_OMIT_HANDLES`
    - applies to keyword/discovery-origin posts
    - watchlist-tier posts are preserved
 3. Base-term relevance gate:
    - requires configured Zcash base terms for discovery posts and base-term-constrained priority families
+   - X Article posts are exempt and are treated as significant when authored by watchlist accounts
 4. Empty/stub hard reject:
    - drops empty, URL-only, or media-stub posts before ingest
+   - X Article posts use the article title plus article URL as their stored text
 5. Async significance classification:
    - accepted posts are ingested as `classification_status=pending`
    - a separate scheduled classifier assigns `is_significant` and reason labels after ingest
+   - X Article posts are ingested as `classification_status=classified`, `is_significant=true`
 
 ## 4) Watchlist defaults in collector code
 

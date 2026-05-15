@@ -1527,13 +1527,31 @@ function parsePostUpsert(value) {
   const authorHandle = asString(value.author_handle)?.toLowerCase();
   const discoveredAt = asIsoTimestamp(value.discovered_at);
   const lastSeenAt = asIsoTimestamp(value.last_seen_at);
+  const requestedClassificationStatus = asString(value.classification_status)?.toLowerCase();
+  const classificationStatus = requestedClassificationStatus === "classified" ? "classified" : "pending";
+  const classificationConfidence = value.classification_confidence === null
+    ? null
+    : asFiniteFloatValue(value.classification_confidence);
+  const classifiedAt = value.classified_at === null ? null : asIsoTimestamp(value.classified_at);
 
   if (!statusId || !url || !authorHandle || !discoveredAt || !lastSeenAt) {
     return { ok: false, error: "status_id, url, author_handle, discovered_at, and last_seen_at are required" };
   }
+  if (requestedClassificationStatus && requestedClassificationStatus !== "pending" && requestedClassificationStatus !== "classified") {
+    return { ok: false, error: "classification_status must be one of pending, classified" };
+  }
+  if (classificationConfidence !== null && classificationConfidence !== undefined && (classificationConfidence < 0 || classificationConfidence > 1)) {
+    return { ok: false, error: "classification_confidence must be between 0 and 1" };
+  }
+  if (classifiedAt === undefined && value.classified_at !== undefined && value.classified_at !== null) {
+    return { ok: false, error: "classified_at must be a valid ISO timestamp" };
+  }
 
   const tierRaw = asString(value.watch_tier)?.toLowerCase();
   const watchTier = tierRaw && WATCH_TIERS.has(tierRaw) ? tierRaw : null;
+  const isSignificant = classificationStatus === "classified"
+    ? (asBoolean(value.is_significant) ?? false)
+    : false;
 
   return {
     ok: true,
@@ -1549,9 +1567,13 @@ function parsePostUpsert(value) {
       posted_relative: asNullableString(value.posted_relative),
       source_query: asNullableString(value.source_query),
       watch_tier: watchTier,
-      is_significant: asBoolean(value.is_significant) ?? false,
-      significance_reason: asNullableString(value.significance_reason),
+      is_significant: isSignificant,
+      significance_reason: classificationStatus === "classified" ? asNullableString(value.significance_reason) : null,
       significance_version: asNullableString(value.significance_version) ?? "ai_v2",
+      classification_status: classificationStatus,
+      classified_at: classificationStatus === "classified" ? (classifiedAt ?? null) : null,
+      classification_model: classificationStatus === "classified" ? asNullableString(value.classification_model) : null,
+      classification_confidence: classificationStatus === "classified" ? (classificationConfidence ?? null) : null,
       likes: asInteger(value.likes) ?? 0,
       reposts: asInteger(value.reposts) ?? 0,
       replies: asInteger(value.replies) ?? 0,
@@ -2531,6 +2553,9 @@ async function upsertPosts(items) {
       significance_reason,
       significance_version,
       classification_status,
+      classified_at,
+      classification_model,
+      classification_confidence,
       likes,
       reposts,
       replies,
@@ -2541,8 +2566,9 @@ async function upsertPosts(items) {
     VALUES (
       $1, $2, $3, $4, $5, $6, $7,
       $8, $9, $10, $11, $12, $13, $14,
-      $15, $16, $17, $18, $19,
-      $20, $21
+      $15,
+      CASE WHEN $15 = 'classified' THEN COALESCE($16::timestamptz, now()) ELSE NULL END,
+      $17, $18, $19, $20, $21, $22, $23, $24
     )
     ON CONFLICT (status_id) DO UPDATE SET
       url = EXCLUDED.url,
@@ -2556,31 +2582,31 @@ async function upsertPosts(items) {
       source_query = EXCLUDED.source_query,
       watch_tier = EXCLUDED.watch_tier,
       is_significant = CASE
-        WHEN ${classificationResetSql} THEN FALSE
+        WHEN ${classificationResetSql} THEN EXCLUDED.is_significant
         ELSE posts.is_significant
       END,
       significance_reason = CASE
-        WHEN ${classificationResetSql} THEN NULL
+        WHEN ${classificationResetSql} THEN EXCLUDED.significance_reason
         ELSE posts.significance_reason
       END,
       significance_version = CASE
-        WHEN ${classificationResetSql} THEN 'ai_v2'
+        WHEN ${classificationResetSql} THEN COALESCE(EXCLUDED.significance_version, 'ai_v2')
         ELSE COALESCE(posts.significance_version, 'ai_v2')
       END,
       classification_status = CASE
-        WHEN ${classificationResetSql} THEN 'pending'
+        WHEN ${classificationResetSql} THEN EXCLUDED.classification_status
         ELSE posts.classification_status
       END,
       classified_at = CASE
-        WHEN ${classificationResetSql} THEN NULL
+        WHEN ${classificationResetSql} THEN EXCLUDED.classified_at
         ELSE posts.classified_at
       END,
       classification_model = CASE
-        WHEN ${classificationResetSql} THEN NULL
+        WHEN ${classificationResetSql} THEN EXCLUDED.classification_model
         ELSE posts.classification_model
       END,
       classification_confidence = CASE
-        WHEN ${classificationResetSql} THEN NULL
+        WHEN ${classificationResetSql} THEN EXCLUDED.classification_confidence
         ELSE posts.classification_confidence
       END,
       classification_attempts = CASE
@@ -2631,10 +2657,13 @@ async function upsertPosts(items) {
         item.posted_relative || null,
         item.source_query || null,
         item.watch_tier || null,
-        false,
-        null,
-        "ai_v2",
-        "pending",
+        Boolean(item.is_significant),
+        item.significance_reason || null,
+        item.significance_version || "ai_v2",
+        item.classification_status || "pending",
+        item.classified_at || null,
+        item.classification_model || null,
+        item.classification_confidence ?? null,
         item.likes ?? 0,
         item.reposts ?? 0,
         item.replies ?? 0,
