@@ -27,6 +27,7 @@ const DISCOVERY_BASE_TERMS = discoveryBaseTerms(PRIORITY_BASE_TERMS);
 const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
+    "dwillems42",
     "jswihart",
     "lukaskorba",
     "nullc0py",
