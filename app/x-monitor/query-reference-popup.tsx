@@ -28,7 +28,7 @@ const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
     "decentralistdan",
-    "jwihart",
+    "jswihart",
     "lukaskorba",
     "nullc0py",
     "nuttycom",
