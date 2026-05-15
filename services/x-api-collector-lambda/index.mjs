@@ -27,7 +27,6 @@ const COLLECTOR_MODES = new Set(["priority", "discovery"]);
 
 const DEFAULT_WATCHLIST_TIERS = {
   bostonzcash: "teammate",
-  decentralistdan: "teammate",
   jswihart: "teammate",
   lukaskorba: "teammate",
   nullc0py: "teammate",
@@ -38,6 +37,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   txds_: "teammate",
   zodl_co: "teammate",
   zodl_app: "teammate",
+  zodl_support: "teammate",
   a16zcrypto: "investor",
   balajis: "investor",
   cbventures: "investor",

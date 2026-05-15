@@ -27,7 +27,6 @@ const DISCOVERY_BASE_TERMS = discoveryBaseTerms(PRIORITY_BASE_TERMS);
 const WATCHLIST_BY_TIER = {
   teammate: [
     "bostonzcash",
-    "decentralistdan",
     "jswihart",
     "lukaskorba",
     "nullc0py",
@@ -38,6 +37,7 @@ const WATCHLIST_BY_TIER = {
     "txds_",
     "zodl_co",
     "zodl_app",
+    "zodl_support",
   ],
   investor: [
     "akshat_hk",
