@@ -30,7 +30,7 @@ This document defines the canonical v1 data model and API contract used by the l
 
 Primary source file:
 ```bash
-/Users/paulbrigner/.openclaw/workspace/memory/x_monitor.db
+~/.openclaw/workspace/memory/x_monitor.db
 ```
 
 Source tables to migrate:

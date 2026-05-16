@@ -7,10 +7,10 @@ This document describes the query logic currently used by the AWS X API collecto
 ## Source of truth
 
 - Collector implementation:
-  `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/services/x-api-collector-lambda/index.mjs`
+  `services/x-api-collector-lambda/index.mjs`
 - Provisioning/env wiring:
-  - `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/scripts/aws/provision_x_api_collector_lambda.sh`
-  - `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/scripts/aws/provision_x_api_discovery_collector_lambda.sh`
+  - `scripts/aws/provision_x_api_collector_lambda.sh`
+  - `scripts/aws/provision_x_api_discovery_collector_lambda.sh`
 
 ## 1) Active collector modes
 

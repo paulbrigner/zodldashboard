@@ -13,10 +13,10 @@ This document describes the active capture/ingest pipeline, quality gates, and t
 - Discovery collector Lambda:
   `xmonitor-xapi-discovery-collector`
 - Collector code:
-  `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/services/x-api-collector-lambda/index.mjs`
+  `services/x-api-collector-lambda/index.mjs`
 - Provisioning scripts:
-  - `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/scripts/aws/provision_x_api_collector_lambda.sh`
-  - `/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard/scripts/aws/provision_x_api_discovery_collector_lambda.sh`
+  - `scripts/aws/provision_x_api_collector_lambda.sh`
+  - `scripts/aws/provision_x_api_discovery_collector_lambda.sh`
 - Ingest API:
   `https://www.zodldashboard.com/api/v1/ingest/*` (proxied to backend `/v1/ingest/*`)
 - Data store:

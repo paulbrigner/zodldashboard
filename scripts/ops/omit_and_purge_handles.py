@@ -25,11 +25,11 @@ from typing import Iterable, List
 LAUNCHD_JOBS = [
     (
         "com.openclaw.xmonitor.priority",
-        Path("/Users/paulbrigner/Library/LaunchAgents/com.openclaw.xmonitor.priority.plist"),
+        Path.home() / "Library/LaunchAgents/com.openclaw.xmonitor.priority.plist",
     ),
     (
         "com.openclaw.xmonitor.discovery",
-        Path("/Users/paulbrigner/Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist"),
+        Path.home() / "Library/LaunchAgents/com.openclaw.xmonitor.discovery.plist",
     ),
 ]
 

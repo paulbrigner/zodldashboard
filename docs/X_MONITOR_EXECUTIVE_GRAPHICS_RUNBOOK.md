@@ -15,7 +15,7 @@ By default, output files are written to `~/Downloads`.
 Run commands from the repository root:
 
 ```bash
-cd "/Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard"
+cd /path/to/zodldashboard
 ```
 
 Required local tools:
@@ -158,4 +158,3 @@ After the script finishes:
 
 If the team graphic says live metrics were refreshed but totals look stale, rerun
 with `--strict-live-metrics` so token or X API failures fail loudly.
-

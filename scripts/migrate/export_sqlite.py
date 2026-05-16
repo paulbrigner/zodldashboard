@@ -11,7 +11,7 @@ import sys
 from typing import Dict
 
 TABLES = ["tweets", "reports", "watch_accounts", "runs", "tweet_embeddings"]
-DEFAULT_SQLITE_PATH = "/Users/paulbrigner/.openclaw/workspace/memory/x_monitor.db"
+DEFAULT_SQLITE_PATH = str(pathlib.Path.home() / ".openclaw/workspace/memory/x_monitor.db")
 DEFAULT_OUT_DIR = "data/export"
 
 

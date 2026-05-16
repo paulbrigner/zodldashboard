@@ -73,7 +73,7 @@ launchctl bootout gui/$UID_NUM/com.openclaw.xmonitor.discovery || true
 ```bash
 TS=$(date +%Y%m%d_%H%M%S)
 SNAPSHOT="data/x_monitor.cutover.${TS}.db"
-cp /Users/paulbrigner/.openclaw/workspace/memory/x_monitor.db "$SNAPSHOT"
+cp "$HOME/.openclaw/workspace/memory/x_monitor.db" "$SNAPSHOT"
 sqlite3 "$SNAPSHOT" "PRAGMA integrity_check;"
 echo "$SNAPSHOT"
 ```
@@ -135,10 +135,10 @@ python3 scripts/migrate/validate_counts.py \
 Canary runs (manual):
 
 ```bash
-/usr/bin/python3 /Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_dispatch.py \
+/usr/bin/python3 "$HOME/.openclaw/workspace/scripts/x_monitor_dispatch.py" \
   --mode priority --disable-signal-send
 
-/usr/bin/python3 /Users/paulbrigner/.openclaw/workspace/scripts/x_monitor_dispatch.py \
+/usr/bin/python3 "$HOME/.openclaw/workspace/scripts/x_monitor_dispatch.py" \
   --mode discovery --disable-signal-send
 ```
 
