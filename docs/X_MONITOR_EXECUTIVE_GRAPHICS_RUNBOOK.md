@@ -94,6 +94,31 @@ Anchor the reporting window to a specific time:
 python3 scripts/ops/render_xmonitor_graphics.py --now 2026-05-15T18:55:00Z
 ```
 
+Use an explicit shared date window for both graphics:
+
+```bash
+python3 scripts/ops/render_xmonitor_graphics.py \
+  --since 2026-05-08 \
+  --until 2026-05-15
+```
+
+Date-only values are interpreted in `America/New_York`; `--since` starts at the
+beginning of the day and `--until` includes the end of the day.
+
+Use different windows for each graphic:
+
+```bash
+python3 scripts/ops/render_xmonitor_graphics.py \
+  --team-since 2026-05-08 \
+  --team-until 2026-05-15 \
+  --trend-since 2026-02-14 \
+  --trend-until 2026-05-15
+```
+
+The trend API enforces its configured maximum lookback window, currently 90
+days. If a custom trend window is longer than that, the API returns the most
+recent allowed portion of the requested window.
+
 Override the team handle list for a one-off run:
 
 ```bash

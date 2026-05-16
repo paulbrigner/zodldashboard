@@ -149,6 +149,12 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--aws-region", default=os.environ.get("AWS_REGION", DEFAULT_AWS_REGION), help="AWS region for Secrets Manager fallback.")
     parser.add_argument("--secret-id", default=os.environ.get("XMONITOR_SECRET_ID", DEFAULT_SECRET_ID), help="Secrets Manager secret containing x_api_bearer_token.")
     parser.add_argument("--now", help="Anchor time as ISO timestamp. Defaults to current time.")
+    parser.add_argument("--since", help="Shared report window start as ISO timestamp or YYYY-MM-DD.")
+    parser.add_argument("--until", help="Shared report window end as ISO timestamp or YYYY-MM-DD.")
+    parser.add_argument("--team-since", help="Team traction window start. Overrides --since for the team graphic.")
+    parser.add_argument("--team-until", help="Team traction window end. Overrides --until for the team graphic.")
+    parser.add_argument("--trend-since", help="Trend window start. Overrides --since for the 90-day trend graphic.")
+    parser.add_argument("--trend-until", help="Trend window end. Overrides --until for the 90-day trend graphic.")
     parser.add_argument("--skip-live-metrics", action="store_true", help="Use X Monitor metrics only; do not call X API.")
     parser.add_argument("--strict-live-metrics", action="store_true", help="Fail if X API metrics cannot be refreshed.")
     mode = parser.add_mutually_exclusive_group()
@@ -175,6 +181,22 @@ def parse_datetime(value: str | None) -> dt.datetime:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=ET)
     return parsed.astimezone(UTC)
+
+
+def parse_range_datetime(value: str | None, *, end_of_day: bool = False) -> dt.datetime | None:
+    if not value:
+        return None
+    text = value.strip()
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+        date = dt.date.fromisoformat(text)
+        time = dt.time(23, 59, 59, 999999) if end_of_day else dt.time.min
+        return dt.datetime.combine(date, time, tzinfo=ET).astimezone(UTC)
+    return parse_datetime(text)
+
+
+def ensure_valid_window(since: dt.datetime | None, until: dt.datetime | None, label: str) -> None:
+    if since and until and since > until:
+        raise ValueError(f"{label} window start must be before window end")
 
 
 def parse_iso(value: str) -> dt.datetime:
@@ -233,6 +255,16 @@ def format_date_et(value: dt.datetime, with_time: bool = True) -> str:
     if with_time:
         return local.strftime("%b %-d, %Y, %-I:%M %p ET")
     return local.strftime("%b %-d, %Y")
+
+
+def format_window_et(since: dt.datetime, until: dt.datetime) -> str:
+    since_local = since.astimezone(ET)
+    until_local = until.astimezone(ET)
+    if since_local.date() == until_local.date():
+        return since_local.strftime("%b %-d, %Y")
+    if since_local.year == until_local.year:
+        return f"{since_local.strftime('%b %-d')} - {until_local.strftime('%b %-d, %Y')}"
+    return f"{format_date_et(since, False)} - {format_date_et(until, False)}"
 
 
 def fmt_int(value: int | float | None) -> str:
@@ -342,14 +374,36 @@ def default_output_path(out_dir: Path, label: str, now: dt.datetime) -> Path:
     return out_dir / f"{label} - {stamp}.png"
 
 
-def fetch_team_feed(args: argparse.Namespace, handles: list[str], now: dt.datetime) -> tuple[list[dict[str, Any]], dt.datetime]:
-    since = now - dt.timedelta(days=args.team_days)
+def resolve_team_window(args: argparse.Namespace, now: dt.datetime) -> tuple[dt.datetime, dt.datetime, bool]:
+    since_arg = args.team_since or args.since
+    until_arg = args.team_until or args.until
+    until = parse_range_datetime(until_arg, end_of_day=True) or now
+    since = parse_range_datetime(since_arg) or (until - dt.timedelta(days=args.team_days))
+    ensure_valid_window(since, until, "team")
+    return since, until, bool(since_arg or until_arg)
+
+
+def resolve_trend_window(args: argparse.Namespace) -> tuple[dt.datetime | None, dt.datetime | None, bool]:
+    since_arg = args.trend_since or args.since
+    until_arg = args.trend_until or args.until
+    since = parse_range_datetime(since_arg)
+    until = parse_range_datetime(until_arg, end_of_day=True)
+    ensure_valid_window(since, until, "trend")
+    return since, until, bool(since_arg or until_arg)
+
+
+def fetch_team_feed(
+    args: argparse.Namespace,
+    handles: list[str],
+    since: dt.datetime,
+    until: dt.datetime,
+) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     cursor = ""
     while True:
         params = {
             "since": iso_z(since),
-            "until": iso_z(now),
+            "until": iso_z(until),
             "handle": ",".join(handles),
             "limit": "200",
         }
@@ -363,7 +417,7 @@ def fetch_team_feed(args: argparse.Namespace, handles: list[str], now: dt.dateti
             break
 
     by_id = {str(item.get("status_id")): item for item in items if item.get("status_id")}
-    return list(by_id.values()), since
+    return list(by_id.values())
 
 
 def lookup_live_metrics(args: argparse.Namespace, posts: list[dict[str, Any]], token: str) -> list[dict[str, Any]]:
@@ -472,6 +526,10 @@ def render_team_graphic(
     leaderboard: list[dict[str, Any]],
     daily_rows: list[dict[str, Any]],
     now: dt.datetime,
+    window_since: dt.datetime,
+    window_until: dt.datetime,
+    custom_window: bool,
+    live_metrics_refreshed: bool,
     output_path: Path,
 ) -> None:
     width, height = 2400, 2030
@@ -480,12 +538,18 @@ def render_team_graphic(
 
     draw.rectangle((0, 0, width, 140), fill=COLORS["navy"])
     draw.text((70, 40), "ZODL Team X Traction", fill="#FFFFFF", font=FONTS["title"])
-    subtitle = (
-        f"Week ending {format_date_et(now, False)} | {totals['posts']} X Monitor posts | "
+    window_label = f"Window {format_window_et(window_since, window_until)}" if custom_window else f"Week ending {format_date_et(window_until, False)}"
+    metric_label = (
         f"live X metrics refreshed {now.astimezone(ET).strftime('%b %-d, %-I:%M %p ET')}"
+        if live_metrics_refreshed
+        else f"X Monitor metrics rendered {now.astimezone(ET).strftime('%b %-d, %-I:%M %p ET')}"
+    )
+    subtitle = (
+        f"{window_label} | {totals['posts']} X Monitor posts | "
+        f"{metric_label}"
     )
     draw.text((72, 103), subtitle, fill="#DDE6F7", font=FONTS["mid"])
-    source = "Source: X Monitor + live X public metrics"
+    source = "Source: X Monitor + live X public metrics" if live_metrics_refreshed else "Source: X Monitor stored metrics"
     source_w, _ = text_size(draw, source, FONTS["label"])
     rounded(draw, (width - 70 - source_w - 48, 42, width - 70, 92), 8, "#263548", outline="#3D4A5D")
     draw.text((width - 70 - source_w - 24, 57), source, fill="#E5ECF8", font=FONTS["label"])
@@ -658,8 +722,13 @@ def render_handle_panel(
     draw.line((chart_x, chart_y + chart_height, chart_x + chart_width, chart_y + chart_height), fill="#D6DEE9", width=2)
 
 
-def fetch_trends(args: argparse.Namespace) -> dict[str, Any]:
-    url = f"{args.api_base.rstrip('/')}/trends?" + urllib.parse.urlencode({"trend_range": args.trend_range})
+def fetch_trends(args: argparse.Namespace, since: dt.datetime | None = None, until: dt.datetime | None = None) -> dict[str, Any]:
+    params = {"trend_range": args.trend_range}
+    if since:
+        params["since"] = iso_z(since)
+    if until:
+        params["until"] = iso_z(until)
+    url = f"{args.api_base.rstrip('/')}/trends?" + urllib.parse.urlencode(params)
     return fetch_json(url)
 
 
@@ -725,17 +794,22 @@ def render_trend_graphic(trends: dict[str, Any], prices: list[dict[str, Any]], o
     rounded(draw, (width - 56 - tw - 48, 54, width - 56, 103), 24, "#FFFFFF", outline="#BFD0F7", width=2)
     draw.text((width - 56 - tw - 24, 66), pill, fill="#274A96", font=FONTS["mid"])
 
+    scope = trends["scope"]
     draw.text((55, 211), "Range", fill="#3D4F7D", font=FONTS["h3"])
-    chip_x = width - 570
-    for chip in ["24H", "7D", "30D", "90D"]:
-        active = chip == "90D"
-        chip_width = 120 if active else 112
+    active_range = str(scope.get("range_key") or "90d").upper()
+    chips = ["24H", "7D", "30D", "90D"]
+    if active_range == "CUSTOM":
+        chips.append("CUSTOM")
+    chip_gap = 20
+    chip_widths = [150 if chip == "CUSTOM" else 120 if chip == active_range else 112 for chip in chips]
+    chip_x = width - 56 - sum(chip_widths) - chip_gap * (len(chips) - 1)
+    for chip, chip_width in zip(chips, chip_widths):
+        active = chip == active_range
         rounded(draw, (chip_x, 196, chip_x + chip_width, 266), 34, "#3157B8" if active else "#FFFFFF", outline="#BFD0F7", width=2)
         label_w, _ = text_size(draw, chip, FONTS["mid_b"])
         draw.text((chip_x + chip_width / 2 - label_w / 2, 216), chip, fill="#FFFFFF" if active else "#274A96", font=FONTS["mid_b"])
-        chip_x += chip_width + 20
+        chip_x += chip_width + chip_gap
 
-    scope = trends["scope"]
     since = parse_iso(scope["since"])
     until = parse_iso(scope["until"])
     scope_line = (
@@ -778,7 +852,7 @@ def render_trend_graphic(trends: dict[str, Any], prices: list[dict[str, Any]], o
         label = fmt_compact(value, decimals=0)
         label_w, label_h = text_size(draw, label, FONTS["small"])
         draw.text((chart_left - label_w - 18, y - label_h / 2), label, fill=COLORS["muted"], font=FONTS["small"])
-    draw.text((chart_left - 100, chart_top - 34), "Posts / 48h", fill=COLORS["muted2"], font=FONTS["small_b"])
+    draw.text((chart_left - 100, chart_top - 34), f"Posts / {scope['bucket_hours']}h", fill=COLORS["muted2"], font=FONTS["small_b"])
 
     for index in range(6):
         value = price_axis_min + (price_axis_max - price_axis_min) * index / 5
@@ -841,7 +915,7 @@ def render_trend_graphic(trends: dict[str, Any], prices: list[dict[str, Any]], o
 
     legend_y = 515
     draw.rectangle((chart_left, legend_y, chart_left + 22, legend_y + 16), fill="#4A70C7")
-    draw.text((chart_left + 32, legend_y - 3), "X Monitor posts per 48h", fill=COLORS["muted2"], font=FONTS["small_b"])
+    draw.text((chart_left + 32, legend_y - 3), f"X Monitor posts per {scope['bucket_hours']}h", fill=COLORS["muted2"], font=FONTS["small_b"])
     draw.line((chart_left + 320, legend_y + 8, chart_left + 365, legend_y + 8), fill=COLORS["orange"], width=5)
     draw.text((chart_left + 378, legend_y - 3), "ZEC-USD daily close", fill="#B45309", font=FONTS["small_b"])
 
@@ -876,35 +950,55 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     summary: dict[str, Any] = {}
     if not args.trend_only:
-        posts, _since = fetch_team_feed(args, handles, now)
+        team_since, team_until, custom_team_window = resolve_team_window(args, now)
+        posts = fetch_team_feed(args, handles, team_since, team_until)
         metric_errors: list[dict[str, Any]] = []
+        live_metrics_refreshed = False
         if not args.skip_live_metrics:
             token = load_x_token(args)
             if token:
                 metric_errors = lookup_live_metrics(args, posts, token)
+                live_metrics_refreshed = True
             elif args.strict_live_metrics:
                 raise RuntimeError("missing X API token")
         enrich_posts(posts)
         totals, leaderboard, daily_rows = aggregate_team(posts, handles)
-        render_team_graphic(posts, totals, leaderboard, daily_rows, now, team_output)
+        render_team_graphic(
+            posts,
+            totals,
+            leaderboard,
+            daily_rows,
+            now,
+            team_since,
+            team_until,
+            custom_team_window,
+            live_metrics_refreshed,
+            team_output,
+        )
         summary["team"] = {
             "output": str(team_output),
+            "since": iso_z(team_since),
+            "until": iso_z(team_until),
             "posts": totals["posts"],
             "views": totals["views"],
             "engagements": totals["engagements"],
             "articles": totals["articles"],
             "article_views": totals["article_views"],
+            "live_metrics_refreshed": live_metrics_refreshed,
             "live_metric_errors": len(metric_errors),
         }
 
     if not args.team_only:
-        trends = fetch_trends(args)
+        trend_since, trend_until, _custom_trend_window = resolve_trend_window(args)
+        trends = fetch_trends(args, trend_since, trend_until)
         start = parse_iso(trends["scope"]["since"])
         end = parse_iso(trends["scope"]["until"])
         prices = fetch_zec_prices(start, end)
         render_trend_graphic(trends, prices, trend_output)
         summary["trend"] = {
             "output": str(trend_output),
+            "since": trends["scope"]["since"],
+            "until": trends["scope"]["until"],
             "posts": trends["activity"]["totals"]["post_count"],
             "price_points": len(prices),
             "zec_latest": prices[-1]["close"] if prices else None,

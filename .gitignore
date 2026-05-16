@@ -10,6 +10,9 @@ data/*
 !data/regulatory-risk/
 !data/regulatory-risk/**
 
+# private build-time content
+.private/
+
 # local env files
 .env*
 !.env.example

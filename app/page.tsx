@@ -1,4 +1,5 @@
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { SignOutButton } from "./sign-out-button";
 
@@ -7,12 +8,33 @@ export const runtime = "nodejs";
 type DashboardCard = {
   id: string;
   name: string;
-  description: string;
+  description: ReactNode;
   href?: string;
+  prefetch?: boolean;
+  rawDocument?: boolean;
   workspaceOnly?: boolean;
 };
 
 const dashboards: DashboardCard[] = [
+  {
+    id: "zodl-roadmap",
+    name: "Zodl Roadmap",
+    description: (
+      <>
+        <span className="dashboard-card-lead">
+          #Hold Private. Spend <em>everywhere</em>.
+        </span>
+        <span>
+          Three tracks. Seven stones. Defend revenue against wrapped-ZEC and leveraged outflows. Build the
+          spendability and reach users want. Become the privacy infrastructure layer other apps consume.
+        </span>
+      </>
+    ),
+    href: "/zodl-roadmap",
+    prefetch: false,
+    rawDocument: true,
+    workspaceOnly: true,
+  },
   {
     id: "x-monitor",
     name: "X Monitor",
@@ -82,8 +104,12 @@ export default async function HomePage() {
                 <div className="dashboard-tile-content" aria-hidden={restrictedForGuest ? "true" : undefined}>
                   <h2>{dashboard.name}</h2>
                   <p className="subtle-text">{dashboard.description}</p>
-                  {isEnabled ? (
-                    <Link className="button dashboard-open-button" href={dashboard.href!}>
+                  {isEnabled && dashboard.rawDocument ? (
+                    <a className="button dashboard-open-button" href={dashboard.href!}>
+                      Open dashboard
+                    </a>
+                  ) : isEnabled ? (
+                    <Link className="button dashboard-open-button" href={dashboard.href!} prefetch={dashboard.prefetch}>
                       Open dashboard
                     </Link>
                   ) : (

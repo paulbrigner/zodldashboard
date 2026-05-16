@@ -8,6 +8,29 @@ frontend:
         - nvm install 22
         - nvm use 22
         - if [ -f package-lock.json ]; then npm ci; else npm install; fi
+        - mkdir -p .private
+        - |
+          if [ -n "${ZODL_ROADMAP_PRIVATE_REPO:-}" ] && [ -n "${ZODL_ROADMAP_DEPLOY_KEY_B64:-}" ]; then
+            rm -rf .private/zodl-roadmap
+            mkdir -p ~/.ssh
+            trap 'rm -f ~/.ssh/zodl-roadmap-deploy-key' EXIT
+            printf "%s" "$ZODL_ROADMAP_DEPLOY_KEY_B64" | base64 --decode > ~/.ssh/zodl-roadmap-deploy-key
+            chmod 600 ~/.ssh/zodl-roadmap-deploy-key
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/zodl-roadmap-deploy-key -o IdentitiesOnly=yes" git clone --depth 1 --branch "${ZODL_ROADMAP_PRIVATE_BRANCH:-main}" "$ZODL_ROADMAP_PRIVATE_REPO" .private/zodl-roadmap
+            rm -f ~/.ssh/zodl-roadmap-deploy-key
+            trap - EXIT
+          elif [ -n "${ZODL_ROADMAP_PRIVATE_REPO:-}" ] && [ -n "${ZODL_ROADMAP_GITHUB_TOKEN:-}" ]; then
+            rm -rf .private/zodl-roadmap
+            trap 'rm -f ~/.netrc' EXIT
+            printf "machine github.com\n  login x-access-token\n  password %s\n" "$ZODL_ROADMAP_GITHUB_TOKEN" > ~/.netrc
+            chmod 600 ~/.netrc
+            git clone --depth 1 --branch "${ZODL_ROADMAP_PRIVATE_BRANCH:-main}" "$ZODL_ROADMAP_PRIVATE_REPO" .private/zodl-roadmap
+            rm -f ~/.netrc
+            trap - EXIT
+          else
+            echo "Zodl Roadmap private repo env vars not complete; skipping private content checkout."
+          fi
     build:
       commands:
         - rm -f .env.production
@@ -30,6 +53,7 @@ frontend:
         - env | grep -e LOCAL_BYPASS_CLIENT_IP_HEADER >> .env.production || true
         - env | grep -e LOCAL_BYPASS_DISPLAY_EMAIL >> .env.production || true
         - env | grep -e LOCAL_BYPASS_LOG_DECISIONS >> .env.production || true
+        - env | grep -e ZODL_ROADMAP_HTML_PATH >> .env.production || true
         - env | grep -e DATABASE_URL >> .env.production || true
         - env | grep -e PGHOST >> .env.production || true
         - env | grep -e PGPORT >> .env.production || true
