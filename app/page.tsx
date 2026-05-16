@@ -13,9 +13,11 @@ type DashboardCard = {
   prefetch?: boolean;
   rawDocument?: boolean;
   workspaceOnly?: boolean;
+  visible: boolean;
 };
 
-const dashboards: DashboardCard[] = [
+// Temporarily hidden cards stay here with visible: false; flip to true to restore them.
+const dashboardCatalog: DashboardCard[] = [
   {
     id: "zodl-roadmap",
     name: "Zodl Roadmap",
@@ -34,18 +36,21 @@ const dashboards: DashboardCard[] = [
     prefetch: false,
     rawDocument: true,
     workspaceOnly: true,
+    visible: true,
   },
   {
     id: "x-monitor",
     name: "X Monitor",
     description: "Relevance-filtered X posts with significance signals and analysis details.",
     href: "/x-monitor",
+    visible: true,
   },
   {
     id: "cipherpay-test",
     name: "CipherPay Test",
     description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
     href: "/cipherpay-test",
+    visible: false,
   },
   {
     id: "placeholder-1",
@@ -53,6 +58,7 @@ const dashboards: DashboardCard[] = [
     description: "Tiered jurisdiction risk, recommendations, policy posture, and activity feed.",
     href: "/regulatory-risk",
     workspaceOnly: true,
+    visible: false,
   },
   {
     id: "app-store-compliance",
@@ -60,13 +66,17 @@ const dashboards: DashboardCard[] = [
     description: "Compliance posture, declarations, submissions, reviewer cases, and evidence bundles.",
     href: "/app-stores",
     workspaceOnly: true,
+    visible: false,
   },
   {
     id: "placeholder",
     name: "Dashboard Placeholder",
     description: "Reserved for a future dashboard.",
+    visible: true,
   },
 ];
+
+const dashboards = dashboardCatalog.filter((dashboard) => dashboard.visible);
 
 export default async function HomePage() {
   const viewer = await requireAuthenticatedViewer("/");
