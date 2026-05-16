@@ -54,6 +54,10 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 - [db/migrations](db/migrations): Postgres schema migrations
 - [docs](docs): current architecture, runbooks, and API/schema notes
 
+Operational runbooks:
+
+- [X Monitor Executive Graphics](docs/X_MONITOR_EXECUTIVE_GRAPHICS_RUNBOOK.md): regenerate the team traction and 90-day ZEC overlay PNGs
+
 ## Core Data
 
 Primary tables currently used by the live system:
@@ -315,6 +319,7 @@ Current architecture and operations:
 
 - [docs/X_MONITOR_X_QUERY_AND_WATCHLIST_REFERENCE.md](docs/X_MONITOR_X_QUERY_AND_WATCHLIST_REFERENCE.md)
 - [docs/X_MONITOR_CAPTURE_PIPELINE_AND_TUNING.md](docs/X_MONITOR_CAPTURE_PIPELINE_AND_TUNING.md)
+- [docs/X_MONITOR_EXECUTIVE_GRAPHICS_RUNBOOK.md](docs/X_MONITOR_EXECUTIVE_GRAPHICS_RUNBOOK.md)
 - [docs/EMAIL_DRAFT_AND_SCHEDULE_ARCHITECTURE.md](docs/EMAIL_DRAFT_AND_SCHEDULE_ARCHITECTURE.md)
 - [docs/openapi.v1.yaml](docs/openapi.v1.yaml)
 
