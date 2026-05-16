@@ -22,7 +22,7 @@ const dashboards: DashboardCard[] = [
     description: (
       <>
         <span className="dashboard-card-lead">
-          #Hold Private. Spend <em>everywhere</em>.
+          Hold Private. Spend <em>everywhere</em>.
         </span>
         <span>
           Three tracks. Seven stones. Defend revenue against wrapped-ZEC and leveraged outflows. Build the
