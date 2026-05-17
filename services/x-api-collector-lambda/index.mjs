@@ -39,6 +39,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   zodl_co: "teammate",
   zodl_app: "teammate",
   zodl_support: "teammate",
+  zcash_harry: "teammate",
   a16zcrypto: "investor",
   balajis: "investor",
   cbventures: "investor",

@@ -39,6 +39,7 @@ const WATCHLIST_BY_TIER = {
     "zodl_co",
     "zodl_app",
     "zodl_support",
+    "zcash_harry",
   ],
   investor: [
     "akshat_hk",

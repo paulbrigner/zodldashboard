@@ -55,6 +55,7 @@ DEFAULT_TEAM_HANDLES = [
     "zodl_co",
     "zodl_app",
     "zodl_support",
+    "zcash_harry",
 ]
 
 ET = ZoneInfo("America/New_York")
