@@ -21,10 +21,23 @@ The route serves HTML with:
 - `Cache-Control: private, no-store`
 - `X-Robots-Tag: noindex`
 
+## Access logging
+
+`/zodl-roadmap` emits a structured `zodl_roadmap_access` application log before returning private content or redirecting an authenticated guest. The event includes:
+
+- email
+- auth mode (`oauth` or `local-bypass`)
+- access level (`workspace`, `guest`, or `local-bypass`)
+- outcome (`allowed`, `denied_guest`, or `content_missing`)
+- path, method, status code, client IP, user agent, referer, request id, and timestamp
+
+The same event is sent to the VPC backend at `POST /v1/roadmap/access-events` and persisted in `roadmap_access_events`. If backend persistence is unavailable, the route still emits the structured application log and writes a warning with the audit failure reason.
+
 ## Public repo pieces
 
 - `app/page.tsx` contains the public home-page card and makes it the first dashboard card.
 - `app/zodl-roadmap/route.ts` enforces viewer access and returns the private HTML.
+- `lib/roadmap-access-events.ts` records user-based roadmap access audit events.
 - `lib/private-dashboard-content.ts` reads the configured HTML file.
 - `next.config.ts` includes `.private/zodl-roadmap/**/*` in the server file trace for the route.
 - `.gitignore` excludes `.private/` so private content is not committed here.

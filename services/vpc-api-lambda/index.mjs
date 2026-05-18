@@ -16,6 +16,8 @@ const SCHEDULE_VISIBILITIES = new Set(["personal", "shared"]);
 const SCHEDULE_DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const SCHEDULE_DAY_CODE_SET = new Set(SCHEDULE_DAY_CODES);
 const AUTH_LOGIN_ACCESS_LEVELS = new Set(["workspace", "guest"]);
+const ROADMAP_ACCESS_LEVELS = new Set(["workspace", "guest", "local-bypass"]);
+const ROADMAP_ACCESS_OUTCOMES = new Set(["allowed", "denied_guest", "content_missing"]);
 const CIPHERPAY_TEST_NETWORKS = new Set(["testnet", "mainnet"]);
 const CIPHERPAY_TEST_SESSION_STATUSES = new Set([
   "draft",
@@ -157,6 +159,7 @@ let summarySchemaEnsured = false;
 let composeJobsSchemaEnsured = false;
 let emailSchemaEnsured = false;
 let queryCheckpointSchemaEnsured = false;
+let roadmapAccessSchemaEnsured = false;
 let sqsClient;
 let sesClient;
 const zonedDateFormatterCache = new Map();
@@ -2364,6 +2367,58 @@ async function ensureComposeJobsSchema() {
   }
 
   composeJobsSchemaEnsured = true;
+}
+
+async function ensureRoadmapAccessSchema() {
+  if (roadmapAccessSchemaEnsured) {
+    return;
+  }
+
+  const db = getPool();
+  const existing = await db.query("SELECT to_regclass('public.roadmap_access_events') AS table_name");
+  if (existing.rows[0]?.table_name) {
+    roadmapAccessSchemaEnsured = true;
+    return;
+  }
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS roadmap_access_events (
+      event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email CITEXT NOT NULL,
+      auth_mode TEXT NOT NULL
+        CHECK (auth_mode IN ('oauth', 'local-bypass')),
+      access_level TEXT NOT NULL
+        CHECK (access_level IN ('workspace', 'guest', 'local-bypass')),
+      outcome TEXT NOT NULL
+        CHECK (outcome IN ('allowed', 'denied_guest', 'content_missing')),
+      path TEXT NOT NULL DEFAULT '/zodl-roadmap',
+      method TEXT NOT NULL DEFAULT 'GET',
+      status_code INTEGER NOT NULL
+        CHECK (status_code BETWEEN 100 AND 599),
+      client_ip TEXT,
+      user_agent TEXT,
+      referer TEXT,
+      request_id TEXT,
+      accessed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_roadmap_access_events_accessed_at_desc
+      ON roadmap_access_events (accessed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_roadmap_access_events_email_accessed_at_desc
+      ON roadmap_access_events (email, accessed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_roadmap_access_events_outcome_accessed_at_desc
+      ON roadmap_access_events (outcome, accessed_at DESC);
+  `);
+
+  const grantRole = asString(process.env.XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE);
+  if (grantRole) {
+    const role = quoteIdent(grantRole);
+    await db.query(`
+      GRANT SELECT, INSERT ON TABLE roadmap_access_events TO ${role};
+    `);
+  }
+
+  roadmapAccessSchemaEnsured = true;
 }
 
 async function ensureEmailSchema() {
@@ -4718,6 +4773,53 @@ function parseAuthLoginEventBody(value) {
   };
 }
 
+function parseRoadmapAccessEventBody(value) {
+  const body = asObject(value);
+  if (!body) {
+    return { ok: false, error: "body must be an object" };
+  }
+
+  const path = withLengthLimit(asString(body.path) || "/zodl-roadmap", 200);
+  if (!path || !path.startsWith("/")) {
+    return { ok: false, error: "path must be an absolute path" };
+  }
+
+  const method = withLengthLimit(asString(body.method)?.toUpperCase() || "GET", 16);
+  if (!method) {
+    return { ok: false, error: "method is required" };
+  }
+
+  const outcome = asString(body.outcome)?.toLowerCase();
+  if (!outcome || !ROADMAP_ACCESS_OUTCOMES.has(outcome)) {
+    return { ok: false, error: "outcome must be one of allowed, denied_guest, or content_missing" };
+  }
+
+  const accessLevel = asString(body.access_level)?.toLowerCase();
+  if (!accessLevel || !ROADMAP_ACCESS_LEVELS.has(accessLevel)) {
+    return { ok: false, error: "access_level must be one of workspace, guest, or local-bypass" };
+  }
+
+  const statusCode = Number.parseInt(String(body.status_code ?? ""), 10);
+  if (!Number.isFinite(statusCode) || statusCode < 100 || statusCode > 599) {
+    return { ok: false, error: "status_code must be an HTTP status code" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      path,
+      method,
+      outcome,
+      access_level: accessLevel,
+      status_code: statusCode,
+      client_ip: withLengthLimit(asString(body.client_ip) || "", 128) || null,
+      user_agent: withLengthLimit(asString(body.user_agent) || "", 1024) || null,
+      referer: withLengthLimit(asString(body.referer) || "", 1024) || null,
+      request_id: withLengthLimit(asString(body.request_id) || "", 256) || null,
+    },
+  };
+}
+
 function parseAuthGuestEmailSendBody(value) {
   const body = asObject(value);
   if (!body) return { ok: false, error: "body must be an object" };
@@ -5414,6 +5516,56 @@ async function recordAuthLoginEvent({
       RETURNING event_id, email, provider, auth_mode, access_level, logged_in_at
     `,
     [email, provider, authMode, accessLevel]
+  );
+  return result.rows[0] || null;
+}
+
+async function recordRoadmapAccessEvent({
+  email,
+  authMode = "oauth",
+  accessLevel,
+  outcome,
+  path,
+  method,
+  statusCode,
+  clientIp,
+  userAgent,
+  referer,
+  requestId,
+}) {
+  await ensureRoadmapAccessSchema();
+  const db = getPool();
+  const result = await db.query(
+    `
+      INSERT INTO roadmap_access_events(
+        email,
+        auth_mode,
+        access_level,
+        outcome,
+        path,
+        method,
+        status_code,
+        client_ip,
+        user_agent,
+        referer,
+        request_id
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      RETURNING event_id, email, auth_mode, access_level, outcome, path, method, status_code, accessed_at
+    `,
+    [
+      email,
+      authMode,
+      accessLevel,
+      outcome,
+      path,
+      method,
+      statusCode,
+      clientIp,
+      userAgent,
+      referer,
+      requestId,
+    ]
   );
   return result.rows[0] || null;
 }
@@ -7100,6 +7252,46 @@ async function handleAuthLoginEventCreate(event) {
     return jsonOk({ item }, 201);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to record auth login event", 503);
+  }
+}
+
+async function handleRoadmapAccessEventCreate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsed = parseRoadmapAccessEventBody(parsedBody.body);
+  if (!parsed.ok) {
+    return jsonError(parsed.error, 400);
+  }
+
+  try {
+    const item = await recordRoadmapAccessEvent({
+      email: viewer.viewer.email,
+      authMode: viewer.viewer.auth_mode,
+      accessLevel: parsed.data.access_level,
+      outcome: parsed.data.outcome,
+      path: parsed.data.path,
+      method: parsed.data.method,
+      statusCode: parsed.data.status_code,
+      clientIp: parsed.data.client_ip,
+      userAgent: parsed.data.user_agent,
+      referer: parsed.data.referer,
+      requestId: parsed.data.request_id,
+    });
+    return jsonOk({ item }, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to record roadmap access event", 503);
   }
 }
 
@@ -9036,6 +9228,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/auth/login-events") {
     return handleAuthLoginEventCreate(event);
+  }
+
+  if (method === "POST" && path === "/v1/roadmap/access-events") {
+    return handleRoadmapAccessEventCreate(event);
   }
 
   if (method === "POST" && path === "/v1/auth/guest-email/send-verification") {

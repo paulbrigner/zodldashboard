@@ -1,5 +1,7 @@
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { readZodlRoadmapHtml } from "@/lib/private-dashboard-content";
+import { recordZodlRoadmapAccess } from "@/lib/roadmap-access-events";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 
 export const runtime = "nodejs";
@@ -56,19 +58,39 @@ function missingRoadmapHtml(): string {
 
 export async function GET() {
   const viewer = await requireAuthenticatedViewer("/zodl-roadmap");
+  const requestHeaders = await headers();
 
   if (viewer.accessLevel === "guest") {
+    await recordZodlRoadmapAccess({
+      viewer,
+      outcome: "denied_guest",
+      statusCode: 302,
+      headers: requestHeaders,
+    });
     redirect("/");
   }
 
   const html = await readZodlRoadmapHtml();
 
   if (!html) {
+    await recordZodlRoadmapAccess({
+      viewer,
+      outcome: "content_missing",
+      statusCode: 503,
+      headers: requestHeaders,
+    });
     return new Response(missingRoadmapHtml(), {
       status: 503,
       headers: privateHtmlHeaders,
     });
   }
+
+  await recordZodlRoadmapAccess({
+    viewer,
+    outcome: "allowed",
+    statusCode: 200,
+    headers: requestHeaders,
+  });
 
   return new Response(html, {
     headers: privateHtmlHeaders,

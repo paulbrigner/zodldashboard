@@ -272,6 +272,30 @@ paths:
               schema:
                 $ref: '#/components/schemas/EmailSendResponse'
 
+  /roadmap/access-events:
+    post:
+      summary: Record an authenticated Zodl Roadmap access event
+      operationId: recordRoadmapAccessEvent
+      security:
+        - ViewerProxySecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoadmapAccessEventRequest'
+      responses:
+        '201':
+          description: Access event recorded
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean }
+                  item:
+                    $ref: '#/components/schemas/RoadmapAccessEvent'
+
   /email/schedules:
     get:
       summary: List scheduled email jobs for the authenticated user
@@ -378,6 +402,10 @@ components:
       type: apiKey
       in: header
       name: x-api-key
+    ViewerProxySecret:
+      type: apiKey
+      in: header
+      name: x-xmonitor-viewer-secret
   schemas:
     BatchUpsertResult:
       type: object
@@ -717,6 +745,33 @@ components:
         provider: { type: string, enum: [ses] }
         provider_message_id: { type: string, nullable: true }
         sent_at: { type: string, format: date-time, nullable: true }
+
+    RoadmapAccessEventRequest:
+      type: object
+      required: [outcome, access_level, status_code]
+      properties:
+        path: { type: string, default: /zodl-roadmap }
+        method: { type: string, default: GET }
+        outcome: { type: string, enum: [allowed, denied_guest, content_missing] }
+        access_level: { type: string, enum: [workspace, guest, local-bypass] }
+        status_code: { type: integer, minimum: 100, maximum: 599 }
+        client_ip: { type: string, nullable: true }
+        user_agent: { type: string, nullable: true }
+        referer: { type: string, nullable: true }
+        request_id: { type: string, nullable: true }
+
+    RoadmapAccessEvent:
+      type: object
+      properties:
+        event_id: { type: string, format: uuid }
+        email: { type: string, format: email }
+        auth_mode: { type: string, enum: [oauth, local-bypass] }
+        access_level: { type: string, enum: [workspace, guest, local-bypass] }
+        outcome: { type: string, enum: [allowed, denied_guest, content_missing] }
+        path: { type: string }
+        method: { type: string }
+        status_code: { type: integer }
+        accessed_at: { type: string, format: date-time }
 
     ScheduledEmailJobCreateRequest:
       type: object
