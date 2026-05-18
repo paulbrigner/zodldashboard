@@ -94,7 +94,7 @@ timeout so slow LLM calls can be caught and recorded instead of letting Lambda k
 the invocation. The deployed guardrail is `XMON_SIGNIFICANCE_LLM_TIMEOUT_MS=30000`,
 `XMON_SIGNIFICANCE_LLM_MAX_ATTEMPTS=1`, `XMON_SIGNIFICANCE_BATCH_SIZE=1`,
 `XMON_SIGNIFICANCE_MAX_POSTS_PER_RUN=8`, and `XMON_SIGNIFICANCE_MAX_ATTEMPTS=10`
-with a 120-second Lambda timeout. The classifier checks remaining Lambda time before
+with a 240-second Lambda timeout. The classifier checks remaining Lambda time before
 each AI batch, applies partial results before returning, emits structured batch logs,
 and emits CloudWatch embedded metrics for failed batches, time-budget skips, and
 retryable classification backlog. The classifier model is `qwen3-235b-a22b-instruct-2507`
