@@ -41,7 +41,8 @@ const dashboardCatalog: DashboardCard[] = [
   {
     id: "x-monitor",
     name: "X Monitor",
-    description: "Relevance-filtered X posts with significance signals and analysis details.",
+    description:
+      "Monitor the Zcash conversation on X with searchable captured posts, relevance filtering, significance scoring, AI-generated trend summaries, and source-backed AI answers.",
     href: "/x-monitor",
     visible: true,
   },
