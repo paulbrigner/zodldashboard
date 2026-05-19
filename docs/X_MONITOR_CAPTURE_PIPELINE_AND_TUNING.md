@@ -97,9 +97,9 @@ the invocation. The deployed guardrail is `XMON_SIGNIFICANCE_LLM_TIMEOUT_MS=3000
 with a 240-second Lambda timeout. The classifier checks remaining Lambda time before
 each AI batch, applies partial results before returning, emits structured batch logs,
 and emits CloudWatch embedded metrics for failed batches, time-budget skips, and
-retryable classification backlog. The classifier model is `qwen3-235b-a22b-instruct-2507`
-because it passed Venice structured-output smoke testing without the cost profile of
-`openai-gpt-55`.
+retryable classification backlog. The classifier model is `zai-org-glm-4.7-flash`
+to keep the async classifier on a private, lower-latency Venice model with structured
+response support.
 
 ## Embeddings and summary generation
 
