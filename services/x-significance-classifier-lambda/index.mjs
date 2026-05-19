@@ -70,6 +70,10 @@ function finiteRemainingTimeMs(context) {
   return Number.isFinite(value) ? value : null;
 }
 
+function isVeniceApiUrl(value) {
+  return asString(value).toLowerCase().includes("venice.ai");
+}
+
 function hasTimeForLlmBatch(config, context) {
   return remainingTimeMs(context) > config.llmTimeoutMs + config.ingestTimeoutMs + config.lambdaSafetyMarginMs;
 }
@@ -169,6 +173,7 @@ function getConfig(event = {}) {
     llmTimeoutMs: asPositiveInt(process.env.XMON_SIGNIFICANCE_LLM_TIMEOUT_MS, DEFAULT_SIGNIFICANCE_LLM_TIMEOUT_MS),
     llmMaxAttempts: asPositiveInt(process.env.XMON_SIGNIFICANCE_LLM_MAX_ATTEMPTS, DEFAULT_SIGNIFICANCE_LLM_MAX_ATTEMPTS),
     llmInitialBackoffMs: asPositiveInt(process.env.XMON_SIGNIFICANCE_LLM_INITIAL_BACKOFF_MS, 1000),
+    llmDisableThinking: asBool(event.disable_thinking ?? process.env.XMON_SIGNIFICANCE_DISABLE_THINKING, true),
     batchSize: Math.min(Math.max(asPositiveInt(event.batch_size ?? process.env.XMON_SIGNIFICANCE_BATCH_SIZE, DEFAULT_SIGNIFICANCE_BATCH_SIZE), 1), 24),
     maxPostsPerRun: Math.min(Math.max(asPositiveInt(event.max_posts_per_run ?? process.env.XMON_SIGNIFICANCE_MAX_POSTS_PER_RUN, DEFAULT_SIGNIFICANCE_MAX_POSTS_PER_RUN), 1), 500),
     maxAttempts: Math.min(Math.max(asPositiveInt(event.max_attempts ?? process.env.XMON_SIGNIFICANCE_MAX_ATTEMPTS, DEFAULT_SIGNIFICANCE_MAX_ATTEMPTS), 1), 10),
@@ -238,6 +243,10 @@ function extractCompletionText(payload) {
     const content = choice?.message?.content;
     if (typeof content === "string" && content.trim()) {
       return content.trim();
+    }
+    const reasoningContent = choice?.message?.reasoning_content;
+    if (typeof reasoningContent === "string" && reasoningContent.trim()) {
+      return reasoningContent.trim();
     }
     if (Array.isArray(content)) {
       const parts = content
@@ -325,6 +334,17 @@ function classificationResponseSchema() {
 }
 
 async function requestBatchClassification(config, items) {
+  const requestBody = {
+    model: config.llmModel,
+    messages: buildClassificationMessages(items),
+    temperature: config.llmTemperature,
+    max_tokens: config.llmMaxTokens,
+    response_format: classificationResponseSchema(),
+  };
+  if (config.llmDisableThinking && isVeniceApiUrl(config.llmUrl)) {
+    requestBody.venice_parameters = { disable_thinking: true };
+  }
+
   const payload = await fetchJsonWithTimeout(
     `${config.llmUrl}/chat/completions`,
     {
@@ -334,13 +354,7 @@ async function requestBatchClassification(config, items) {
         "content-type": "application/json",
         "user-agent": "xmonitor-significance-classifier/1.0",
       },
-      body: JSON.stringify({
-        model: config.llmModel,
-        messages: buildClassificationMessages(items),
-        temperature: config.llmTemperature,
-        max_tokens: config.llmMaxTokens,
-        response_format: classificationResponseSchema(),
-      }),
+      body: JSON.stringify(requestBody),
     },
     config.llmTimeoutMs
   );

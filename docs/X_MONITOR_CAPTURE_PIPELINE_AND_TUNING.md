@@ -99,7 +99,8 @@ each AI batch, applies partial results before returning, emits structured batch 
 and emits CloudWatch embedded metrics for failed batches, time-budget skips, and
 retryable classification backlog. The classifier model is `zai-org-glm-4.7-flash`
 to keep the async classifier on a private, lower-latency Venice model with structured
-response support.
+response support. Venice thinking is disabled for classifier calls so structured JSON
+is returned in the normal completion content rather than reasoning-only fields.
 
 ## Embeddings and summary generation
 
