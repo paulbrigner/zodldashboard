@@ -5570,6 +5570,170 @@ async function recordRoadmapAccessEvent({
   return result.rows[0] || null;
 }
 
+function isDirectRoadmapReportInvocation(event) {
+  return asString(event?.source) === "zodl-roadmap-private.report";
+}
+
+function parseReportBoolean(value, fallback = false) {
+  if (value == null || value === "") return fallback;
+  if (typeof value === "boolean") return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (["1", "true", "yes"].includes(normalized)) return true;
+  if (["0", "false", "no"].includes(normalized)) return false;
+  return fallback;
+}
+
+function parseReportPositiveInt(value, fallback, fieldName) {
+  if (value == null || value === "") return fallback;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return { ok: false, error: `${fieldName} must be a positive integer` };
+  }
+  return parsed;
+}
+
+function parseReportTime(value, fieldName) {
+  const raw = asString(value);
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    return { ok: false, error: `${fieldName} must be an ISO timestamp` };
+  }
+  return parsed;
+}
+
+function isoNoMillis(value) {
+  if (!value) return null;
+  return new Date(value).toISOString().replace(/\.\d{3}Z$/, "Z");
+}
+
+function parseRoadmapAccessReportBody(value) {
+  const body = isRecord(value) ? value : {};
+  const days = parseReportPositiveInt(body.days, 7, "days");
+  if (isRecord(days) && !days.ok) return days;
+  const limit = parseReportPositiveInt(body.limit, 50, "limit");
+  if (isRecord(limit) && !limit.ok) return limit;
+
+  const endParsed = parseReportTime(body.end_time, "end_time");
+  if (isRecord(endParsed) && !endParsed.ok) return endParsed;
+  const end = endParsed || new Date();
+  const startParsed = parseReportTime(body.start_time, "start_time");
+  if (isRecord(startParsed) && !startParsed.ok) return startParsed;
+  const start = startParsed || new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+
+  if (start >= end) {
+    return { ok: false, error: "start_time must be before end_time" };
+  }
+
+  return {
+    ok: true,
+    data: {
+      path: normalizePath(asString(body.path) || "/zodl-roadmap"),
+      start,
+      end,
+      limit,
+      includeNetwork: parseReportBoolean(body.include_network, false),
+    },
+  };
+}
+
+function roadmapReportCounter(rows, field) {
+  const counts = new Map();
+  for (const row of rows) {
+    const value = row[field] || "unknown";
+    const current = counts.get(value) || { value, count: 0, last_seen: null };
+    current.count += 1;
+    const accessedAt = isoNoMillis(row.accessed_at);
+    if (!current.last_seen || accessedAt > current.last_seen) current.last_seen = accessedAt;
+    counts.set(value, current);
+  }
+  return Array.from(counts.values()).sort(
+    (left, right) =>
+      right.count - left.count ||
+      String(right.last_seen).localeCompare(String(left.last_seen)) ||
+      String(left.value).localeCompare(String(right.value))
+  );
+}
+
+function roadmapReportRecentRows(rows, limit, includeNetwork) {
+  return rows.slice(0, limit).map((row) => {
+    const item = {
+      accessed_at: isoNoMillis(row.accessed_at),
+      email: row.email,
+      auth_mode: row.auth_mode,
+      access_level: row.access_level,
+      method: row.method,
+      status_code: row.status_code,
+    };
+    if (includeNetwork) {
+      item.client_ip = row.client_ip || null;
+      item.referer = row.referer || null;
+      item.user_agent = row.user_agent || null;
+    }
+    return item;
+  });
+}
+
+async function buildRoadmapAccessReport({ path, start, end, limit, includeNetwork }) {
+  await ensureRoadmapAccessSchema();
+  const db = getPool();
+  const result = await db.query(
+    `
+      SELECT
+        event_id::text,
+        email,
+        auth_mode,
+        access_level,
+        path,
+        method,
+        status_code,
+        client_ip,
+        user_agent,
+        referer,
+        request_id,
+        accessed_at
+      FROM roadmap_access_events
+      WHERE path = $1
+        AND outcome = 'allowed'
+        AND accessed_at >= $2::timestamptz
+        AND accessed_at < $3::timestamptz
+      ORDER BY accessed_at DESC
+    `,
+    [path, start.toISOString(), end.toISOString()]
+  );
+
+  const rows = result.rows;
+  const timestamps = rows.map((row) => isoNoMillis(row.accessed_at)).sort();
+  return {
+    window: {
+      start: isoNoMillis(start),
+      end: isoNoMillis(end),
+    },
+    source: {
+      table: "roadmap_access_events",
+      path,
+      outcome: "allowed",
+    },
+    summary: {
+      allowed_accesses: rows.length,
+      unique_users: new Set(rows.map((row) => row.email)).size,
+      first_seen: timestamps[0] || null,
+      last_seen: timestamps[timestamps.length - 1] || null,
+    },
+    by_email: roadmapReportCounter(rows, "email").map(({ value, ...rest }) => ({
+      email: value,
+      ...rest,
+    })),
+    by_auth_mode: roadmapReportCounter(rows, "auth_mode"),
+    by_access_level: roadmapReportCounter(rows, "access_level"),
+    recent_accesses: roadmapReportRecentRows(rows, limit, includeNetwork),
+    options: {
+      include_network: includeNetwork,
+      recent_access_limit: limit,
+    },
+  };
+}
+
 function rowToAuthUser(row) {
   if (!row?.id || !row?.email) return null;
   return {
@@ -7292,6 +7456,36 @@ async function handleRoadmapAccessEventCreate(event) {
     return jsonOk({ item }, 201);
   } catch (error) {
     return jsonError(errorMessage(error) || "failed to record roadmap access event", 503);
+  }
+}
+
+async function handleRoadmapAccessReport(event, { directInvocation = false } = {}) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  if (!directInvocation) {
+    const auth = requireProxySecret(event);
+    if (!auth.ok) {
+      return jsonError(auth.error, auth.status);
+    }
+  }
+
+  const parsedBody = event?.body ? readJsonBody(event) : { ok: true, body: {} };
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+
+  const parsed = parseRoadmapAccessReportBody(parsedBody.body);
+  if (!parsed.ok) {
+    return jsonError(parsed.error, 400);
+  }
+
+  try {
+    const report = await buildRoadmapAccessReport(parsed.data);
+    return jsonOk({ report });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to build roadmap access report", 503);
   }
 }
 
@@ -9169,6 +9363,7 @@ export async function schedulerHandler(event) {
 export async function handler(event) {
   const method = String(event?.requestContext?.http?.method || event?.httpMethod || "GET").toUpperCase();
   const path = normalizePath(event?.rawPath || event?.path || "/");
+  const directRoadmapReportInvocation = isDirectRoadmapReportInvocation(event);
 
   if (method === "POST" && isIngestPath(path)) {
     const auth = validateIngestAuthorization(event);
@@ -9232,6 +9427,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/roadmap/access-events") {
     return handleRoadmapAccessEventCreate(event);
+  }
+
+  if (method === "POST" && path === "/v1/roadmap/access-report") {
+    return handleRoadmapAccessReport(event, { directInvocation: directRoadmapReportInvocation });
   }
 
   if (method === "POST" && path === "/v1/auth/guest-email/send-verification") {
