@@ -57,6 +57,7 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 Operational runbooks:
 
 - [X Monitor Executive Graphics](docs/X_MONITOR_EXECUTIVE_GRAPHICS_RUNBOOK.md): regenerate the team traction and 90-day ZEC overlay PNGs
+- X Monitor access report: `scripts/aws/report_xmonitor_access.sh` reports successful `/x-monitor` page accesses from `xmonitor_access_events`.
 
 ## Core Data
 
@@ -74,6 +75,7 @@ Primary tables currently used by the live system:
 - `auth_users`
 - `auth_verification_tokens`
 - `auth_login_events`
+- `xmonitor_access_events`
 
 ## Local Development
 
@@ -287,6 +289,16 @@ curl -sS 'https://www.zodldashboard.com/api/v1/health'
 curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
 curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
 ```
+
+### X Monitor Access Report
+
+```bash
+scripts/aws/report_xmonitor_access.sh
+```
+
+The report invokes `xmonitor-vpc-api`, which queries `xmonitor_access_events`
+inside AWS. The default text output shows summary, counts by email, and recent
+timestamp/email rows. Use `--json` for the full structured report.
 
 ## Troubleshooting
 

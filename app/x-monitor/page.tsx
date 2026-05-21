@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { headers } from "next/headers";
 import type { ReactNode } from "react";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
+import { recordXMonitorAccess } from "@/lib/xmonitor-access-events";
 import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
@@ -540,6 +542,9 @@ async function fetchTrendsViaApi(
 
 export default async function HomePage({ searchParams }: HomePageProps) {
   const viewer = await requireAuthenticatedViewer("/x-monitor");
+  const requestHeaders = await headers();
+  await recordXMonitorAccess({ viewer, headers: requestHeaders });
+
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
