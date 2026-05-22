@@ -130,8 +130,8 @@ Current tier buckets:
 
 The handle lists change over time, so the source of truth is the collector code in
 `services/x-api-collector-lambda/index.mjs` and the mirrored in-app Query Reference.
-As of 2026-05-16, the teammate bucket includes `dwillems42`, `zodl_support`, and
-`zcash_harry`.
+As of 2026-05-22, the teammate bucket includes `dwillems42`, `feministplt`, `str4d`,
+`thecodebuffet`, `zodl_support`, and `zcash_harry`.
 
 ## 5) Paging and request tuning
 
