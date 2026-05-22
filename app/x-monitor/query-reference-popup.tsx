@@ -108,6 +108,8 @@ const WATCHLIST_BY_TIER = {
     "zkav_club",
     "genzcash",
     "shieldedlabs",
+    "tachyonzcash",
+    "valargroup",
     "zcash",
     "zcashcommgrants",
     "zcashfoundation",

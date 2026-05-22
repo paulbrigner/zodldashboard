@@ -101,6 +101,8 @@ const DEFAULT_WATCHLIST_TIERS = {
   zpartanll7: "influencer",
   genzcash: "ecosystem",
   shieldedlabs: "ecosystem",
+  tachyonzcash: "ecosystem",
+  valargroup: "ecosystem",
   zkav_club: "ecosystem",
   zcash: "ecosystem",
   zcashcommgrants: "ecosystem",
