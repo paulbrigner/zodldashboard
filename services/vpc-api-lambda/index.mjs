@@ -15,10 +15,10 @@ const SCHEDULE_KINDS = new Set(["interval", "weekly"]);
 const SCHEDULE_VISIBILITIES = new Set(["personal", "shared"]);
 const SCHEDULE_DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
 const SCHEDULE_DAY_CODE_SET = new Set(SCHEDULE_DAY_CODES);
-const AUTH_LOGIN_ACCESS_LEVELS = new Set(["workspace", "guest"]);
-const ROADMAP_ACCESS_LEVELS = new Set(["workspace", "guest", "local-bypass"]);
+const AUTH_LOGIN_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest"]);
+const ROADMAP_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "local-bypass"]);
 const ROADMAP_ACCESS_OUTCOMES = new Set(["allowed", "denied_guest", "content_missing"]);
-const XMONITOR_ACCESS_LEVELS = new Set(["workspace", "guest", "local-bypass"]);
+const XMONITOR_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "local-bypass"]);
 const CIPHERPAY_TEST_NETWORKS = new Set(["testnet", "mainnet"]);
 const CIPHERPAY_TEST_SESSION_STATUSES = new Set([
   "draft",
@@ -2390,7 +2390,7 @@ async function ensureRoadmapAccessSchema() {
       auth_mode TEXT NOT NULL
         CHECK (auth_mode IN ('oauth', 'local-bypass')),
       access_level TEXT NOT NULL
-        CHECK (access_level IN ('workspace', 'guest', 'local-bypass')),
+        CHECK (access_level IN ('workspace', 'guest', 'roadmap-guest', 'local-bypass')),
       outcome TEXT NOT NULL
         CHECK (outcome IN ('allowed', 'denied_guest', 'content_missing')),
       path TEXT NOT NULL DEFAULT '/zodl-roadmap',
@@ -2442,7 +2442,7 @@ async function ensureXMonitorAccessSchema() {
       auth_mode TEXT NOT NULL
         CHECK (auth_mode IN ('oauth', 'local-bypass')),
       access_level TEXT NOT NULL
-        CHECK (access_level IN ('workspace', 'guest', 'local-bypass')),
+        CHECK (access_level IN ('workspace', 'guest', 'roadmap-guest', 'local-bypass')),
       path TEXT NOT NULL DEFAULT '/x-monitor',
       method TEXT NOT NULL DEFAULT 'GET',
       status_code INTEGER NOT NULL DEFAULT 200
@@ -4811,7 +4811,7 @@ function parseAuthLoginEventBody(value) {
 
   const accessLevel = asString(body.access_level)?.toLowerCase();
   if (!accessLevel || !AUTH_LOGIN_ACCESS_LEVELS.has(accessLevel)) {
-    return { ok: false, error: "access_level must be one of workspace or guest" };
+    return { ok: false, error: "access_level must be one of workspace, guest, or roadmap-guest" };
   }
 
   return {
@@ -4846,7 +4846,7 @@ function parseRoadmapAccessEventBody(value) {
 
   const accessLevel = asString(body.access_level)?.toLowerCase();
   if (!accessLevel || !ROADMAP_ACCESS_LEVELS.has(accessLevel)) {
-    return { ok: false, error: "access_level must be one of workspace, guest, or local-bypass" };
+    return { ok: false, error: "access_level must be one of workspace, guest, roadmap-guest, or local-bypass" };
   }
 
   const statusCode = Number.parseInt(String(body.status_code ?? ""), 10);
@@ -4888,7 +4888,7 @@ function parseXMonitorAccessEventBody(value) {
 
   const accessLevel = asString(body.access_level)?.toLowerCase();
   if (!accessLevel || !XMONITOR_ACCESS_LEVELS.has(accessLevel)) {
-    return { ok: false, error: "access_level must be one of workspace, guest, or local-bypass" };
+    return { ok: false, error: "access_level must be one of workspace, guest, roadmap-guest, or local-bypass" };
   }
 
   const statusCode = Number.parseInt(String(body.status_code ?? "200"), 10);

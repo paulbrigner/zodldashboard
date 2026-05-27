@@ -1,5 +1,16 @@
 import type { SendVerificationRequestParams } from "next-auth/providers/email";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
+import { allowedGuestEmails, guestEmailAllowed, normalizeEmail } from "@/lib/viewer-access";
+
+export {
+  allowedGuestEmails,
+  allowedRoadmapGuestEmails,
+  allowedXMonitorGuestEmails,
+  guestAccessLevelForEmail,
+  guestEmailAllowed,
+  normalizeEmail,
+  parseEmailAllowlist,
+} from "@/lib/viewer-access";
 
 const PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const DEFAULT_MAX_AGE_SECONDS = 15 * 60;
@@ -18,27 +29,6 @@ export function parseBoolean(value: string | undefined, fallback = false): boole
   const normalized = value.trim().toLowerCase();
   if (!normalized) return fallback;
   return ["1", "true", "yes", "y", "on"].includes(normalized);
-}
-
-export function normalizeEmail(value: unknown): string {
-  return typeof value === "string" ? value.trim().toLowerCase() : "";
-}
-
-export function parseEmailAllowlist(value: string): Set<string> {
-  return new Set(
-    value
-      .split(/[,\s]+/)
-      .map((entry) => normalizeEmail(entry))
-      .filter(Boolean)
-  );
-}
-
-export function allowedGuestEmails(): Set<string> {
-  return parseEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
-}
-
-export function guestEmailAllowed(email: string): boolean {
-  return allowedGuestEmails().has(normalizeEmail(email));
 }
 
 export function guestMagicLinkEnabled(): boolean {

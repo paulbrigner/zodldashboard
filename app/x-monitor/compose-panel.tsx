@@ -18,7 +18,7 @@ import {
   type ScheduleVisibility,
 } from "@/lib/xmonitor/types";
 
-type ViewerAccessLevel = "workspace" | "guest" | "local-bypass";
+type ViewerAccessLevel = "workspace" | "guest" | "roadmap-guest" | "local-bypass";
 type ScheduleEditorMode = "daily" | "weekdays" | "selected_days" | "interval";
 type ScheduleIntervalUnit = "minutes" | "hours" | "days" | "weeks";
 type LookbackUnit = "hours" | "days" | "weeks";

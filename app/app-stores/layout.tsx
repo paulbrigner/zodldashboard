@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
+import { isGuestAccessLevel } from "@/lib/viewer-access";
 import { formatDateTime } from "@/lib/app-stores/insights";
 import { getAppStoresDataset } from "@/lib/app-stores/data";
 import { AppStoresNavLinks } from "./nav-links";
@@ -14,7 +15,7 @@ export default async function AppStoresLayout({
   children: React.ReactNode;
 }>) {
   const viewer = await requireAuthenticatedViewer("/app-stores");
-  if (viewer.accessLevel === "guest") {
+  if (isGuestAccessLevel(viewer.accessLevel)) {
     redirect("/");
   }
 

@@ -2,11 +2,12 @@ import { headers } from "next/headers";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { evaluateLocalBypass } from "@/lib/local-bypass";
+import { guestAccessLevelForEmail, type ViewerAccessLevel } from "@/lib/viewer-access";
 
 export type ApiRouteViewer = {
   email: string;
   authMode: "oauth" | "local-bypass";
-  accessLevel: "workspace" | "guest" | "local-bypass";
+  accessLevel: ViewerAccessLevel;
 };
 
 const bypassDisplayEmail = process.env.LOCAL_BYPASS_DISPLAY_EMAIL || "local-network@zodldashboard.local";
@@ -34,7 +35,7 @@ export async function resolveApiRouteViewer(pathname: string): Promise<ApiRouteV
     return {
       email,
       authMode: "oauth",
-      accessLevel: isWorkspaceEmail(email) ? "workspace" : "guest",
+      accessLevel: isWorkspaceEmail(email) ? "workspace" : guestAccessLevelForEmail(email),
     };
   }
 

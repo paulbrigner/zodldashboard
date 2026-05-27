@@ -3,10 +3,11 @@ import { getServerSession } from "next-auth";
 import { redirect } from "next/navigation";
 import { authOptions } from "@/lib/auth";
 import { evaluateLocalBypass } from "@/lib/local-bypass";
+import { guestAccessLevelForEmail, type ViewerAccessLevel } from "@/lib/viewer-access";
 
 export type AuthenticatedViewer = {
   mode: "oauth" | "local-bypass";
-  accessLevel: "workspace" | "guest" | "local-bypass";
+  accessLevel: ViewerAccessLevel;
   email: string;
   canSignOut: boolean;
   bypassClientIp: string | null;
@@ -36,7 +37,7 @@ export async function requireAuthenticatedViewer(pathname: string): Promise<Auth
     const email = normalizeEmail(session.user.email);
     return {
       mode: "oauth",
-      accessLevel: isWorkspaceEmail(email) ? "workspace" : "guest",
+      accessLevel: isWorkspaceEmail(email) ? "workspace" : guestAccessLevelForEmail(email),
       email,
       canSignOut: true,
       bypassClientIp: null,

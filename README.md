@@ -146,6 +146,7 @@ Commonly used variables:
   - `GUEST_GOOGLE_OAUTH_ENABLED`
   - `GUEST_MAGIC_LINK_ENABLED`
   - `ALLOWED_GUEST_GOOGLE_EMAILS`
+  - `ALLOWED_ROADMAP_GUEST_EMAILS`
 - Read/proxy routing:
   - `XMONITOR_READ_API_BASE_URL`
   - `XMONITOR_BACKEND_API_BASE_URL`
@@ -306,7 +307,8 @@ timestamp/email rows. Use `--json` for the full structured report.
 
 - Verify `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_URL`, and callback URLs.
 - Verify internal users match `ALLOWED_GOOGLE_DOMAIN`.
-- Verify guest users are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS` when guest OAuth or guest magic links are enabled.
+- Verify X Monitor-only guests are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS`.
+- Verify guests who need both X Monitor and Roadmap are allowlisted in `ALLOWED_ROADMAP_GUEST_EMAILS`.
 
 ### Read path issues
 

@@ -4,12 +4,14 @@ import EmailProvider from "next-auth/providers/email";
 import { recordSuccessfulAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
 import {
   GUEST_EMAIL_PROVIDER_ID,
+  allowedGuestEmails,
+  allowedRoadmapGuestEmails,
+  guestAccessLevelForEmail,
   guestEmailAllowed,
   guestMagicLinkEnabled,
   guestMagicLinkMaxAgeSeconds,
   normalizeEmail,
   parseBoolean,
-  parseEmailAllowlist,
   sendGuestMagicLinkVerificationRequest,
 } from "@/lib/auth-guest-email";
 import { createGuestEmailAdapter } from "@/lib/auth-guest-email-adapter";
@@ -20,13 +22,14 @@ const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
 const guestOauthEnabled = parseBoolean(process.env.GUEST_GOOGLE_OAUTH_ENABLED, false);
 const googleGuestClientId = process.env.GOOGLE_GUEST_CLIENT_ID || "";
 const googleGuestClientSecret = process.env.GOOGLE_GUEST_CLIENT_SECRET || "";
-const allowedGuestEmails = parseEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
+const allowedGuestEmailSet = allowedGuestEmails();
+const allowedRoadmapGuestEmailSet = allowedRoadmapGuestEmails();
 const guestMagicLinksEnabled = guestMagicLinkEnabled();
 
-function accessLevelForProvider(provider: string): AuthLoginAccessLevel | null {
+function accessLevelForProvider(provider: string, email: string): AuthLoginAccessLevel | null {
   if (provider === "google") return "workspace";
-  if (provider === "google-guest") return "guest";
-  if (provider === GUEST_EMAIL_PROVIDER_ID) return "guest";
+  if (provider === "google-guest") return guestAccessLevelForEmail(email);
+  if (provider === GUEST_EMAIL_PROVIDER_ID) return guestAccessLevelForEmail(email);
   return null;
 }
 
@@ -56,13 +59,17 @@ if (guestOauthEnabled) {
     console.warn("[auth] GUEST_GOOGLE_OAUTH_ENABLED=true but GOOGLE_GUEST_CLIENT_SECRET is missing.");
   }
 
-  if (allowedGuestEmails.size === 0) {
-    console.warn("[auth] GUEST_GOOGLE_OAUTH_ENABLED=true but ALLOWED_GUEST_GOOGLE_EMAILS is empty.");
+  if (allowedGuestEmailSet.size === 0) {
+    console.warn("[auth] GUEST_GOOGLE_OAUTH_ENABLED=true but no guest email allowlist is configured.");
   }
 }
 
-if (guestMagicLinksEnabled && allowedGuestEmails.size === 0) {
-  console.warn("[auth] GUEST_MAGIC_LINK_ENABLED=true but ALLOWED_GUEST_GOOGLE_EMAILS is empty.");
+if (guestMagicLinksEnabled && allowedGuestEmailSet.size === 0) {
+  console.warn("[auth] GUEST_MAGIC_LINK_ENABLED=true but no guest email allowlist is configured.");
+}
+
+if (allowedRoadmapGuestEmailSet.size > 0) {
+  console.info(`[auth] roadmap guest email access enabled for ${allowedRoadmapGuestEmailSet.size} address(es).`);
 }
 
 const providers: NonNullable<NextAuthOptions["providers"]> = [
@@ -131,23 +138,25 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (provider === "google-guest") {
-        const allowed = guestOauthEnabled && allowedGuestEmails.has(normalizedEmail);
+        const allowed = guestOauthEnabled && allowedGuestEmailSet.has(normalizedEmail);
+        const accessLevel = guestAccessLevelForEmail(normalizedEmail);
         console.info(
-          `[auth] ${allowed ? "allow" : "deny"} provider=google-guest email=${normalizedEmail} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+          `[auth] ${allowed ? "allow" : "deny"} provider=google-guest email=${normalizedEmail} access_level=${accessLevel} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
         );
         return allowed;
       }
 
       if (provider === GUEST_EMAIL_PROVIDER_ID) {
         const allowed = guestMagicLinksEnabled && guestEmailAllowed(normalizedEmail);
+        const accessLevel = guestAccessLevelForEmail(normalizedEmail);
         if (verificationRequest) {
           console.info(
-            `[auth] ${allowed ? "allow" : "suppress"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+            `[auth] ${allowed ? "allow" : "suppress"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} access_level=${accessLevel} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
           );
           return guestMagicLinksEnabled;
         }
         console.info(
-          `[auth] ${allowed ? "allow" : "deny"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
+          `[auth] ${allowed ? "allow" : "deny"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} access_level=${accessLevel} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
         );
         return allowed;
       }
@@ -165,11 +174,11 @@ export const authOptions: NextAuthOptions = {
   events: {
     async signIn({ account, profile, user }) {
       const provider = account?.provider || "";
-      const accessLevel = accessLevelForProvider(provider);
-      if (!accessLevel) return;
-
       const email = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
       if (!email) return;
+
+      const accessLevel = accessLevelForProvider(provider, email);
+      if (!accessLevel) return;
 
       await recordSuccessfulAuthLogin({
         email,

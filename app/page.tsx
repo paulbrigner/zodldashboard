@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
+import { canAccessRoadmap, type ViewerAccessLevel } from "@/lib/viewer-access";
 import { SignOutButton } from "./sign-out-button";
 
 export const runtime = "nodejs";
@@ -79,9 +80,14 @@ const dashboardCatalog: DashboardCard[] = [
 
 const dashboards = dashboardCatalog.filter((dashboard) => dashboard.visible);
 
+function canAccessDashboard(dashboard: DashboardCard, accessLevel: ViewerAccessLevel): boolean {
+  if (!dashboard.workspaceOnly) return true;
+  if (dashboard.id === "zodl-roadmap") return canAccessRoadmap(accessLevel);
+  return accessLevel === "workspace" || accessLevel === "local-bypass";
+}
+
 export default async function HomePage() {
   const viewer = await requireAuthenticatedViewer("/");
-  const isGuestViewer = viewer.accessLevel === "guest";
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
@@ -103,7 +109,7 @@ export default async function HomePage() {
 
         <section className="dashboard-grid" aria-label="Dashboard list">
           {dashboards.map((dashboard) => {
-            const restrictedForGuest = isGuestViewer && dashboard.workspaceOnly;
+            const restrictedForGuest = !canAccessDashboard(dashboard, viewer.accessLevel);
             const isEnabled = Boolean(dashboard.href) && !restrictedForGuest;
 
             return (

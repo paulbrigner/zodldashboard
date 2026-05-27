@@ -1,12 +1,12 @@
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
+import type { AuthLoginAccessLevel } from "@/lib/viewer-access";
 
 const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
 const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
 const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const DEFAULT_TIMEOUT_MS = 5000;
 
-export type AuthLoginAccessLevel = "workspace" | "guest";
 export type AuthLoginMode = "oauth" | "email-link";
 
 type AuthLoginEventInput = {

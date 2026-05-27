@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { readZodlRoadmapHtml } from "@/lib/private-dashboard-content";
 import { recordZodlRoadmapAccess } from "@/lib/roadmap-access-events";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
+import { canAccessRoadmap } from "@/lib/viewer-access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -60,7 +61,7 @@ export async function GET() {
   const viewer = await requireAuthenticatedViewer("/zodl-roadmap");
   const requestHeaders = await headers();
 
-  if (viewer.accessLevel === "guest") {
+  if (!canAccessRoadmap(viewer.accessLevel)) {
     await recordZodlRoadmapAccess({
       viewer,
       outcome: "denied_guest",
