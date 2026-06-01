@@ -753,7 +753,7 @@ components:
         path: { type: string, default: /zodl-roadmap }
         method: { type: string, default: GET }
         outcome: { type: string, enum: [allowed, denied_guest, content_missing] }
-        access_level: { type: string, enum: [workspace, guest, local-bypass] }
+        access_level: { type: string, enum: [workspace, guest, roadmap-guest, local-bypass] }
         status_code: { type: integer, minimum: 100, maximum: 599 }
         client_ip: { type: string, nullable: true }
         user_agent: { type: string, nullable: true }
@@ -766,7 +766,7 @@ components:
         event_id: { type: string, format: uuid }
         email: { type: string, format: email }
         auth_mode: { type: string, enum: [oauth, local-bypass] }
-        access_level: { type: string, enum: [workspace, guest, local-bypass] }
+        access_level: { type: string, enum: [workspace, guest, roadmap-guest, local-bypass] }
         outcome: { type: string, enum: [allowed, denied_guest, content_missing] }
         path: { type: string }
         method: { type: string }

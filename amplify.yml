@@ -31,6 +31,28 @@ frontend:
           else
             echo "Zodl Roadmap private repo env vars not complete; skipping private content checkout."
           fi
+        - |
+          if [ -n "${PGPZ_ROADMAP_PRIVATE_REPO:-}" ] && [ -n "${PGPZ_ROADMAP_DEPLOY_KEY_B64:-}" ]; then
+            rm -rf .private/pgpz-roadmap
+            mkdir -p ~/.ssh
+            trap 'rm -f ~/.ssh/pgpz-roadmap-deploy-key' EXIT
+            printf "%s" "$PGPZ_ROADMAP_DEPLOY_KEY_B64" | base64 --decode > ~/.ssh/pgpz-roadmap-deploy-key
+            chmod 600 ~/.ssh/pgpz-roadmap-deploy-key
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/pgpz-roadmap-deploy-key -o IdentitiesOnly=yes" git clone --depth 1 --branch "${PGPZ_ROADMAP_PRIVATE_BRANCH:-main}" "$PGPZ_ROADMAP_PRIVATE_REPO" .private/pgpz-roadmap
+            rm -f ~/.ssh/pgpz-roadmap-deploy-key
+            trap - EXIT
+          elif [ -n "${PGPZ_ROADMAP_PRIVATE_REPO:-}" ] && [ -n "${PGPZ_ROADMAP_GITHUB_TOKEN:-}" ]; then
+            rm -rf .private/pgpz-roadmap
+            trap 'rm -f ~/.netrc' EXIT
+            printf "machine github.com\n  login x-access-token\n  password %s\n" "$PGPZ_ROADMAP_GITHUB_TOKEN" > ~/.netrc
+            chmod 600 ~/.netrc
+            git clone --depth 1 --branch "${PGPZ_ROADMAP_PRIVATE_BRANCH:-main}" "$PGPZ_ROADMAP_PRIVATE_REPO" .private/pgpz-roadmap
+            rm -f ~/.netrc
+            trap - EXIT
+          else
+            echo "PGPZ Roadmap private repo env vars not complete; skipping private content checkout."
+          fi
     build:
       commands:
         - rm -f .env.production
@@ -43,6 +65,7 @@ frontend:
         - env | grep -e GOOGLE_GUEST_CLIENT_ID >> .env.production || true
         - env | grep -e GOOGLE_GUEST_CLIENT_SECRET >> .env.production || true
         - env | grep -e ALLOWED_GUEST_GOOGLE_EMAILS >> .env.production || true
+        - env | grep -e ALLOWED_ROADMAP_GUEST_EMAILS >> .env.production || true
         - env | grep -e LOCAL_BYPASS_ENABLED >> .env.production || true
         - env | grep -e LOCAL_BYPASS_KILL_SWITCH >> .env.production || true
         - env | grep -e LOCAL_BYPASS_DDNS_HOST >> .env.production || true
@@ -54,6 +77,7 @@ frontend:
         - env | grep -e LOCAL_BYPASS_DISPLAY_EMAIL >> .env.production || true
         - env | grep -e LOCAL_BYPASS_LOG_DECISIONS >> .env.production || true
         - env | grep -e ZODL_ROADMAP_HTML_PATH >> .env.production || true
+        - env | grep -e PGPZ_ROADMAP_HTML_PATH >> .env.production || true
         - env | grep -e DATABASE_URL >> .env.production || true
         - env | grep -e PGHOST >> .env.production || true
         - env | grep -e PGPORT >> .env.production || true

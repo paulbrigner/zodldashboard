@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import { canAccessRoadmap, type ViewerAccessLevel } from "@/lib/viewer-access";
+import { canAccessPgpzRoadmap, canAccessRoadmap, type ViewerAccessLevel } from "@/lib/viewer-access";
 import { SignOutButton } from "./sign-out-button";
 
 export const runtime = "nodejs";
@@ -34,6 +34,17 @@ const dashboardCatalog: DashboardCard[] = [
       </>
     ),
     href: "/zodl-roadmap",
+    prefetch: false,
+    rawDocument: true,
+    workspaceOnly: true,
+    visible: true,
+  },
+  {
+    id: "pgpz-roadmap",
+    name: "PGPZ Roadmap",
+    description:
+      "Private PGPZ collaboration workspace for roadmap context, partner files, and current priorities.",
+    href: "/pgpz-roadmap",
     prefetch: false,
     rawDocument: true,
     workspaceOnly: true,
@@ -80,10 +91,11 @@ const dashboardCatalog: DashboardCard[] = [
 
 const dashboards = dashboardCatalog.filter((dashboard) => dashboard.visible);
 
-function canAccessDashboard(dashboard: DashboardCard, accessLevel: ViewerAccessLevel): boolean {
+function canAccessDashboard(dashboard: DashboardCard, viewer: { accessLevel: ViewerAccessLevel; email: string }): boolean {
   if (!dashboard.workspaceOnly) return true;
-  if (dashboard.id === "zodl-roadmap") return canAccessRoadmap(accessLevel);
-  return accessLevel === "workspace" || accessLevel === "local-bypass";
+  if (dashboard.id === "zodl-roadmap") return canAccessRoadmap(viewer.accessLevel);
+  if (dashboard.id === "pgpz-roadmap") return canAccessPgpzRoadmap(viewer.accessLevel);
+  return viewer.accessLevel === "workspace" || viewer.accessLevel === "local-bypass";
 }
 
 export default async function HomePage() {
@@ -109,7 +121,7 @@ export default async function HomePage() {
 
         <section className="dashboard-grid" aria-label="Dashboard list">
           {dashboards.map((dashboard) => {
-            const restrictedForGuest = !canAccessDashboard(dashboard, viewer.accessLevel);
+            const restrictedForGuest = !canAccessDashboard(dashboard, viewer);
             const isEnabled = Boolean(dashboard.href) && !restrictedForGuest;
 
             return (

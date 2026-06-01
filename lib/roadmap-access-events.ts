@@ -6,8 +6,9 @@ const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
 const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
 const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const DEFAULT_TIMEOUT_MS = 3000;
-const DEFAULT_PATH = "/zodl-roadmap";
 const DEFAULT_METHOD = "GET";
+const ZODL_ROADMAP_PATH = "/zodl-roadmap";
+const PGPZ_ROADMAP_PATH = "/pgpz-roadmap";
 
 type HeaderReader = {
   get(name: string): string | null;
@@ -20,12 +21,13 @@ type RoadmapAccessEventInput = {
   outcome: RoadmapAccessOutcome;
   statusCode: number;
   headers: HeaderReader;
+  eventName?: "zodl_roadmap_access" | "pgpz_roadmap_access";
   path?: string;
   method?: string;
 };
 
 type RoadmapAccessEventPayload = {
-  event: "zodl_roadmap_access";
+  event: "zodl_roadmap_access" | "pgpz_roadmap_access";
   path: string;
   method: string;
   outcome: RoadmapAccessOutcome;
@@ -71,8 +73,8 @@ function buildPayload(input: RoadmapAccessEventInput): RoadmapAccessEventPayload
     headerValue(input.headers, "x-amplify-request-id", 256);
 
   return {
-    event: "zodl_roadmap_access",
-    path: input.path || DEFAULT_PATH,
+    event: input.eventName || "zodl_roadmap_access",
+    path: input.path || ZODL_ROADMAP_PATH,
     method: (input.method || DEFAULT_METHOD).toUpperCase(),
     outcome: input.outcome,
     status_code: input.statusCode,
@@ -189,7 +191,7 @@ export async function recordZodlRoadmapAccess(input: RoadmapAccessEventInput): P
 
     console.warn(
       JSON.stringify({
-        event: "zodl_roadmap_access_audit_skipped",
+        event: `${payload.event}_audit_skipped`,
         reason: "no_backend_or_database",
         email: payload.email,
         outcome: payload.outcome,
@@ -201,7 +203,7 @@ export async function recordZodlRoadmapAccess(input: RoadmapAccessEventInput): P
       if (await recordDirectly(payload)) {
         console.warn(
           JSON.stringify({
-            event: "zodl_roadmap_access_audit_backend_fallback",
+            event: `${payload.event}_audit_backend_fallback`,
             email: payload.email,
             outcome: payload.outcome,
             reason: error instanceof Error ? error.message : "backend_failed",
@@ -213,7 +215,7 @@ export async function recordZodlRoadmapAccess(input: RoadmapAccessEventInput): P
     } catch (fallbackError) {
       console.warn(
         JSON.stringify({
-          event: "zodl_roadmap_access_audit_failed",
+          event: `${payload.event}_audit_failed`,
           email: payload.email,
           outcome: payload.outcome,
           reason: fallbackError instanceof Error ? fallbackError.message : "db_failed",
@@ -225,7 +227,7 @@ export async function recordZodlRoadmapAccess(input: RoadmapAccessEventInput): P
 
     console.warn(
       JSON.stringify({
-        event: "zodl_roadmap_access_audit_failed",
+        event: `${payload.event}_audit_failed`,
         email: payload.email,
         outcome: payload.outcome,
         reason: error instanceof Error ? error.message : "unknown",
@@ -233,4 +235,12 @@ export async function recordZodlRoadmapAccess(input: RoadmapAccessEventInput): P
       })
     );
   }
+}
+
+export async function recordPgpzRoadmapAccess(input: Omit<RoadmapAccessEventInput, "eventName" | "path">): Promise<void> {
+  await recordZodlRoadmapAccess({
+    ...input,
+    eventName: "pgpz_roadmap_access",
+    path: PGPZ_ROADMAP_PATH,
+  });
 }

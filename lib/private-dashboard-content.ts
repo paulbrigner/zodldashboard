@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { isAbsolute, resolve } from "node:path";
 
 const DEFAULT_ZODL_ROADMAP_HTML_PATH = ".private/zodl-roadmap/index.html";
+const DEFAULT_PGPZ_ROADMAP_HTML_PATH = ".private/pgpz-roadmap/index.html";
 
 type NodeSystemError = Error & {
   code?: string;
@@ -21,8 +22,26 @@ export function getZodlRoadmapHtmlPath(): string {
   return resolvePrivatePath(process.env.ZODL_ROADMAP_HTML_PATH, DEFAULT_ZODL_ROADMAP_HTML_PATH);
 }
 
+export function getPgpzRoadmapHtmlPath(): string {
+  return resolvePrivatePath(process.env.PGPZ_ROADMAP_HTML_PATH, DEFAULT_PGPZ_ROADMAP_HTML_PATH);
+}
+
 export async function readZodlRoadmapHtml(): Promise<string | null> {
   const htmlPath = getZodlRoadmapHtmlPath();
+
+  try {
+    return await readFile(htmlPath, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function readPgpzRoadmapHtml(): Promise<string | null> {
+  const htmlPath = getPgpzRoadmapHtmlPath();
 
   try {
     return await readFile(htmlPath, "utf8");

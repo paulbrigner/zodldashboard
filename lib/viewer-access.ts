@@ -57,3 +57,7 @@ export function isGuestAccessLevel(accessLevel: ViewerAccessLevel): accessLevel 
 export function canAccessRoadmap(accessLevel: ViewerAccessLevel): boolean {
   return accessLevel === "workspace" || accessLevel === "roadmap-guest" || accessLevel === "local-bypass";
 }
+
+export function canAccessPgpzRoadmap(accessLevel: ViewerAccessLevel): boolean {
+  return canAccessRoadmap(accessLevel);
+}
