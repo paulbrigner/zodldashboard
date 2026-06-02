@@ -41,9 +41,13 @@ const dashboardCatalog: DashboardCard[] = [
   },
   {
     id: "pgpz-roadmap",
-    name: "PGPZ Roadmap",
-    description:
-      "Private PGPZ collaboration workspace for roadmap context, partner files, and current priorities.",
+    name: "Accrediv Updates & PGPZ Status",
+    description: (
+      <>
+        Policy updates from Accrediv, plus status tracking for the formation and planned activities of the{" "}
+        <strong>Pretty Good Policy for Zcash Coalition</strong>.
+      </>
+    ),
     href: "/pgpz-roadmap",
     prefetch: false,
     rawDocument: true,

@@ -11,17 +11,29 @@ set -euo pipefail
 #   ALERT_TOPIC_NAME=xmonitor-alerts
 #   ALERT_EMAIL=aws-alarm@mail.zyprpnk.com  # SNS email subscriptions require recipient confirmation
 #   EXTRA_ALARM_ACTION_ARNS=arn:aws:sns:...    # comma-separated additional action ARNs
-#   CLASSIFIER_DURATION_NEAR_TIMEOUT_MS=90000
-#   CLASSIFIER_BACKLOG_COUNT_THRESHOLD=100
-#   CLASSIFIER_OLDEST_PENDING_AGE_SECONDS=1800
+#   CLASSIFIER_DURATION_NEAR_TIMEOUT_MS=210000
+#   CLASSIFIER_FAILED_COUNT_THRESHOLD=25
+#   CLASSIFIER_BACKLOG_COUNT_THRESHOLD=250
+#   CLASSIFIER_OLDEST_PENDING_AGE_SECONDS=14400
 
 AWS_REGION="${AWS_REGION:-us-east-1}"
 ALERT_TOPIC_NAME="${ALERT_TOPIC_NAME:-xmonitor-alerts}"
 ALERT_EMAIL="${ALERT_EMAIL:-aws-alarm@mail.zyprpnk.com}"
 EXTRA_ALARM_ACTION_ARNS="${EXTRA_ALARM_ACTION_ARNS:-}"
-CLASSIFIER_DURATION_NEAR_TIMEOUT_MS="${CLASSIFIER_DURATION_NEAR_TIMEOUT_MS:-90000}"
-CLASSIFIER_BACKLOG_COUNT_THRESHOLD="${CLASSIFIER_BACKLOG_COUNT_THRESHOLD:-100}"
-CLASSIFIER_OLDEST_PENDING_AGE_SECONDS="${CLASSIFIER_OLDEST_PENDING_AGE_SECONDS:-1800}"
+CLASSIFIER_DURATION_NEAR_TIMEOUT_MS="${CLASSIFIER_DURATION_NEAR_TIMEOUT_MS:-210000}"
+CLASSIFIER_DURATION_EVALUATION_PERIODS="${CLASSIFIER_DURATION_EVALUATION_PERIODS:-3}"
+CLASSIFIER_DURATION_DATAPOINTS_TO_ALARM="${CLASSIFIER_DURATION_DATAPOINTS_TO_ALARM:-2}"
+CLASSIFIER_FAILED_COUNT_THRESHOLD="${CLASSIFIER_FAILED_COUNT_THRESHOLD:-25}"
+CLASSIFIER_FAILED_COUNT_EVALUATION_PERIODS="${CLASSIFIER_FAILED_COUNT_EVALUATION_PERIODS:-3}"
+CLASSIFIER_FAILED_COUNT_DATAPOINTS_TO_ALARM="${CLASSIFIER_FAILED_COUNT_DATAPOINTS_TO_ALARM:-2}"
+CLASSIFIER_TIME_BUDGET_EVALUATION_PERIODS="${CLASSIFIER_TIME_BUDGET_EVALUATION_PERIODS:-6}"
+CLASSIFIER_TIME_BUDGET_DATAPOINTS_TO_ALARM="${CLASSIFIER_TIME_BUDGET_DATAPOINTS_TO_ALARM:-4}"
+CLASSIFIER_BACKLOG_COUNT_THRESHOLD="${CLASSIFIER_BACKLOG_COUNT_THRESHOLD:-250}"
+CLASSIFIER_BACKLOG_EVALUATION_PERIODS="${CLASSIFIER_BACKLOG_EVALUATION_PERIODS:-3}"
+CLASSIFIER_BACKLOG_DATAPOINTS_TO_ALARM="${CLASSIFIER_BACKLOG_DATAPOINTS_TO_ALARM:-3}"
+CLASSIFIER_OLDEST_PENDING_AGE_SECONDS="${CLASSIFIER_OLDEST_PENDING_AGE_SECONDS:-14400}"
+CLASSIFIER_OLDEST_PENDING_AGE_EVALUATION_PERIODS="${CLASSIFIER_OLDEST_PENDING_AGE_EVALUATION_PERIODS:-3}"
+CLASSIFIER_OLDEST_PENDING_AGE_DATAPOINTS_TO_ALARM="${CLASSIFIER_OLDEST_PENDING_AGE_DATAPOINTS_TO_ALARM:-3}"
 
 PRIORITY_FUNCTION_NAME="${PRIORITY_FUNCTION_NAME:-xmonitor-xapi-priority-collector}"
 DISCOVERY_FUNCTION_NAME="${DISCOVERY_FUNCTION_NAME:-xmonitor-xapi-discovery-collector}"
@@ -55,7 +67,10 @@ fi
 put_lambda_error_alarm() {
   local function_name="$1"
   local alarm_name="$2"
-  local description="$3"
+  local period_seconds="$3"
+  local evaluation_periods="$4"
+  local datapoints_to_alarm="$5"
+  local description="$6"
 
   aws_cli cloudwatch put-metric-alarm \
     --alarm-name "$alarm_name" \
@@ -64,9 +79,9 @@ put_lambda_error_alarm() {
     --metric-name Errors \
     --dimensions "Name=FunctionName,Value=$function_name" \
     --statistic Sum \
-    --period 300 \
-    --evaluation-periods 1 \
-    --datapoints-to-alarm 1 \
+    --period "$period_seconds" \
+    --evaluation-periods "$evaluation_periods" \
+    --datapoints-to-alarm "$datapoints_to_alarm" \
     --threshold 0 \
     --comparison-operator GreaterThanThreshold \
     --treat-missing-data notBreaching \
@@ -98,7 +113,9 @@ put_lambda_duration_alarm() {
   local function_name="$1"
   local alarm_name="$2"
   local threshold_ms="$3"
-  local description="$4"
+  local evaluation_periods="$4"
+  local datapoints_to_alarm="$5"
+  local description="$6"
 
   aws_cli cloudwatch put-metric-alarm \
     --alarm-name "$alarm_name" \
@@ -108,8 +125,8 @@ put_lambda_duration_alarm() {
     --dimensions "Name=FunctionName,Value=$function_name" \
     --statistic Maximum \
     --period 300 \
-    --evaluation-periods 1 \
-    --datapoints-to-alarm 1 \
+    --evaluation-periods "$evaluation_periods" \
+    --datapoints-to-alarm "$datapoints_to_alarm" \
     --threshold "$threshold_ms" \
     --comparison-operator GreaterThanThreshold \
     --treat-missing-data notBreaching \
@@ -168,17 +185,26 @@ echo "==> Creating/updating Lambda error alarms"
 put_lambda_error_alarm \
   "$PRIORITY_FUNCTION_NAME" \
   "xmonitor-xapi-priority-collector-errors" \
-  "$PRIORITY_FUNCTION_NAME reported Lambda Errors. This can stop watched-handle ingestion."
+  900 \
+  2 \
+  2 \
+  "$PRIORITY_FUNCTION_NAME reported Lambda Errors in two consecutive 15-minute windows. This can stop watched-handle ingestion."
 
 put_lambda_error_alarm \
   "$DISCOVERY_FUNCTION_NAME" \
   "xmonitor-xapi-discovery-collector-errors" \
-  "$DISCOVERY_FUNCTION_NAME reported Lambda Errors. This can stop discovery ingestion."
+  1800 \
+  2 \
+  2 \
+  "$DISCOVERY_FUNCTION_NAME reported Lambda Errors in two consecutive 30-minute windows. This can stop discovery ingestion."
 
 put_lambda_error_alarm \
   "$CLASSIFIER_FUNCTION_NAME" \
   "xmonitor-x-significance-classifier-errors" \
-  "$CLASSIFIER_FUNCTION_NAME reported Lambda Errors. This can delay significance classification."
+  300 \
+  3 \
+  2 \
+  "$CLASSIFIER_FUNCTION_NAME reported Lambda Errors in 2 of 3 recent 5-minute windows. This can delay significance classification."
 
 echo "==> Creating/updating Lambda throttle alarms"
 put_lambda_throttle_alarm \
@@ -201,7 +227,9 @@ put_lambda_duration_alarm \
   "$CLASSIFIER_FUNCTION_NAME" \
   "xmonitor-x-significance-classifier-duration-near-timeout" \
   "$CLASSIFIER_DURATION_NEAR_TIMEOUT_MS" \
-  "$CLASSIFIER_FUNCTION_NAME duration exceeded ${CLASSIFIER_DURATION_NEAR_TIMEOUT_MS}ms. This is close to the Lambda timeout and can delay significance classification."
+  "$CLASSIFIER_DURATION_EVALUATION_PERIODS" \
+  "$CLASSIFIER_DURATION_DATAPOINTS_TO_ALARM" \
+  "$CLASSIFIER_FUNCTION_NAME duration exceeded ${CLASSIFIER_DURATION_NEAR_TIMEOUT_MS}ms in ${CLASSIFIER_DURATION_DATAPOINTS_TO_ALARM} of ${CLASSIFIER_DURATION_EVALUATION_PERIODS} periods. This is close to the Lambda timeout and can delay significance classification."
 
 put_classifier_metric_alarm \
   "TimeBudgetExhaustedCount" \
@@ -209,19 +237,19 @@ put_classifier_metric_alarm \
   "Sum" \
   0 \
   "GreaterThanThreshold" \
-  2 \
-  2 \
-  "$CLASSIFIER_FUNCTION_NAME skipped one or more batches because the Lambda time budget was too low for two consecutive periods."
+  "$CLASSIFIER_TIME_BUDGET_EVALUATION_PERIODS" \
+  "$CLASSIFIER_TIME_BUDGET_DATAPOINTS_TO_ALARM" \
+  "$CLASSIFIER_FUNCTION_NAME skipped one or more batches because the Lambda time budget was too low in ${CLASSIFIER_TIME_BUDGET_DATAPOINTS_TO_ALARM} of ${CLASSIFIER_TIME_BUDGET_EVALUATION_PERIODS} recent periods."
 
 put_classifier_metric_alarm \
   "FailedCount" \
   "xmonitor-x-significance-classifier-failed-results" \
   "Sum" \
-  0 \
+  "$CLASSIFIER_FAILED_COUNT_THRESHOLD" \
   "GreaterThanThreshold" \
-  2 \
-  2 \
-  "$CLASSIFIER_FUNCTION_NAME recorded failed classification results for two consecutive periods. Rows should retry on later runs."
+  "$CLASSIFIER_FAILED_COUNT_EVALUATION_PERIODS" \
+  "$CLASSIFIER_FAILED_COUNT_DATAPOINTS_TO_ALARM" \
+  "$CLASSIFIER_FUNCTION_NAME recorded more than ${CLASSIFIER_FAILED_COUNT_THRESHOLD} retryable failed classification results in ${CLASSIFIER_FAILED_COUNT_DATAPOINTS_TO_ALARM} of ${CLASSIFIER_FAILED_COUNT_EVALUATION_PERIODS} recent periods. Rows should retry on later runs."
 
 put_classifier_metric_alarm \
   "RetryableClassificationCount" \
@@ -229,9 +257,9 @@ put_classifier_metric_alarm \
   "Maximum" \
   "$CLASSIFIER_BACKLOG_COUNT_THRESHOLD" \
   "GreaterThanThreshold" \
-  2 \
-  2 \
-  "$CLASSIFIER_FUNCTION_NAME reported more than ${CLASSIFIER_BACKLOG_COUNT_THRESHOLD} retryable pending/failed/stale-processing classifications for two consecutive periods."
+  "$CLASSIFIER_BACKLOG_EVALUATION_PERIODS" \
+  "$CLASSIFIER_BACKLOG_DATAPOINTS_TO_ALARM" \
+  "$CLASSIFIER_FUNCTION_NAME reported more than ${CLASSIFIER_BACKLOG_COUNT_THRESHOLD} retryable pending/failed/stale-processing classifications in ${CLASSIFIER_BACKLOG_DATAPOINTS_TO_ALARM} of ${CLASSIFIER_BACKLOG_EVALUATION_PERIODS} recent periods."
 
 put_classifier_metric_alarm \
   "OldestPendingAgeSeconds" \
@@ -239,9 +267,9 @@ put_classifier_metric_alarm \
   "Maximum" \
   "$CLASSIFIER_OLDEST_PENDING_AGE_SECONDS" \
   "GreaterThanThreshold" \
-  2 \
-  2 \
-  "$CLASSIFIER_FUNCTION_NAME reported retryable classification backlog older than ${CLASSIFIER_OLDEST_PENDING_AGE_SECONDS}s for two consecutive periods."
+  "$CLASSIFIER_OLDEST_PENDING_AGE_EVALUATION_PERIODS" \
+  "$CLASSIFIER_OLDEST_PENDING_AGE_DATAPOINTS_TO_ALARM" \
+  "$CLASSIFIER_FUNCTION_NAME reported retryable classification backlog older than ${CLASSIFIER_OLDEST_PENDING_AGE_SECONDS}s in ${CLASSIFIER_OLDEST_PENDING_AGE_DATAPOINTS_TO_ALARM} of ${CLASSIFIER_OLDEST_PENDING_AGE_EVALUATION_PERIODS} recent periods."
 
 echo "==> Creating/updating scheduled collector heartbeat alarms"
 put_lambda_heartbeat_alarm \

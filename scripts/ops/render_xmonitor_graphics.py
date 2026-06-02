@@ -378,6 +378,36 @@ def default_output_path(out_dir: Path, label: str, now: dt.datetime) -> Path:
     return out_dir / f"{label} - {stamp}.png"
 
 
+def team_graphic_labels(handles: list[str]) -> dict[str, str]:
+    unique_handles = list(dict.fromkeys(normalize_handle(handle) for handle in handles if normalize_handle(handle)))
+    default_handles = {normalize_handle(handle) for handle in DEFAULT_TEAM_HANDLES}
+    selected_handles = set(unique_handles)
+
+    if len(unique_handles) == 1:
+        display_handle = f"@{unique_handles[0]}"
+        return {
+            "title": f"{display_handle} X Traction",
+            "top_posts_title": f"Top Live Posts by {display_handle}",
+            "posts_badge_label": "posts analyzed",
+            "footer_scope": f"captured {display_handle} activity",
+        }
+
+    if selected_handles == default_handles:
+        return {
+            "title": "ZODL Team X Traction",
+            "top_posts_title": "Top Live Posts Across ZODL Team",
+            "posts_badge_label": "team posts analyzed",
+            "footer_scope": "captured ZODL team activity",
+        }
+
+    return {
+        "title": "Selected Handles X Traction",
+        "top_posts_title": "Top Live Posts Across Selected Handles",
+        "posts_badge_label": "selected-handle posts analyzed",
+        "footer_scope": "captured selected-handle activity",
+    }
+
+
 def resolve_team_window(args: argparse.Namespace, now: dt.datetime) -> tuple[dt.datetime, dt.datetime, bool]:
     since_arg = args.team_since or args.since
     until_arg = args.team_until or args.until
@@ -534,6 +564,7 @@ def render_team_graphic(
     window_until: dt.datetime,
     custom_window: bool,
     live_metrics_refreshed: bool,
+    labels: dict[str, str],
     output_path: Path,
 ) -> None:
     width, height = 2400, 2030
@@ -541,7 +572,7 @@ def render_team_graphic(
     draw = ImageDraw.Draw(image)
 
     draw.rectangle((0, 0, width, 140), fill=COLORS["navy"])
-    draw.text((70, 40), "ZODL Team X Traction", fill="#FFFFFF", font=FONTS["title"])
+    draw.text((70, 40), labels["title"], fill="#FFFFFF", font=FONTS["title"])
     window_label = f"Window {format_window_et(window_since, window_until)}" if custom_window else f"Week ending {format_date_et(window_until, False)}"
     metric_label = (
         f"live X metrics refreshed {now.astimezone(ET).strftime('%b %-d, %-I:%M %p ET')}"
@@ -579,7 +610,7 @@ def render_team_graphic(
     band_y = 344
     draw_card(draw, (70, band_y, width - 70, band_y + 92), radius=7, fill="#EAF1F9", outline="#D4E0F0")
     badge_x = 105
-    badge_x = draw_badge(draw, badge_x, band_y + 30, f"{totals['posts']} team posts analyzed", COLORS["teal"])
+    badge_x = draw_badge(draw, badge_x, band_y + 30, f"{totals['posts']} {labels['posts_badge_label']}", COLORS["teal"])
     badge_x = draw_badge(draw, badge_x, band_y + 30, f"{totals['high_signal']} high-signal posts", "#EBAA00")
     badge_x = draw_badge(draw, badge_x, band_y + 30, f"{len(leaderboard)} active captured handles", COLORS["blue"])
     if totals["articles"]:
@@ -591,18 +622,24 @@ def render_team_graphic(
     draw_card(draw, left, radius=8)
     draw_card(draw, right, radius=8)
 
-    render_top_posts_table(draw, left, posts, totals)
+    render_top_posts_table(draw, left, posts, totals, labels["top_posts_title"])
     render_handle_panel(draw, right, leaderboard, totals, daily_rows)
 
     draw.line((70, height - 65, width - 70, height - 65), fill="#D6DEE9", width=2)
-    footer = "Notes: source posts continue changing; totals reflect latest available public X engagement counts for captured ZODL team activity."
+    footer = f"Notes: source posts continue changing; totals reflect latest available public X engagement counts for {labels['footer_scope']}."
     draw.text((70, height - 42), footer, fill=COLORS["muted"], font=FONTS["small"])
     image.save(output_path, quality=95)
 
 
-def render_top_posts_table(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], posts: list[dict[str, Any]], totals: dict[str, int]) -> None:
+def render_top_posts_table(
+    draw: ImageDraw.ImageDraw,
+    box: tuple[int, int, int, int],
+    posts: list[dict[str, Any]],
+    totals: dict[str, int],
+    title: str,
+) -> None:
     left, top, right, bottom = box
-    draw.text((left + 30, top + 32), "Top Live Posts Across ZODL Team", fill=COLORS["ink"], font=FONTS["h3"])
+    draw.text((left + 30, top + 32), title, fill=COLORS["ink"], font=FONTS["h3"])
     draw.text(
         (left + 30, top + 72),
         f"Top 30 by views shown; all {totals['posts']} captured posts are included in totals, handle/daily charts, and source data.",
@@ -948,9 +985,10 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     now = parse_datetime(args.now)
     out_dir = Path(args.out_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
-    team_output = Path(args.team_output).expanduser() if args.team_output else default_output_path(out_dir, "ZODL Team X Traction", now)
-    trend_output = Path(args.trend_output).expanduser() if args.trend_output else default_output_path(out_dir, "X Monitor 90D Activity Trend with ZEC Price", now)
     handles = parse_handles(args.team_handles)
+    labels = team_graphic_labels(handles)
+    team_output = Path(args.team_output).expanduser() if args.team_output else default_output_path(out_dir, labels["title"], now)
+    trend_output = Path(args.trend_output).expanduser() if args.trend_output else default_output_path(out_dir, "X Monitor 90D Activity Trend with ZEC Price", now)
 
     summary: dict[str, Any] = {}
     if not args.trend_only:
@@ -977,10 +1015,12 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
             team_until,
             custom_team_window,
             live_metrics_refreshed,
+            labels,
             team_output,
         )
         summary["team"] = {
             "output": str(team_output),
+            "title": labels["title"],
             "since": iso_z(team_since),
             "until": iso_z(team_until),
             "posts": totals["posts"],

@@ -126,6 +126,9 @@ python3 scripts/ops/render_xmonitor_graphics.py \
   --team-handles "bostonzcash,jswihart,paulbrigner,zodl_app,zodl_co"
 ```
 
+When the override contains a single handle, the graphic uses an individual title
+such as `@paulbrigner X Traction` instead of `ZODL Team X Traction`.
+
 Fail if live X metric refresh cannot complete:
 
 ```bash
