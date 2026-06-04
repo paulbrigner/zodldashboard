@@ -32,6 +32,9 @@ Use this checklist when adding another private dashboard with its own content re
    - Prefer a read-only deploy key scoped only to that private repo.
    - Add a `next.config.ts` file trace include for `.private/<slug>/**/*`.
    - Merge new Amplify environment variables into the existing branch env map; do not overwrite existing secrets.
+   - Add a GitHub Actions workflow in the private repo that triggers the public `zodldashboard` Amplify `main` release on pushes to the private repo's `main` branch.
+   - Use a repo-scoped GitHub OIDC IAM role for that workflow. Limit the role trust policy to `repo:paulbrigner/<private-repo>:ref:refs/heads/main`, and limit permissions to `amplify:StartJob`, `amplify:GetJob`, and `amplify:ListJobs` for the production Amplify app and `main` branch.
+   - Make the workflow retry when Amplify already has a pending or running job, then poll the started job to `SUCCEED`, `FAILED`, or `CANCELLED`.
 7. Document the integration in `docs/<DASHBOARD>_PRIVATE_DASHBOARD.md`.
 8. Verify before reporting done.
    - Run `git diff --check`.
