@@ -38,8 +38,12 @@ export function allowedRoadmapGuestEmails(): Set<string> {
   );
 }
 
+export function allowedArktourosGuestEmails(): Set<string> {
+  return parseEmailAllowlist(process.env.ALLOWED_ARKTOUROS_GUEST_EMAILS || "");
+}
+
 export function allowedGuestEmails(): Set<string> {
-  return mergeEmailSets(allowedXMonitorGuestEmails(), allowedRoadmapGuestEmails());
+  return mergeEmailSets(allowedXMonitorGuestEmails(), allowedRoadmapGuestEmails(), allowedArktourosGuestEmails());
 }
 
 export function guestEmailAllowed(email: string): boolean {
@@ -60,4 +64,8 @@ export function canAccessRoadmap(accessLevel: ViewerAccessLevel): boolean {
 
 export function canAccessPgpzRoadmap(accessLevel: ViewerAccessLevel): boolean {
   return canAccessRoadmap(accessLevel);
+}
+
+export function canAccessArktouros(accessLevel: ViewerAccessLevel, email: string): boolean {
+  return canAccessRoadmap(accessLevel) || allowedArktourosGuestEmails().has(normalizeEmail(email));
 }

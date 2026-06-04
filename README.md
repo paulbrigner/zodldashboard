@@ -15,6 +15,9 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 - Google Workspace sign-in (`@zodl.com` by default), with optional guest OAuth, optional guest magic-link sign-in, and optional local-network bypass.
 - Dashboard hub with:
   - X Monitor at `/x-monitor`
+  - Zodl Roadmap at `/zodl-roadmap`
+  - PGPZ Roadmap at `/pgpz-roadmap`
+  - Arktouros at `/arktouros`
   - Regulatory Risk at `/regulatory-risk`
   - App Stores workflows at `/app-stores`
   - CipherPay Test at `/cipherpay-test`
@@ -58,6 +61,8 @@ Operational runbooks:
 
 - [X Monitor Executive Graphics](docs/X_MONITOR_EXECUTIVE_GRAPHICS_RUNBOOK.md): regenerate the team traction and 90-day ZEC overlay PNGs
 - X Monitor access report: `scripts/aws/report_xmonitor_access.sh` reports successful `/x-monitor` page accesses from `xmonitor_access_events`.
+- [Arktouros Private Dashboard](docs/ARKTOUROS_PRIVATE_DASHBOARD.md): split-repository integration notes for `/arktouros`.
+- [Future Work](docs/FUTURE_WORK.md): potential unscheduled follow-up ideas, including evaluating an X Monitor repository extraction.
 
 ## Core Data
 
@@ -147,6 +152,7 @@ Commonly used variables:
   - `GUEST_MAGIC_LINK_ENABLED`
   - `ALLOWED_GUEST_GOOGLE_EMAILS`
   - `ALLOWED_ROADMAP_GUEST_EMAILS`
+  - `ALLOWED_ARKTOUROS_GUEST_EMAILS`
 - Read/proxy routing:
   - `XMONITOR_READ_API_BASE_URL`
   - `XMONITOR_BACKEND_API_BASE_URL`
@@ -206,6 +212,9 @@ See [.env.example](.env.example) for the full current env template.
 - `/`
 - `/signin`
 - `/x-monitor`
+- `/zodl-roadmap`
+- `/pgpz-roadmap`
+- `/arktouros`
 - `/cipherpay-test`
 - `/posts/{statusId}`
 - `/regulatory-risk`
@@ -309,6 +318,7 @@ timestamp/email rows. Use `--json` for the full structured report.
 - Verify internal users match `ALLOWED_GOOGLE_DOMAIN`.
 - Verify X Monitor-only guests are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS`.
 - Verify guests who need both X Monitor and Roadmap are allowlisted in `ALLOWED_ROADMAP_GUEST_EMAILS`.
+- Verify Arktouros-specific users are allowlisted in `ALLOWED_ARKTOUROS_GUEST_EMAILS` only when they should have `/arktouros` access.
 
 ### Read path issues
 

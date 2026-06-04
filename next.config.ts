@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/zodl-roadmap": ["./.private/zodl-roadmap/**/*"],
     "/pgpz-roadmap": ["./.private/pgpz-roadmap/**/*"],
+    "/arktouros": ["./.private/arktouros/**/*"],
   },
 };
 

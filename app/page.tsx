@@ -1,7 +1,12 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import { canAccessPgpzRoadmap, canAccessRoadmap, type ViewerAccessLevel } from "@/lib/viewer-access";
+import {
+  canAccessArktouros,
+  canAccessPgpzRoadmap,
+  canAccessRoadmap,
+  type ViewerAccessLevel,
+} from "@/lib/viewer-access";
 import { SignOutButton } from "./sign-out-button";
 
 export const runtime = "nodejs";
@@ -55,6 +60,16 @@ const dashboardCatalog: DashboardCard[] = [
     visible: true,
   },
   {
+    id: "arktouros",
+    name: "Arktouros",
+    description: "Private Arktouros workspace for project context, coordination notes, and current priorities.",
+    href: "/arktouros",
+    prefetch: false,
+    rawDocument: true,
+    workspaceOnly: true,
+    visible: true,
+  },
+  {
     id: "x-monitor",
     name: "X Monitor",
     description:
@@ -99,6 +114,7 @@ function canAccessDashboard(dashboard: DashboardCard, viewer: { accessLevel: Vie
   if (!dashboard.workspaceOnly) return true;
   if (dashboard.id === "zodl-roadmap") return canAccessRoadmap(viewer.accessLevel);
   if (dashboard.id === "pgpz-roadmap") return canAccessPgpzRoadmap(viewer.accessLevel);
+  if (dashboard.id === "arktouros") return canAccessArktouros(viewer.accessLevel, viewer.email);
   return viewer.accessLevel === "workspace" || viewer.accessLevel === "local-bypass";
 }
 

@@ -9,6 +9,8 @@ const DEFAULT_TIMEOUT_MS = 3000;
 const DEFAULT_METHOD = "GET";
 const ZODL_ROADMAP_PATH = "/zodl-roadmap";
 const PGPZ_ROADMAP_PATH = "/pgpz-roadmap";
+const ARKTOUROS_PATH = "/arktouros";
+type PrivateDashboardAccessEventName = "zodl_roadmap_access" | "pgpz_roadmap_access" | "arktouros_access";
 
 type HeaderReader = {
   get(name: string): string | null;
@@ -21,13 +23,13 @@ type RoadmapAccessEventInput = {
   outcome: RoadmapAccessOutcome;
   statusCode: number;
   headers: HeaderReader;
-  eventName?: "zodl_roadmap_access" | "pgpz_roadmap_access";
+  eventName?: PrivateDashboardAccessEventName;
   path?: string;
   method?: string;
 };
 
 type RoadmapAccessEventPayload = {
-  event: "zodl_roadmap_access" | "pgpz_roadmap_access";
+  event: PrivateDashboardAccessEventName;
   path: string;
   method: string;
   outcome: RoadmapAccessOutcome;
@@ -242,5 +244,13 @@ export async function recordPgpzRoadmapAccess(input: Omit<RoadmapAccessEventInpu
     ...input,
     eventName: "pgpz_roadmap_access",
     path: PGPZ_ROADMAP_PATH,
+  });
+}
+
+export async function recordArktourosAccess(input: Omit<RoadmapAccessEventInput, "eventName" | "path">): Promise<void> {
+  await recordZodlRoadmapAccess({
+    ...input,
+    eventName: "arktouros_access",
+    path: ARKTOUROS_PATH,
   });
 }
