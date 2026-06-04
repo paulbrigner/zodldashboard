@@ -99,7 +99,7 @@ Add these Amplify environment variables for the `main` branch:
 ARKTOUROS_PRIVATE_REPO=git@github.com:paulbrigner/zodldashboard_arktouros.git
 ARKTOUROS_DEPLOY_KEY_B64=<base64-encoded-private-half-of-read-only-github-deploy-key>
 ARKTOUROS_PRIVATE_BRANCH=main
-ALLOWED_ARKTOUROS_GUEST_EMAILS=
+ALLOWED_ARKTOUROS_GUEST_EMAILS=jane@arktouros.co,katja@arktouros.co,mm@arktouros.co
 ```
 
 Use a read-only GitHub deploy key scoped only to the private Arktouros repo. A fine-grained GitHub token or machine-user token can be used as a fallback with `ARKTOUROS_GITHUB_TOKEN`, but the deploy key is preferred because it is narrower.
