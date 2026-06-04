@@ -12,6 +12,7 @@ Use this checklist when adding another private dashboard with its own content re
    - Do not give a content collaborator access to unrelated private repos or to this public app repo unless the user explicitly asks.
 2. Create the private content repo under `paulbrigner` unless instructed otherwise.
    - Use a self-contained `index.html`.
+   - Include `<link rel="icon" href="/icon.svg" type="image/svg+xml">` in the private HTML head so the private dashboard uses the same browser icon as the main dashboard and X Monitor.
    - Add `README.md`, `AGENTS.md`, `CLAUDE.md`, and `docs/ZODLDASHBOARD_INTEGRATION.md`.
    - Ignore secrets, deploy keys, `.env` files, scratch files, and generated artifacts.
 3. Add the public app route.
