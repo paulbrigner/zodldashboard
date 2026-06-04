@@ -61,8 +61,9 @@ const dashboardCatalog: DashboardCard[] = [
   },
   {
     id: "arktouros",
-    name: "Arktouros",
-    description: "Private Arktouros workspace for project context, coordination notes, and current priorities.",
+    name: "Arktouros. & U.S. Regulatory",
+    description:
+      "Private workspace for Arktouros project context, U.S. regulatory focus, coordination notes, and current priorities.",
     href: "/arktouros",
     prefetch: false,
     rawDocument: true,
