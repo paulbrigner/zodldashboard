@@ -2,7 +2,7 @@
 
 The PGPZ Roadmap dashboard follows the same split-repository pattern as the Zodl Roadmap dashboard while preserving a separate collaborator boundary:
 
-- this `zodldashboard` repo owns the authenticated route, home-page card, access checks, access logging, and Amplify build hook;
+- this `zodldashboard` repo owns the authenticated route, shared dashboard nav shell, home-page card, access checks, access logging, and Amplify build hook;
 - the private `pgpz-roadmap-private` repo owns the collaborator-editable HTML.
 
 The PGPZ collaborator does not need access to `zodl-roadmap-private` and does not need write access to `/zodl-roadmap`. App access and repo access are separate boundaries: dashboard-authorized users can view the dashboards, while the collaborator's GitHub write access is limited to `pgpz-roadmap-private`.
@@ -17,14 +17,14 @@ The PGPZ collaborator does not need access to `zodl-roadmap-private` and does no
 
 Plain guests whose email appears only in `ALLOWED_GUEST_GOOGLE_EMAILS` continue to have X Monitor-only app access.
 
-The route serves HTML with:
+The public `/pgpz-roadmap` route renders the shared authenticated dashboard shell. The raw private HTML is served inside that shell from `/pgpz-roadmap/content` with:
 
 - `Cache-Control: private, no-store`
 - `X-Robots-Tag: noindex`
 
 ## Access logging
 
-`/pgpz-roadmap` emits a structured `pgpz_roadmap_access` application log before returning private content or redirecting an authenticated but unauthorized guest. The event includes:
+`/pgpz-roadmap/content` emits a structured `pgpz_roadmap_access` application log before returning private content or redirecting an authenticated but unauthorized guest. The shell also records denied guest attempts before redirecting. The event includes:
 
 - email
 - auth mode (`oauth` or `local-bypass`)
@@ -36,10 +36,15 @@ The same event is sent to the VPC backend at `POST /v1/roadmap/access-events` an
 
 ## Public repo pieces
 
-- `app/page.tsx` contains the home-page card and gates it separately from `/zodl-roadmap`.
-- `app/pgpz-roadmap/route.ts` enforces viewer access and returns the private HTML.
+- `lib/dashboard-catalog.ts` contains the shared dashboard registry used by the home page and private dashboard nav shell.
+- `app/page.tsx` renders the home-page cards from the shared catalog and gates them separately from `/zodl-roadmap`.
+- `app/private-dashboard-shell.tsx` renders the parent-app nav shell around private HTML dashboards.
+- `app/pgpz-roadmap/page.tsx` renders the shared shell.
+- `app/pgpz-roadmap/content/route.ts` enforces viewer access and returns the private HTML.
+- `app/pgpz-roadmap/[...assetPath]/route.ts` serves authenticated sibling assets from the private repo, such as `docs/*.pdf`.
 - `lib/viewer-access.ts` defines route-specific access helpers while keeping plain guests limited to X Monitor.
 - `lib/private-dashboard-content.ts` reads the configured HTML file.
+- `lib/private-dashboard-response.ts` centralizes private HTML and asset response behavior.
 - `lib/roadmap-access-events.ts` records user-based PGPZ roadmap access audit events.
 - `next.config.ts` includes `.private/pgpz-roadmap/**/*` in the server file trace for the route.
 - `.gitignore` excludes `.private/` so private content is not committed here.
@@ -74,7 +79,7 @@ From the public `zodldashboard` checkout, place or clone the private repo at:
 .private/pgpz-roadmap/index.html
 ```
 
-That is the default path read by `/pgpz-roadmap`. To use another path locally, set:
+That is the default path read by `/pgpz-roadmap/content`. To use another path locally, set:
 
 ```env
 PGPZ_ROADMAP_HTML_PATH=/absolute/path/to/index.html
@@ -121,4 +126,4 @@ aws amplify start-job \
 
 ## Failure behavior
 
-If the private repo is not configured or the private `index.html` is absent, `/pgpz-roadmap` returns a private `503` placeholder page to authenticated workspace/local-bypass users and dashboard-authorized roadmap guests. Plain guests are redirected before any content lookup.
+If the private repo is not configured or the private `index.html` is absent, `/pgpz-roadmap/content` returns a private `503` placeholder page inside the shared shell to authenticated workspace/local-bypass users and dashboard-authorized roadmap guests. Plain guests are redirected before any content lookup.

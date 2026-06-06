@@ -2,7 +2,7 @@
 
 The Arktouros dashboard follows the same split-repository pattern as the Zodl Roadmap and PGPZ dashboards:
 
-- this `zodldashboard` repo owns the authenticated route, home-page card, access checks, access logging, and Amplify build hook;
+- this `zodldashboard` repo owns the authenticated route, shared dashboard nav shell, home-page card, access checks, access logging, and Amplify build hook;
 - the private `zodldashboard_arktouros` repo owns the private dashboard HTML.
 
 ## Runtime Access
@@ -18,14 +18,14 @@ Plain guests whose email appears only in `ALLOWED_GUEST_GOOGLE_EMAILS` continue 
 
 `ALLOWED_ARKTOUROS_GUEST_EMAILS` is intentionally separate so Arktouros-specific access can be granted later without broadening the general roadmap guest list. If Arktouros ever needs to become list-only, update `canAccessArktouros` in `lib/viewer-access.ts` instead of changing the private content repo.
 
-The route serves HTML with:
+The public `/arktouros` route renders the shared authenticated dashboard shell. The raw private HTML is served inside that shell from `/arktouros/content` with:
 
 - `Cache-Control: private, no-store`
 - `X-Robots-Tag: noindex`
 
 ## Access Logging
 
-`/arktouros` emits a structured `arktouros_access` application log before returning private content or redirecting an authenticated but unauthorized guest. The event includes:
+`/arktouros/content` emits a structured `arktouros_access` application log before returning private content or redirecting an authenticated but unauthorized guest. The shell also records denied guest attempts before redirecting. The event includes:
 
 - email
 - auth mode (`oauth` or `local-bypass`)
@@ -37,10 +37,15 @@ The same event is sent to the VPC backend at `POST /v1/roadmap/access-events` an
 
 ## Public Repo Pieces
 
-- `app/page.tsx` contains the home-page card and gates it separately.
-- `app/arktouros/route.ts` enforces viewer access and returns the private HTML.
+- `lib/dashboard-catalog.ts` contains the shared dashboard registry used by the home page and private dashboard nav shell.
+- `app/page.tsx` renders the home-page cards from the shared catalog and gates this card separately.
+- `app/private-dashboard-shell.tsx` renders the parent-app nav shell around private HTML dashboards.
+- `app/arktouros/page.tsx` renders the shared shell.
+- `app/arktouros/content/route.ts` enforces viewer access and returns the private HTML.
+- `app/arktouros/[...assetPath]/route.ts` serves authenticated sibling assets from the private repo.
 - `lib/viewer-access.ts` defines route-specific access helpers while keeping plain guests limited to X Monitor.
 - `lib/private-dashboard-content.ts` reads the configured HTML file.
+- `lib/private-dashboard-response.ts` centralizes private HTML and asset response behavior.
 - `lib/roadmap-access-events.ts` records user-based Arktouros access audit events.
 - `next.config.ts` includes `.private/arktouros/**/*` in the server file trace for the route.
 - `.gitignore` excludes `.private/` so private content is not committed here.
@@ -75,7 +80,7 @@ From the public `zodldashboard` checkout, place or clone the private repo at:
 .private/arktouros/index.html
 ```
 
-That is the default path read by `/arktouros`. To use another path locally, set:
+That is the default path read by `/arktouros/content`. To use another path locally, set:
 
 ```env
 ARKTOUROS_HTML_PATH=/absolute/path/to/index.html
@@ -121,4 +126,4 @@ aws amplify start-job \
 
 ## Failure Behavior
 
-If the private repo is not configured or the private `index.html` is absent, `/arktouros` returns a private `503` placeholder page to authenticated workspace/local-bypass users, existing dashboard-authorized users, and Arktouros-specific users. Plain guests are redirected before any content lookup.
+If the private repo is not configured or the private `index.html` is absent, `/arktouros/content` returns a private `503` placeholder page inside the shared shell to authenticated workspace/local-bypass users, existing dashboard-authorized users, and Arktouros-specific users. Plain guests are redirected before any content lookup.

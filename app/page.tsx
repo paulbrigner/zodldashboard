@@ -1,126 +1,13 @@
 import Link from "next/link";
-import type { ReactNode } from "react";
+import { canAccessDashboard, visibleDashboards } from "@/lib/dashboard-catalog";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import {
-  canAccessArktouros,
-  canAccessPgpzRoadmap,
-  canAccessRoadmap,
-  type ViewerAccessLevel,
-} from "@/lib/viewer-access";
 import { SignOutButton } from "./sign-out-button";
 
 export const runtime = "nodejs";
 
-type DashboardCard = {
-  id: string;
-  name: string;
-  description: ReactNode;
-  href?: string;
-  prefetch?: boolean;
-  rawDocument?: boolean;
-  workspaceOnly?: boolean;
-  visible: boolean;
-};
-
-// Temporarily hidden cards stay here with visible: false; flip to true to restore them.
-const dashboardCatalog: DashboardCard[] = [
-  {
-    id: "zodl-roadmap",
-    name: "Zodl Roadmap",
-    description: (
-      <>
-        <span className="dashboard-card-lead">
-          Hold Private. Spend <em>everywhere</em>.
-        </span>
-        <span>
-          Three tracks. Seven stones. Defend revenue against wrapped-ZEC and leveraged outflows. Build the
-          spendability and reach users want. Become the privacy infrastructure layer other apps consume.
-        </span>
-      </>
-    ),
-    href: "/zodl-roadmap",
-    prefetch: false,
-    rawDocument: true,
-    workspaceOnly: true,
-    visible: true,
-  },
-  {
-    id: "pgpz-roadmap",
-    name: "Accrediv Updates & PGPZ Status",
-    description: (
-      <>
-        Policy updates from Accrediv, plus status tracking for the formation and planned activities of the{" "}
-        <strong>Pretty Good Policy for Zcash Coalition</strong>.
-      </>
-    ),
-    href: "/pgpz-roadmap",
-    prefetch: false,
-    rawDocument: true,
-    workspaceOnly: true,
-    visible: true,
-  },
-  {
-    id: "arktouros",
-    name: "Arktouros & U.S. Regulatory",
-    description:
-      "Private workspace for Arktouros project context, U.S. regulatory focus, coordination notes, and current priorities.",
-    href: "/arktouros",
-    prefetch: false,
-    rawDocument: true,
-    workspaceOnly: true,
-    visible: true,
-  },
-  {
-    id: "x-monitor",
-    name: "X Monitor",
-    description:
-      "Monitor the Zcash conversation on X with searchable captured posts, relevance filtering, significance scoring, AI-generated trend summaries, and source-backed AI answers.",
-    href: "/x-monitor",
-    visible: true,
-  },
-  {
-    id: "cipherpay-test",
-    name: "CipherPay Test",
-    description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
-    href: "/cipherpay-test",
-    visible: false,
-  },
-  {
-    id: "placeholder-1",
-    name: "Regulatory Risk by Geography",
-    description: "Tiered jurisdiction risk, recommendations, policy posture, and activity feed.",
-    href: "/regulatory-risk",
-    workspaceOnly: true,
-    visible: false,
-  },
-  {
-    id: "app-store-compliance",
-    name: "App Store Dashboard",
-    description: "Compliance posture, declarations, submissions, reviewer cases, and evidence bundles.",
-    href: "/app-stores",
-    workspaceOnly: true,
-    visible: false,
-  },
-  {
-    id: "placeholder",
-    name: "Dashboard Placeholder",
-    description: "Reserved for a future dashboard.",
-    visible: true,
-  },
-];
-
-const dashboards = dashboardCatalog.filter((dashboard) => dashboard.visible);
-
-function canAccessDashboard(dashboard: DashboardCard, viewer: { accessLevel: ViewerAccessLevel; email: string }): boolean {
-  if (!dashboard.workspaceOnly) return true;
-  if (dashboard.id === "zodl-roadmap") return canAccessRoadmap(viewer.accessLevel);
-  if (dashboard.id === "pgpz-roadmap") return canAccessPgpzRoadmap(viewer.accessLevel);
-  if (dashboard.id === "arktouros") return canAccessArktouros(viewer.accessLevel, viewer.email);
-  return viewer.accessLevel === "workspace" || viewer.accessLevel === "local-bypass";
-}
-
 export default async function HomePage() {
   const viewer = await requireAuthenticatedViewer("/");
+  const dashboards = visibleDashboards();
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
@@ -154,11 +41,7 @@ export default async function HomePage() {
                 <div className="dashboard-tile-content" aria-hidden={restrictedForGuest ? "true" : undefined}>
                   <h2>{dashboard.name}</h2>
                   <p className="subtle-text">{dashboard.description}</p>
-                  {isEnabled && dashboard.rawDocument ? (
-                    <a className="button dashboard-open-button" href={dashboard.href!}>
-                      Open dashboard
-                    </a>
-                  ) : isEnabled ? (
+                  {isEnabled ? (
                     <Link className="button dashboard-open-button" href={dashboard.href!} prefetch={dashboard.prefetch}>
                       Open dashboard
                     </Link>
