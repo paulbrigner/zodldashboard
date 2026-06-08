@@ -1,3 +1,5 @@
+// "roadmap-guest" is the legacy access-level value for guests who can access
+// the private dashboards currently available in the app.
 export type GuestAccessLevel = "guest" | "roadmap-guest";
 export type AuthLoginAccessLevel = "workspace" | GuestAccessLevel;
 export type ViewerAccessLevel = AuthLoginAccessLevel | "local-bypass";
@@ -42,8 +44,12 @@ export function allowedArktourosGuestEmails(): Set<string> {
   return parseEmailAllowlist(process.env.ALLOWED_ARKTOUROS_GUEST_EMAILS || "");
 }
 
+export function allowedCurrentPrivateDashboardGuestEmails(): Set<string> {
+  return mergeEmailSets(allowedRoadmapGuestEmails(), allowedArktourosGuestEmails());
+}
+
 export function allowedGuestEmails(): Set<string> {
-  return mergeEmailSets(allowedXMonitorGuestEmails(), allowedRoadmapGuestEmails(), allowedArktourosGuestEmails());
+  return mergeEmailSets(allowedXMonitorGuestEmails(), allowedCurrentPrivateDashboardGuestEmails());
 }
 
 export function guestEmailAllowed(email: string): boolean {
@@ -51,7 +57,7 @@ export function guestEmailAllowed(email: string): boolean {
 }
 
 export function guestAccessLevelForEmail(email: string): GuestAccessLevel {
-  return allowedRoadmapGuestEmails().has(normalizeEmail(email)) ? "roadmap-guest" : "guest";
+  return allowedCurrentPrivateDashboardGuestEmails().has(normalizeEmail(email)) ? "roadmap-guest" : "guest";
 }
 
 export function isGuestAccessLevel(accessLevel: ViewerAccessLevel): accessLevel is GuestAccessLevel {

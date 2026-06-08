@@ -317,8 +317,8 @@ timestamp/email rows. Use `--json` for the full structured report.
 - Verify `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_URL`, and callback URLs.
 - Verify internal users match `ALLOWED_GOOGLE_DOMAIN`.
 - Verify X Monitor-only guests are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS`.
-- Verify guests who need both X Monitor and Roadmap are allowlisted in `ALLOWED_ROADMAP_GUEST_EMAILS`.
-- Verify Arktouros-specific users are allowlisted in `ALLOWED_ARKTOUROS_GUEST_EMAILS` only when they should have `/arktouros` access.
+- Verify guests who need currently available private dashboards are allowlisted in `ALLOWED_ROADMAP_GUEST_EMAILS`.
+- Verify Arktouros-specific users are allowlisted in `ALLOWED_ARKTOUROS_GUEST_EMAILS`; these users can access all currently available private dashboards, but future dashboard access is undecided until each dashboard is added.
 
 ### Read path issues
 

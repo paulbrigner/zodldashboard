@@ -1,0 +1,13 @@
+Cd /Users/paulbrigner/Library/Mobile Documents/com~apple~CloudDocs/Dev/zodldashboard
+
+
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 python3 scripts/ops/render_xmonitor_graphics.py --team-only  --team-handles paulbrigner   --team-output ~/Downloads/paul-brigner-x-traction_2026_06_05.png  --strict-live-metrics
+
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 python3 scripts/ops/render_xmonitor_graphics.py --team-only --team-output ~/Downloads/team-x-traction_2026_06_05.png  --strict-live-metrics
+
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+python3 scripts/ops/render_xmonitor_graphics.py \
+  --team-only \
+  --team-since 2026-XX-XX \
+  --team-until 2026-XX-XX \
+  --team-output "$HOME/Downloads/ZODL Team X Traction - May 2026.png"

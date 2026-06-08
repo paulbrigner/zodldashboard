@@ -4,8 +4,8 @@ import EmailProvider from "next-auth/providers/email";
 import { recordSuccessfulAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
 import {
   GUEST_EMAIL_PROVIDER_ID,
+  allowedCurrentPrivateDashboardGuestEmails,
   allowedGuestEmails,
-  allowedRoadmapGuestEmails,
   guestAccessLevelForEmail,
   guestEmailAllowed,
   guestMagicLinkEnabled,
@@ -23,7 +23,7 @@ const guestOauthEnabled = parseBoolean(process.env.GUEST_GOOGLE_OAUTH_ENABLED, f
 const googleGuestClientId = process.env.GOOGLE_GUEST_CLIENT_ID || "";
 const googleGuestClientSecret = process.env.GOOGLE_GUEST_CLIENT_SECRET || "";
 const allowedGuestEmailSet = allowedGuestEmails();
-const allowedRoadmapGuestEmailSet = allowedRoadmapGuestEmails();
+const allowedCurrentPrivateDashboardGuestEmailSet = allowedCurrentPrivateDashboardGuestEmails();
 const guestMagicLinksEnabled = guestMagicLinkEnabled();
 
 function accessLevelForProvider(provider: string, email: string): AuthLoginAccessLevel | null {
@@ -68,8 +68,10 @@ if (guestMagicLinksEnabled && allowedGuestEmailSet.size === 0) {
   console.warn("[auth] GUEST_MAGIC_LINK_ENABLED=true but no guest email allowlist is configured.");
 }
 
-if (allowedRoadmapGuestEmailSet.size > 0) {
-  console.info(`[auth] roadmap guest email access enabled for ${allowedRoadmapGuestEmailSet.size} address(es).`);
+if (allowedCurrentPrivateDashboardGuestEmailSet.size > 0) {
+  console.info(
+    `[auth] current private dashboard guest access enabled for ${allowedCurrentPrivateDashboardGuestEmailSet.size} address(es).`
+  );
 }
 
 const providers: NonNullable<NextAuthOptions["providers"]> = [

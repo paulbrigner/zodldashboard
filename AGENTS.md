@@ -22,7 +22,8 @@ Use this checklist when adding another private dashboard with its own content re
    - Return a private `503` placeholder for authenticated allowed users when content is missing.
 4. Add route-specific access policy.
    - Plain guests from `ALLOWED_GUEST_GOOGLE_EMAILS` should remain X Monitor-only unless the user explicitly changes that boundary.
-   - Workspace users, local-bypass users, and currently dashboard-authorized roadmap guests can access private dashboards by default.
+   - Workspace users, local-bypass users, currently dashboard-authorized roadmap guests, and currently allowlisted Arktouros guests can access the private dashboards that are available now.
+   - Do not assume Arktouros guests should automatically access future private dashboards; make that decision when the future dashboard is added.
    - For each new dashboard, add a separate optional allowlist such as `ALLOWED_ARKTOUROS_GUEST_EMAILS` so future dashboard-specific access can be granted without changing the general guest list.
 5. Add route-specific access logging.
    - Log by authenticated viewer identity, not only edge/CDN metadata.

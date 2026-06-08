@@ -12,9 +12,11 @@ The title card text lives in this public repo, but guest users see the same blur
 `/zodl-roadmap` allows:
 
 - Google Workspace OAuth users whose email domain matches `ALLOWED_GOOGLE_DOMAIN` (`zodl.com` by default);
+- dashboard-authorized guest OAuth or guest magic-link users whose email appears in `ALLOWED_ROADMAP_GUEST_EMAILS`;
+- Arktouros team guest OAuth or guest magic-link users whose email appears in `ALLOWED_ARKTOUROS_GUEST_EMAILS`;
 - local-network bypass users.
 
-Guest OAuth and guest magic-link users are redirected back to `/`.
+Plain guests whose email appears only in `ALLOWED_GUEST_GOOGLE_EMAILS` continue to have X Monitor-only app access. `ALLOWED_ARKTOUROS_GUEST_EMAILS` grants access to private dashboards that are currently available; access to future private dashboards is intentionally undecided until each dashboard is added.
 
 The public `/zodl-roadmap` route renders the shared authenticated dashboard shell. The raw private HTML is served inside that shell from `/zodl-roadmap/content` with:
 
@@ -27,7 +29,7 @@ The public `/zodl-roadmap` route renders the shared authenticated dashboard shel
 
 - email
 - auth mode (`oauth` or `local-bypass`)
-- access level (`workspace`, `guest`, or `local-bypass`)
+- access level (`workspace`, `guest`, `roadmap-guest`, or `local-bypass`)
 - outcome (`allowed`, `denied_guest`, or `content_missing`)
 - path, method, status code, client IP, user agent, referer, request id, and timestamp
 

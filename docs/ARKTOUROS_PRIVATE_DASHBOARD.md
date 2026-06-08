@@ -16,7 +16,7 @@ The Arktouros dashboard follows the same split-repository pattern as the Zodl Ro
 
 Plain guests whose email appears only in `ALLOWED_GUEST_GOOGLE_EMAILS` continue to have X Monitor-only app access.
 
-`ALLOWED_ARKTOUROS_GUEST_EMAILS` is intentionally separate so Arktouros-specific access can be granted later without broadening the general roadmap guest list. If Arktouros ever needs to become list-only, update `canAccessArktouros` in `lib/viewer-access.ts` instead of changing the private content repo.
+`ALLOWED_ARKTOUROS_GUEST_EMAILS` is intentionally separate from the general guest list, but Arktouros-listed users are currently dashboard-authorized for all private dashboards that are available now: Zodl Roadmap, Accrediv/PGPZ, and Arktouros. Access to future private dashboards is intentionally undecided until each dashboard is added.
 
 The public `/arktouros` route renders the shared authenticated dashboard shell. The raw private HTML is served inside that shell from `/arktouros/content` with:
 
@@ -126,4 +126,4 @@ aws amplify start-job \
 
 ## Failure Behavior
 
-If the private repo is not configured or the private `index.html` is absent, `/arktouros/content` returns a private `503` placeholder page inside the shared shell to authenticated workspace/local-bypass users, existing dashboard-authorized users, and Arktouros-specific users. Plain guests are redirected before any content lookup.
+If the private repo is not configured or the private `index.html` is absent, `/arktouros/content` returns a private `503` placeholder page inside the shared shell to authenticated workspace/local-bypass users and currently dashboard-authorized guests. Plain guests are redirected before any content lookup.

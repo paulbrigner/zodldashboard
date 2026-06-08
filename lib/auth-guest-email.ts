@@ -4,6 +4,7 @@ import { allowedGuestEmails, guestEmailAllowed, normalizeEmail } from "@/lib/vie
 
 export {
   allowedArktourosGuestEmails,
+  allowedCurrentPrivateDashboardGuestEmails,
   allowedGuestEmails,
   allowedRoadmapGuestEmails,
   allowedXMonitorGuestEmails,

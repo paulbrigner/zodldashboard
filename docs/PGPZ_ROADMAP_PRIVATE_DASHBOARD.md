@@ -13,9 +13,11 @@ The PGPZ collaborator does not need access to `zodl-roadmap-private` and does no
 
 - Google Workspace OAuth users whose email domain matches `ALLOWED_GOOGLE_DOMAIN` (`zodl.com` by default);
 - dashboard-authorized guest OAuth or guest magic-link users whose email appears in `ALLOWED_ROADMAP_GUEST_EMAILS`;
+- Arktouros team guest OAuth or guest magic-link users whose email appears in `ALLOWED_ARKTOUROS_GUEST_EMAILS`;
 - local-network bypass users.
 
 Plain guests whose email appears only in `ALLOWED_GUEST_GOOGLE_EMAILS` continue to have X Monitor-only app access.
+`ALLOWED_ARKTOUROS_GUEST_EMAILS` grants access to private dashboards that are currently available, including Accrediv/PGPZ; access to future private dashboards is intentionally undecided until each dashboard is added.
 
 The public `/pgpz-roadmap` route renders the shared authenticated dashboard shell. The raw private HTML is served inside that shell from `/pgpz-roadmap/content` with:
 
@@ -126,4 +128,4 @@ aws amplify start-job \
 
 ## Failure behavior
 
-If the private repo is not configured or the private `index.html` is absent, `/pgpz-roadmap/content` returns a private `503` placeholder page inside the shared shell to authenticated workspace/local-bypass users and dashboard-authorized roadmap guests. Plain guests are redirected before any content lookup.
+If the private repo is not configured or the private `index.html` is absent, `/pgpz-roadmap/content` returns a private `503` placeholder page inside the shared shell to authenticated workspace/local-bypass users and currently dashboard-authorized guests. Plain guests are redirected before any content lookup.
