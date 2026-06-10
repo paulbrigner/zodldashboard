@@ -51,6 +51,24 @@ test("Arktouros guests can access currently available private dashboards", () =>
   );
 });
 
+test("built-in Arktouros guests can access currently available private dashboards", () => {
+  withGuestEnv(
+    {
+      ALLOWED_GUEST_GOOGLE_EMAILS: "xmonitor@example.com",
+      ALLOWED_ROADMAP_GUEST_EMAILS: "roadmap@example.com",
+    },
+    () => {
+      const accessLevel = guestAccessLevelForEmail("K.AlbersFiedler@arktouros.co");
+
+      assert.equal(guestEmailAllowed("k.albersfiedler@arktouros.co"), true);
+      assert.equal(accessLevel, "roadmap-guest");
+      assert.equal(canAccessRoadmap(accessLevel), true);
+      assert.equal(canAccessPgpzRoadmap(accessLevel), true);
+      assert.equal(canAccessArktouros(accessLevel, "k.albersfiedler@arktouros.co"), true);
+    }
+  );
+});
+
 test("plain guests remain X Monitor-only", () => {
   withGuestEnv(
     {

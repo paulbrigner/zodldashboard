@@ -5,6 +5,7 @@ export type AuthLoginAccessLevel = "workspace" | GuestAccessLevel;
 export type ViewerAccessLevel = AuthLoginAccessLevel | "local-bypass";
 
 const BUILT_IN_ROADMAP_GUEST_EMAILS = "div@accrediv.com";
+const BUILT_IN_ARKTOUROS_GUEST_EMAILS = "k.albersfiedler@arktouros.co";
 
 export function normalizeEmail(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
@@ -41,7 +42,10 @@ export function allowedRoadmapGuestEmails(): Set<string> {
 }
 
 export function allowedArktourosGuestEmails(): Set<string> {
-  return parseEmailAllowlist(process.env.ALLOWED_ARKTOUROS_GUEST_EMAILS || "");
+  return mergeEmailSets(
+    parseEmailAllowlist(BUILT_IN_ARKTOUROS_GUEST_EMAILS),
+    parseEmailAllowlist(process.env.ALLOWED_ARKTOUROS_GUEST_EMAILS || "")
+  );
 }
 
 export function allowedCurrentPrivateDashboardGuestEmails(): Set<string> {
