@@ -14,6 +14,8 @@ type AccessAdminClientProps = {
 };
 
 const NEW_USER_VALUE = "__new_user__";
+const NEW_GROUP_VALUE = "__new_group__";
+const NEW_ROLE_VALUE = "__new_role__";
 
 type AdminResponse = {
   snapshot?: AccessControlSnapshot;
@@ -44,8 +46,29 @@ function userGroupKeys(snapshot: AccessControlSnapshot, email: string): string[]
   return snapshot.memberships.filter((membership) => membership.email === email).map((membership) => membership.groupKey);
 }
 
+function userRoleAssignments(snapshot: AccessControlSnapshot, email: string) {
+  const groupKeys = new Set(userGroupKeys(snapshot, email));
+  return snapshot.groupRoles.filter((assignment) => groupKeys.has(assignment.groupKey));
+}
+
 function rolePermissionKeys(snapshot: AccessControlSnapshot, roleKey: string): string[] {
   return snapshot.rolePermissions.filter((item) => item.roleKey === roleKey).map((item) => item.permissionKey);
+}
+
+function groupLabel(snapshot: AccessControlSnapshot, groupKey: string): string {
+  const group = snapshot.groups.find((item) => item.groupKey === groupKey);
+  return group?.name || groupKey;
+}
+
+function roleLabel(snapshot: AccessControlSnapshot, roleKey: string): string {
+  const role = snapshot.roles.find((item) => item.roleKey === roleKey);
+  return role?.name || roleKey;
+}
+
+function dashboardLabel(snapshot: AccessControlSnapshot, dashboardId: string): string {
+  if (dashboardId === "*" || dashboardId === "global") return "All dashboards";
+  const dashboard = snapshot.dashboards.find((item) => item.id === dashboardId);
+  return dashboard?.name || dashboardId;
 }
 
 function formatDateTime(value: string | null): string {
@@ -73,11 +96,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [sendWelcome, setSendWelcome] = useState(true);
   const [pendingEmail, setPendingEmail] = useState("");
 
+  const [selectedGroupKey, setSelectedGroupKey] = useState(initialSnapshot.groups[0]?.groupKey || NEW_GROUP_VALUE);
   const [groupKey, setGroupKey] = useState("");
   const [groupName, setGroupName] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
   const [groupAdminNote, setGroupAdminNote] = useState("");
 
+  const [selectedRoleKey, setSelectedRoleKey] = useState(initialSnapshot.roles[0]?.roleKey || NEW_ROLE_VALUE);
   const [roleKey, setRoleKey] = useState("");
   const [roleName, setRoleName] = useState("");
   const [roleDescription, setRoleDescription] = useState("");
@@ -106,6 +131,16 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     [snapshot.users, selectedEmail]
   );
   const editingNewUser = selectedEmail === NEW_USER_VALUE;
+  const selectedGroup = useMemo(
+    () => snapshot.groups.find((group) => group.groupKey === selectedGroupKey) || null,
+    [snapshot.groups, selectedGroupKey]
+  );
+  const selectedRole = useMemo(
+    () => snapshot.roles.find((role) => role.roleKey === selectedRoleKey) || null,
+    [snapshot.roles, selectedRoleKey]
+  );
+  const editingNewGroup = selectedGroupKey === NEW_GROUP_VALUE;
+  const editingNewRole = selectedRoleKey === NEW_ROLE_VALUE;
 
   function clearUserForm() {
     setSelectedEmail(NEW_USER_VALUE);
@@ -118,6 +153,21 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     setPreview(null);
   }
 
+  function clearGroupForm() {
+    setSelectedGroupKey(NEW_GROUP_VALUE);
+    setGroupKey("");
+    setGroupName("");
+    setGroupDescription("");
+    setGroupAdminNote("");
+  }
+
+  function clearRoleForm() {
+    setSelectedRoleKey(NEW_ROLE_VALUE);
+    setRoleKey("");
+    setRoleName("");
+    setRoleDescription("");
+  }
+
   useEffect(() => {
     if (!selectedUser) return;
     setUserEmail(selectedUser.email);
@@ -128,6 +178,51 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     setPendingEmail(selectedUser.pendingEmail || "");
     setMembershipEmail(selectedUser.email);
   }, [selectedUser]);
+
+  useEffect(() => {
+    if (!selectedGroup) return;
+    setGroupKey(selectedGroup.groupKey);
+    setGroupName(selectedGroup.name);
+    setGroupDescription(selectedGroup.description || "");
+    setGroupAdminNote(selectedGroup.adminNote || "");
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    if (!selectedRole) return;
+    setRoleKey(selectedRole.roleKey);
+    setRoleName(selectedRole.name);
+    setRoleDescription(selectedRole.description || "");
+  }, [selectedRole]);
+
+  useEffect(() => {
+    if (selectedGroupKey !== NEW_GROUP_VALUE && !snapshot.groups.some((group) => group.groupKey === selectedGroupKey)) {
+      setSelectedGroupKey(snapshot.groups[0]?.groupKey || NEW_GROUP_VALUE);
+    }
+    if (!membershipGroup || !snapshot.groups.some((group) => group.groupKey === membershipGroup)) {
+      setMembershipGroup(snapshot.groups[0]?.groupKey || "");
+    }
+    if (!assignmentGroup || !snapshot.groups.some((group) => group.groupKey === assignmentGroup)) {
+      setAssignmentGroup(snapshot.groups[0]?.groupKey || "");
+    }
+  }, [assignmentGroup, membershipGroup, selectedGroupKey, snapshot.groups]);
+
+  useEffect(() => {
+    if (selectedRoleKey !== NEW_ROLE_VALUE && !snapshot.roles.some((role) => role.roleKey === selectedRoleKey)) {
+      setSelectedRoleKey(snapshot.roles[0]?.roleKey || NEW_ROLE_VALUE);
+    }
+    if (!assignmentRole || !snapshot.roles.some((role) => role.roleKey === assignmentRole)) {
+      setAssignmentRole(snapshot.roles[0]?.roleKey || "");
+    }
+    if (!permissionRole || !snapshot.roles.some((role) => role.roleKey === permissionRole)) {
+      setPermissionRole(snapshot.roles[0]?.roleKey || "");
+    }
+  }, [assignmentRole, permissionRole, selectedRoleKey, snapshot.roles]);
+
+  useEffect(() => {
+    if (!permissionKey || !snapshot.permissions.some((permission) => permission.permissionKey === permissionKey)) {
+      setPermissionKey(snapshot.permissions[0]?.permissionKey || "");
+    }
+  }, [permissionKey, snapshot.permissions]);
 
   async function reloadSnapshot() {
     const response = await readJsonOrThrow<AdminResponse>(
@@ -184,6 +279,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
       description: groupDescription,
       admin_note: groupAdminNote,
     });
+    setSelectedGroupKey(groupKey.trim().toLowerCase());
   }
 
   async function saveRole(event: FormEvent<HTMLFormElement>) {
@@ -194,6 +290,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
       name: roleName,
       description: roleDescription,
     });
+    setSelectedRoleKey(roleKey.trim().toLowerCase());
   }
 
   async function previewUser(email = selectedEmail) {
@@ -229,6 +326,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   }, []);
 
   const selectedGroups = !editingNewUser && selectedEmail ? userGroupKeys(snapshot, selectedEmail) : [];
+  const selectedRoleAssignments = !editingNewUser && selectedEmail ? userRoleAssignments(snapshot, selectedEmail) : [];
   const allowedDashboards = preview
     ? snapshot.dashboards.filter((dashboard) => dashboard.visible && (preview.permissions.includes(dashboard.permissionKey) || preview.permissions.includes("dashboard:*:read")))
     : [];
@@ -355,7 +453,22 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               <p className="subtle-text">Select a user and preview their effective access.</p>
             )}
             <h3>Current Groups</h3>
-            <p className="subtle-text">{selectedGroups.join(", ") || "No group memberships"}</p>
+            <p className="subtle-text">
+              {selectedGroups.length
+                ? selectedGroups.map((key) => `${groupLabel(snapshot, key)} (${key})`).join(", ")
+                : "No group memberships"}
+            </p>
+            <h3>Current Role Assignments</h3>
+            <div className="access-admin-assignment-list">
+              {selectedRoleAssignments.map((assignment) => (
+                <span className="access-admin-assignment-chip" key={assignment.assignmentId}>
+                  {roleLabel(snapshot, assignment.roleKey)} via {groupLabel(snapshot, assignment.groupKey)}
+                  {" "}
+                  ({assignment.scopeType}:{dashboardLabel(snapshot, assignment.scopeKey)})
+                </span>
+              ))}
+              {selectedRoleAssignments.length === 0 ? <p className="subtle-text">No role assignments from current groups.</p> : null}
+            </div>
           </div>
         </div>
       </section>
@@ -364,13 +477,37 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
         <header className="access-admin-section-header">
           <div>
             <h2>Groups & Roles</h2>
-            <p className="subtle-text">Create groups/roles, assign users to groups, grant roles to groups, and attach permissions to roles.</p>
+            <p className="subtle-text">
+              {snapshot.groups.length} groups, {snapshot.roles.length} roles, {snapshot.permissions.length} permissions.
+              Create groups/roles, assign users to groups, grant roles to groups, and attach permissions to roles.
+            </p>
           </div>
         </header>
 
         <div className="access-admin-grid access-admin-grid-wide">
           <form className="access-admin-form" onSubmit={saveGroup}>
             <h3>Group</h3>
+            <label className="access-admin-field">
+              <span>Existing group</span>
+              <select
+                className="access-admin-input"
+                onChange={(event) => {
+                  if (event.target.value === NEW_GROUP_VALUE) {
+                    clearGroupForm();
+                    return;
+                  }
+                  setSelectedGroupKey(event.target.value);
+                }}
+                value={selectedGroupKey}
+              >
+                <option value={NEW_GROUP_VALUE}>New group...</option>
+                {snapshot.groups.map((group) => (
+                  <option key={group.groupKey} value={group.groupKey}>
+                    {group.name} ({group.memberCount} members)
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="access-admin-field">
               <span>Group key</span>
               <input className="access-admin-input" onChange={(event) => setGroupKey(event.target.value)} placeholder="new-dashboard-guests" required value={groupKey} />
@@ -388,8 +525,11 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               <textarea className="access-admin-input" onChange={(event) => setGroupAdminNote(event.target.value)} rows={3} value={groupAdminNote} />
             </label>
             <div className="button-row">
-              <button className="button" disabled={loading} type="submit">Save group</button>
-              <button className="button button-secondary" disabled={!groupKey || loading} onClick={() => void perform({ operation: "delete_group", group_key: groupKey })} type="button">
+              <button className="button" disabled={loading} type="submit">{editingNewGroup ? "Create group" : "Save group"}</button>
+              <button className="button button-secondary" disabled={loading} onClick={clearGroupForm} type="button">
+                New group
+              </button>
+              <button className="button button-secondary" disabled={editingNewGroup || !groupKey || loading} onClick={() => void perform({ operation: "delete_group", group_key: groupKey })} type="button">
                 Delete group
               </button>
             </div>
@@ -397,6 +537,27 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
 
           <form className="access-admin-form" onSubmit={saveRole}>
             <h3>Role</h3>
+            <label className="access-admin-field">
+              <span>Existing role</span>
+              <select
+                className="access-admin-input"
+                onChange={(event) => {
+                  if (event.target.value === NEW_ROLE_VALUE) {
+                    clearRoleForm();
+                    return;
+                  }
+                  setSelectedRoleKey(event.target.value);
+                }}
+                value={selectedRoleKey}
+              >
+                <option value={NEW_ROLE_VALUE}>New role...</option>
+                {snapshot.roles.map((role) => (
+                  <option key={role.roleKey} value={role.roleKey}>
+                    {role.name} ({rolePermissionKeys(snapshot, role.roleKey).length} permissions)
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="access-admin-field">
               <span>Role key</span>
               <input className="access-admin-input" onChange={(event) => setRoleKey(event.target.value)} placeholder="dashboard-editor" required value={roleKey} />
@@ -410,8 +571,11 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               <textarea className="access-admin-input" onChange={(event) => setRoleDescription(event.target.value)} rows={3} value={roleDescription} />
             </label>
             <div className="button-row">
-              <button className="button" disabled={loading} type="submit">Save role</button>
-              <button className="button button-secondary" disabled={!roleKey || loading} onClick={() => void perform({ operation: "delete_role", role_key: roleKey })} type="button">
+              <button className="button" disabled={loading} type="submit">{editingNewRole ? "Create role" : "Save role"}</button>
+              <button className="button button-secondary" disabled={loading} onClick={clearRoleForm} type="button">
+                New role
+              </button>
+              <button className="button button-secondary" disabled={editingNewRole || !roleKey || loading} onClick={() => void perform({ operation: "delete_role", role_key: roleKey })} type="button">
                 Delete role
               </button>
             </div>
