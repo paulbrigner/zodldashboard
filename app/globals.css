@@ -2924,6 +2924,19 @@ p {
   margin: 0.22rem 0 0;
 }
 
+.access-admin-pagination {
+  margin-top: 0.85rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.9rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.access-admin-pagination p {
+  margin: 0;
+}
+
 .access-admin-mono {
   font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
   font-size: 0.82rem;

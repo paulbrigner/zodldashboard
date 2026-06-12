@@ -6503,6 +6503,7 @@ async function buildAccessControlAccessLog(actorEmail, body) {
   const eventType = ["login", "dashboard"].includes(asString(body.eventType)) ? asString(body.eventType) : "all";
   const dashboardId = asString(body.dashboardId) && asString(body.dashboardId) !== "all" ? normalizeAccessKey(body.dashboardId, "dashboardId") : null;
   const requestedLimit = Number.parseInt(String(body.limit || ""), 10);
+  const requestedOffset = Number.parseInt(String(body.offset || ""), 10);
   const filters = {
     eventType,
     email: validateEmailAddress(body.email) || null,
@@ -6510,6 +6511,7 @@ async function buildAccessControlAccessLog(actorEmail, body) {
     from: asString(body.from) || null,
     to: asString(body.to) || null,
     limit: Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 500) : 100,
+    offset: Number.isFinite(requestedOffset) && requestedOffset > 0 ? Math.min(requestedOffset, 100000) : 0,
   };
   const values = [];
   const clauses = [];
@@ -6522,7 +6524,8 @@ async function buildAccessControlAccessLog(actorEmail, body) {
   if (filters.dashboardId) clauses.push(`dashboard_id = ${addParam(filters.dashboardId)}`);
   if (filters.from) clauses.push(`occurred_at >= ${addParam(filters.from)}::timestamptz`);
   if (filters.to) clauses.push(`occurred_at <= ${addParam(filters.to)}::timestamptz`);
-  const limitParam = addParam(filters.limit);
+  const limitParam = addParam(filters.limit + 1);
+  const offsetParam = addParam(filters.offset);
 
   const result = await getPool().query(
     `
@@ -6554,11 +6557,14 @@ async function buildAccessControlAccessLog(actorEmail, body) {
       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
       ORDER BY occurred_at DESC
       LIMIT ${limitParam}
+      OFFSET ${offsetParam}
     `,
     values
   );
 
-  return result.rows.map((row) => ({
+  const hasMore = result.rows.length > filters.limit;
+  const pageRows = hasMore ? result.rows.slice(0, filters.limit) : result.rows;
+  const entries = pageRows.map((row) => ({
     eventId: row.event_id,
     eventType: row.event_type,
     email: normalizeEmail(row.email),
@@ -6572,6 +6578,17 @@ async function buildAccessControlAccessLog(actorEmail, body) {
     statusCode: row.status_code ?? null,
     occurredAt: accessRowIso(row.occurred_at),
   }));
+  return {
+    entries,
+    meta: {
+      limit: filters.limit,
+      offset: filters.offset,
+      returned: entries.length,
+      hasMore,
+      nextOffset: hasMore ? filters.offset + filters.limit : null,
+      previousOffset: filters.offset > 0 ? Math.max(0, filters.offset - filters.limit) : null,
+    },
+  };
 }
 
 async function performAccessControlOperation(actorEmail, body) {
@@ -6582,7 +6599,10 @@ async function performAccessControlOperation(actorEmail, body) {
 
   if (operation === "snapshot") return { snapshot: await buildAccessControlSnapshot(actor.email) };
   if (operation === "preview_user") return { preview: await resolveAccessControlForEmail(body.email) };
-  if (operation === "access_log") return { accessLog: await buildAccessControlAccessLog(actor.email, body) };
+  if (operation === "access_log") {
+    const result = await buildAccessControlAccessLog(actor.email, body);
+    return { accessLog: result.entries, accessLogMeta: result.meta };
+  }
   if (operation === "send_welcome") {
     const invitation = await sendAccessWelcome(actor.email, body.email, body.app_base_url);
     await recordAccessAdminAudit(actor.email, "send_welcome", "user", normalizeEmail(body.email), null, invitation);

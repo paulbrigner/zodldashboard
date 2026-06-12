@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import type {
   AccessControlAccessLogEntry,
+  AccessControlAccessLogMeta,
   AccessControlGroup,
   AccessControlSnapshot,
   AccessControlUser,
@@ -16,11 +17,14 @@ type AccessAdminClientProps = {
 const NEW_USER_VALUE = "__new_user__";
 const NEW_GROUP_VALUE = "__new_group__";
 const NEW_ROLE_VALUE = "__new_role__";
+const ACCESS_LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 250];
+const DEFAULT_ACCESS_LOG_PAGE_SIZE = 50;
 
 type AdminResponse = {
   snapshot?: AccessControlSnapshot;
   preview?: EffectiveAccess;
   accessLog?: AccessControlAccessLogEntry[];
+  accessLogMeta?: AccessControlAccessLogMeta;
   message?: string;
   error?: string;
 };
@@ -134,6 +138,9 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [logDashboardId, setLogDashboardId] = useState("all");
   const [logFrom, setLogFrom] = useState("");
   const [logTo, setLogTo] = useState("");
+  const [logPageSize, setLogPageSize] = useState(DEFAULT_ACCESS_LOG_PAGE_SIZE);
+  const [logOffset, setLogOffset] = useState(0);
+  const [accessLogMeta, setAccessLogMeta] = useState<AccessControlAccessLogMeta | null>(null);
 
   const selectedUser = useMemo(
     () => snapshot.users.find((user) => user.email === selectedEmail) || null,
@@ -334,8 +341,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     setPreview(response.preview || null);
   }
 
-  async function loadAccessLog(event?: FormEvent<HTMLFormElement>) {
+  async function loadAccessLog(
+    event?: FormEvent<HTMLFormElement>,
+    options: { offset?: number; limit?: number } = {}
+  ) {
     event?.preventDefault();
+    const requestedOffset = event ? 0 : options.offset ?? logOffset;
+    const requestedLimit = options.limit ?? logPageSize;
     const response = await perform(
       {
         operation: "access_log",
@@ -344,11 +356,28 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
         dashboardId: logDashboardId,
         from: logFrom || undefined,
         to: logTo || undefined,
-        limit: 150,
+        limit: requestedLimit,
+        offset: requestedOffset,
       },
       false
     );
     setAccessLog(response.accessLog || []);
+    setAccessLogMeta(response.accessLogMeta || {
+      limit: requestedLimit,
+      offset: requestedOffset,
+      returned: response.accessLog?.length || 0,
+      hasMore: false,
+      nextOffset: null,
+      previousOffset: requestedOffset > 0 ? Math.max(0, requestedOffset - requestedLimit) : null,
+    });
+    setLogOffset(response.accessLogMeta?.offset ?? requestedOffset);
+  }
+
+  function changeLogPageSize(value: string) {
+    const nextLimit = Number.parseInt(value, 10);
+    const safeLimit = ACCESS_LOG_PAGE_SIZE_OPTIONS.includes(nextLimit) ? nextLimit : DEFAULT_ACCESS_LOG_PAGE_SIZE;
+    setLogPageSize(safeLimit);
+    void loadAccessLog(undefined, { offset: 0, limit: safeLimit });
   }
 
   useEffect(() => {
@@ -365,6 +394,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const deniedDashboards = preview
     ? snapshot.dashboards.filter((dashboard) => dashboard.visible && !preview.permissions.includes(dashboard.permissionKey) && !preview.permissions.includes("dashboard:*:read"))
     : [];
+  const effectiveLogOffset = accessLogMeta?.offset ?? logOffset;
+  const effectiveLogLimit = accessLogMeta?.limit ?? logPageSize;
+  const accessLogStart = accessLog.length ? effectiveLogOffset + 1 : 0;
+  const accessLogEnd = accessLog.length ? effectiveLogOffset + accessLog.length : 0;
+  const previousLogOffset = accessLogMeta?.previousOffset ?? (effectiveLogOffset > 0 ? Math.max(0, effectiveLogOffset - effectiveLogLimit) : null);
+  const nextLogOffset = accessLogMeta?.nextOffset ?? null;
+  const accessLogPageNumber = Math.floor(effectiveLogOffset / effectiveLogLimit) + 1;
 
   return (
     <div className="access-admin-body">
@@ -786,6 +822,12 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
             <span>To</span>
             <input className="access-admin-input" onChange={(event) => setLogTo(event.target.value)} type="datetime-local" value={logTo} />
           </label>
+          <label className="access-admin-field">
+            <span>Rows</span>
+            <select className="access-admin-input" onChange={(event) => changeLogPageSize(event.target.value)} value={logPageSize}>
+              {ACCESS_LOG_PAGE_SIZE_OPTIONS.map((size) => <option key={size} value={size}>{size}</option>)}
+            </select>
+          </label>
           <button className="button access-admin-inline-button" disabled={loading} type="submit">Filter log</button>
         </form>
 
@@ -819,6 +861,31 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               ) : null}
             </tbody>
           </table>
+        </div>
+        <div className="access-admin-pagination" aria-label="User access log pagination">
+          <p className="subtle-text">
+            {accessLog.length
+              ? `Page ${accessLogPageNumber}: showing ${accessLogStart}-${accessLogEnd}${accessLogMeta?.hasMore ? ", more available" : ""}.`
+              : "No access log rows on this page."}
+          </p>
+          <div className="button-row">
+            <button
+              className="button button-secondary button-small"
+              disabled={loading || previousLogOffset === null}
+              onClick={() => previousLogOffset !== null && void loadAccessLog(undefined, { offset: previousLogOffset })}
+              type="button"
+            >
+              Previous
+            </button>
+            <button
+              className="button button-secondary button-small"
+              disabled={loading || nextLogOffset === null}
+              onClick={() => nextLogOffset !== null && void loadAccessLog(undefined, { offset: nextLogOffset })}
+              type="button"
+            >
+              Next
+            </button>
+          </div>
         </div>
       </section>
 

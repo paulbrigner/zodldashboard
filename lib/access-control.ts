@@ -145,6 +145,15 @@ export type AccessControlAccessLogEntry = {
   occurredAt: string;
 };
 
+export type AccessControlAccessLogMeta = {
+  limit: number;
+  offset: number;
+  returned: number;
+  hasMore: boolean;
+  nextOffset: number | null;
+  previousOffset: number | null;
+};
+
 export type AccessControlAccessLogFilters = {
   email?: string;
   eventType?: "all" | "login" | "dashboard";
@@ -152,6 +161,7 @@ export type AccessControlAccessLogFilters = {
   from?: string;
   to?: string;
   limit?: number;
+  offset?: number;
 };
 
 export type AccessControlOperationResult = {
@@ -159,6 +169,7 @@ export type AccessControlOperationResult = {
   preview?: EffectiveAccess;
   invitation?: AccessControlInvitation;
   accessLog?: AccessControlAccessLogEntry[];
+  accessLogMeta?: AccessControlAccessLogMeta;
   message?: string;
 };
 
@@ -789,7 +800,9 @@ function normalizeAccessLogFilters(filters: AccessControlAccessLogFilters = {}) 
   const from = filters.from ? new Date(filters.from) : null;
   const to = filters.to ? new Date(filters.to) : null;
   const requestedLimit = Number.parseInt(String(filters.limit ?? ""), 10);
+  const requestedOffset = Number.parseInt(String(filters.offset ?? ""), 10);
   const limit = Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 500) : 100;
+  const offset = Number.isFinite(requestedOffset) && requestedOffset > 0 ? Math.min(requestedOffset, 100000) : 0;
   return {
     eventType,
     email,
@@ -797,10 +810,16 @@ function normalizeAccessLogFilters(filters: AccessControlAccessLogFilters = {}) 
     from: from && !Number.isNaN(from.getTime()) ? from.toISOString() : null,
     to: to && !Number.isNaN(to.getTime()) ? to.toISOString() : null,
     limit,
+    offset,
   };
 }
 
-async function directAccessLog(actorEmail: string, filters: AccessControlAccessLogFilters = {}): Promise<AccessControlAccessLogEntry[]> {
+type AccessControlAccessLogResult = {
+  entries: AccessControlAccessLogEntry[];
+  meta: AccessControlAccessLogMeta;
+};
+
+async function directAccessLog(actorEmail: string, filters: AccessControlAccessLogFilters = {}): Promise<AccessControlAccessLogResult> {
   if (!(await hasAccessControlSchema())) {
     throw new Error("access-control schema is not installed. Run npm run db:migrate.");
   }
@@ -833,7 +852,8 @@ async function directAccessLog(actorEmail: string, filters: AccessControlAccessL
     clauses.push(`occurred_at <= ${addParam(normalized.to)}::timestamptz`);
   }
 
-  const limitParam = addParam(normalized.limit);
+  const limitParam = addParam(normalized.limit + 1);
+  const offsetParam = addParam(normalized.offset);
   const result = await getDbPool().query(
     `
       WITH access_events AS (
@@ -890,11 +910,14 @@ async function directAccessLog(actorEmail: string, filters: AccessControlAccessL
       ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
       ORDER BY occurred_at DESC
       LIMIT ${limitParam}
+      OFFSET ${offsetParam}
     `,
     values
   );
 
-  return result.rows.map((row) => {
+  const hasMore = result.rows.length > normalized.limit;
+  const pageRows = hasMore ? result.rows.slice(0, normalized.limit) : result.rows;
+  const entries = pageRows.map((row) => {
     const dashboardId = row.dashboard_id || dashboardIdForPath(row.path);
     return {
       eventId: row.event_id,
@@ -911,6 +934,17 @@ async function directAccessLog(actorEmail: string, filters: AccessControlAccessL
       occurredAt: isoOrNull(row.occurred_at) || "",
     };
   });
+  return {
+    entries,
+    meta: {
+      limit: normalized.limit,
+      offset: normalized.offset,
+      returned: entries.length,
+      hasMore,
+      nextOffset: hasMore ? normalized.offset + normalized.limit : null,
+      previousOffset: normalized.offset > 0 ? Math.max(0, normalized.offset - normalized.limit) : null,
+    },
+  };
 }
 
 async function sendAccessEmail({
@@ -1334,7 +1368,8 @@ async function directOperation(actorEmail: string, payload: AccessControlOperati
       return { preview: await resolveDirectEffectiveAccess(payload.email) };
     }
     case "access_log": {
-      return { accessLog: await directAccessLog(actor.email, payload) };
+      const result = await directAccessLog(actor.email, payload);
+      return { accessLog: result.entries, accessLogMeta: result.meta };
     }
     default:
       throw new Error("unsupported access-control operation");
@@ -1388,7 +1423,7 @@ export async function getAccessControlAccessLog(
     return null;
   });
   if (backend?.accessLog) return backend.accessLog;
-  return directAccessLog(actorEmail, filters);
+  return (await directAccessLog(actorEmail, filters)).entries;
 }
 
 export async function performAccessControlOperation(actorEmail: string, payload: unknown): Promise<AccessControlOperationResult> {
