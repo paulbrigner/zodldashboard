@@ -19,6 +19,19 @@ const AUTH_LOGIN_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest"]
 const ROADMAP_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "local-bypass"]);
 const ROADMAP_ACCESS_OUTCOMES = new Set(["allowed", "denied_guest", "content_missing"]);
 const XMONITOR_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "local-bypass"]);
+const ACCESS_ADMIN_PERMISSION = "admin:access-control:manage";
+const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros"];
+const ACCESS_CONTROL_DASHBOARDS = [
+  { id: "x-monitor", name: "X Monitor", permissionKey: "dashboard:x-monitor:read", visible: true },
+  { id: "zodl-roadmap", name: "Zodl Roadmap", permissionKey: "dashboard:zodl-roadmap:read", visible: true },
+  { id: "pgpz-roadmap", name: "Accrediv Updates & PGPZ Status", permissionKey: "dashboard:pgpz-roadmap:read", visible: true },
+  { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: "dashboard:arktouros:read", visible: true },
+  { id: "cipherpay-test", name: "CipherPay Test", permissionKey: "dashboard:cipherpay-test:read", visible: false },
+  { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },
+  { id: "app-store-compliance", name: "App Store Dashboard", permissionKey: "dashboard:app-store-compliance:read", visible: false },
+];
+const BUILT_IN_ROADMAP_GUEST_EMAILS = "div@accrediv.com";
+const BUILT_IN_ARKTOUROS_GUEST_EMAILS = "k.albersfiedler@arktouros.co";
 const CIPHERPAY_TEST_NETWORKS = new Set(["testnet", "mainnet"]);
 const CIPHERPAY_TEST_SESSION_STATUSES = new Set([
   "draft",
@@ -162,6 +175,7 @@ let emailSchemaEnsured = false;
 let queryCheckpointSchemaEnsured = false;
 let roadmapAccessSchemaEnsured = false;
 let xmonitorAccessSchemaEnsured = false;
+let accessControlSchemaEnsured = false;
 let sqsClient;
 let sesClient;
 const zonedDateFormatterCache = new Map();
@@ -2469,6 +2483,431 @@ async function ensureXMonitorAccessSchema() {
   }
 
   xmonitorAccessSchemaEnsured = true;
+}
+
+async function ensureAccessControlSchema() {
+  if (accessControlSchemaEnsured) {
+    return;
+  }
+
+  const db = getPool();
+  await db.query(`
+    CREATE OR REPLACE FUNCTION set_updated_at()
+    RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+    BEGIN
+      NEW.updated_at = now();
+      RETURN NEW;
+    END;
+    $$;
+
+    CREATE TABLE IF NOT EXISTS auth_subjects (
+      email CITEXT PRIMARY KEY,
+      first_name TEXT,
+      last_name TEXT,
+      admin_note TEXT,
+      status TEXT NOT NULL DEFAULT 'active'
+        CHECK (status IN ('active', 'inactive')),
+      email_confirmed_at TIMESTAMPTZ,
+      pending_email CITEXT,
+      email_change_requested_at TIMESTAMPTZ,
+      created_by CITEXT,
+      updated_by CITEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    ALTER TABLE auth_subjects ADD COLUMN IF NOT EXISTS admin_note TEXT;
+    DROP TRIGGER IF EXISTS trg_auth_subjects_updated_at ON auth_subjects;
+    CREATE TRIGGER trg_auth_subjects_updated_at
+      BEFORE UPDATE ON auth_subjects
+      FOR EACH ROW
+      EXECUTE FUNCTION set_updated_at();
+
+    CREATE TABLE IF NOT EXISTS auth_groups (
+      group_key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      admin_note TEXT,
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by CITEXT,
+      updated_by CITEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT auth_groups_key_format CHECK (group_key ~ '^[a-z0-9][a-z0-9-]*$')
+    );
+    ALTER TABLE auth_groups ADD COLUMN IF NOT EXISTS admin_note TEXT;
+    DROP TRIGGER IF EXISTS trg_auth_groups_updated_at ON auth_groups;
+    CREATE TRIGGER trg_auth_groups_updated_at
+      BEFORE UPDATE ON auth_groups
+      FOR EACH ROW
+      EXECUTE FUNCTION set_updated_at();
+
+    CREATE TABLE IF NOT EXISTS auth_roles (
+      role_key TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      created_by CITEXT,
+      updated_by CITEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT auth_roles_key_format CHECK (role_key ~ '^[a-z0-9][a-z0-9-]*$')
+    );
+    DROP TRIGGER IF EXISTS trg_auth_roles_updated_at ON auth_roles;
+    CREATE TRIGGER trg_auth_roles_updated_at
+      BEFORE UPDATE ON auth_roles
+      FOR EACH ROW
+      EXECUTE FUNCTION set_updated_at();
+
+    CREATE TABLE IF NOT EXISTS auth_permissions (
+      permission_key TEXT PRIMARY KEY,
+      resource_type TEXT NOT NULL,
+      resource_key TEXT NOT NULL,
+      action TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      is_system BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      CONSTRAINT auth_permissions_key_format CHECK (permission_key ~ '^[a-z0-9:*._-]+$')
+    );
+    CREATE TABLE IF NOT EXISTS auth_role_permissions (
+      role_key TEXT NOT NULL REFERENCES auth_roles(role_key) ON UPDATE CASCADE ON DELETE CASCADE,
+      permission_key TEXT NOT NULL REFERENCES auth_permissions(permission_key) ON UPDATE CASCADE ON DELETE CASCADE,
+      created_by CITEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (role_key, permission_key)
+    );
+    CREATE TABLE IF NOT EXISTS auth_group_memberships (
+      group_key TEXT NOT NULL REFERENCES auth_groups(group_key) ON UPDATE CASCADE ON DELETE CASCADE,
+      email CITEXT NOT NULL REFERENCES auth_subjects(email) ON UPDATE CASCADE ON DELETE CASCADE,
+      expires_at TIMESTAMPTZ,
+      created_by CITEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (group_key, email)
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_group_memberships_email ON auth_group_memberships (email);
+    CREATE TABLE IF NOT EXISTS auth_group_roles (
+      assignment_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      group_key TEXT NOT NULL REFERENCES auth_groups(group_key) ON UPDATE CASCADE ON DELETE CASCADE,
+      role_key TEXT NOT NULL REFERENCES auth_roles(role_key) ON UPDATE CASCADE ON DELETE CASCADE,
+      scope_type TEXT NOT NULL DEFAULT 'global'
+        CHECK (scope_type IN ('global', 'dashboard')),
+      scope_key TEXT NOT NULL DEFAULT '*',
+      created_by CITEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE (group_key, role_key, scope_type, scope_key)
+    );
+    CREATE TABLE IF NOT EXISTS auth_invitations (
+      invitation_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email CITEXT NOT NULL,
+      previous_email CITEXT,
+      token_hash TEXT UNIQUE,
+      kind TEXT NOT NULL DEFAULT 'welcome'
+        CHECK (kind IN ('welcome', 'email-change')),
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'accepted', 'expired', 'revoked')),
+      invited_by CITEXT NOT NULL,
+      invited_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      expires_at TIMESTAMPTZ,
+      accepted_at TIMESTAMPTZ,
+      welcome_email_sent_at TIMESTAMPTZ,
+      provider_message_id TEXT,
+      error_message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_invitations_email_invited_at_desc
+      ON auth_invitations (email, invited_at DESC);
+    CREATE TABLE IF NOT EXISTS auth_admin_audit_events (
+      event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      actor_email CITEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_key TEXT NOT NULL,
+      before_json JSONB,
+      after_json JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_admin_audit_events_created_at_desc
+      ON auth_admin_audit_events (created_at DESC);
+  `);
+
+  await seedAccessControlDefaults();
+  const grantRole = asString(process.env.XMONITOR_SUMMARY_SCHEMA_GRANT_ROLE);
+  if (grantRole) {
+    const role = quoteIdent(grantRole);
+    await db.query(`
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_subjects TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_groups TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_roles TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_permissions TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_role_permissions TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_group_memberships TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_group_roles TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE auth_invitations TO ${role};
+      GRANT SELECT, INSERT ON TABLE auth_admin_audit_events TO ${role};
+    `);
+  }
+
+  accessControlSchemaEnsured = true;
+}
+
+function accessDashboardReadPermission(dashboardId) {
+  return `dashboard:${dashboardId}:read`;
+}
+
+function parseAccessEmailAllowlist(value) {
+  return new Set(
+    String(value || "")
+      .split(/[,\s]+/)
+      .map((entry) => validateEmailAddress(entry))
+      .filter(Boolean)
+  );
+}
+
+function accessBootstrapAdminEmails() {
+  return parseAccessEmailAllowlist(process.env.ACCESS_BOOTSTRAP_ADMIN_EMAILS || "paul@zodl.com");
+}
+
+function allowedXMonitorGuestEmailsForAccess() {
+  return parseAccessEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
+}
+
+function allowedRoadmapGuestEmailsForAccess() {
+  return new Set([
+    ...parseAccessEmailAllowlist(BUILT_IN_ROADMAP_GUEST_EMAILS),
+    ...parseAccessEmailAllowlist(process.env.ALLOWED_ROADMAP_GUEST_EMAILS || ""),
+  ]);
+}
+
+function allowedArktourosGuestEmailsForAccess() {
+  return new Set([
+    ...parseAccessEmailAllowlist(BUILT_IN_ARKTOUROS_GUEST_EMAILS),
+    ...parseAccessEmailAllowlist(process.env.ALLOWED_ARKTOUROS_GUEST_EMAILS || ""),
+  ]);
+}
+
+function accessLevelFromPermissions(email, permissions) {
+  if (isWorkspaceViewerEmail(email)) return "workspace";
+  if (
+    permissions.includes("dashboard:*:read") ||
+    permissions.some((permission) => PRIVATE_DASHBOARD_IDS.some((id) => permission === accessDashboardReadPermission(id)))
+  ) {
+    return "roadmap-guest";
+  }
+  return "guest";
+}
+
+function permissionFromAccessRow(row) {
+  if (row.scope_type === "dashboard" && row.resource_type === "dashboard" && row.resource_key === "*") {
+    return accessDashboardReadPermission(row.scope_key);
+  }
+  if (row.scope_type !== "global" && row.resource_type !== row.scope_type) return null;
+  if (row.scope_type !== "global" && row.resource_key !== "*" && row.resource_key !== row.scope_key) return null;
+  return row.permission_key;
+}
+
+async function seedAccessControlDefaults() {
+  const db = getPool();
+  await db.query(
+    `
+      INSERT INTO auth_permissions(permission_key, resource_type, resource_key, action, name, description, is_system)
+      VALUES
+        ('dashboard:*:read', 'dashboard', '*', 'read', 'Read any dashboard', 'Read dashboards when the assignment scope allows it.', TRUE),
+        ('dashboard:x-monitor:read', 'dashboard', 'x-monitor', 'read', 'Read X Monitor', 'Open the X Monitor dashboard.', TRUE),
+        ('dashboard:zodl-roadmap:read', 'dashboard', 'zodl-roadmap', 'read', 'Read Zodl Roadmap', 'Open the Zodl Roadmap private dashboard.', TRUE),
+        ('dashboard:pgpz-roadmap:read', 'dashboard', 'pgpz-roadmap', 'read', 'Read Accrediv Updates', 'Open the Accrediv Updates and PGPZ private dashboard.', TRUE),
+        ('dashboard:arktouros:read', 'dashboard', 'arktouros', 'read', 'Read Arktouros', 'Open the Arktouros private dashboard.', TRUE),
+        ('dashboard:cipherpay-test:read', 'dashboard', 'cipherpay-test', 'read', 'Read CipherPay Test', 'Open the CipherPay Test dashboard.', TRUE),
+        ('dashboard:regulatory-risk:read', 'dashboard', 'regulatory-risk', 'read', 'Read Regulatory Risk', 'Open the Regulatory Risk dashboard.', TRUE),
+        ('dashboard:app-store-compliance:read', 'dashboard', 'app-store-compliance', 'read', 'Read App Store Dashboard', 'Open the App Store Compliance dashboard.', TRUE),
+        ('admin:access-control:manage', 'admin', 'access-control', 'manage', 'Manage access control', 'Manage users, groups, roles, permissions, invitations, and access previews.', TRUE),
+        ('admin:access-control:impersonate', 'admin', 'access-control', 'impersonate', 'Impersonate users', 'Reserved for a future audited impersonation session.', TRUE)
+      ON CONFLICT (permission_key) DO UPDATE
+      SET resource_type = EXCLUDED.resource_type,
+          resource_key = EXCLUDED.resource_key,
+          action = EXCLUDED.action,
+          name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          is_system = EXCLUDED.is_system;
+
+      INSERT INTO auth_roles(role_key, name, description, is_system)
+      VALUES
+        ('dashboard-viewer', 'Dashboard Viewer', 'Read dashboards within the assignment scope.', TRUE),
+        ('access-admin', 'Access Admin', 'Manage access-control users, groups, roles, permissions, and invitations.', TRUE),
+        ('impersonation-admin', 'Impersonation Admin', 'Reserved for future audited impersonation sessions.', TRUE)
+      ON CONFLICT (role_key) DO UPDATE
+      SET name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          is_system = EXCLUDED.is_system;
+
+      INSERT INTO auth_role_permissions(role_key, permission_key)
+      VALUES
+        ('dashboard-viewer', 'dashboard:*:read'),
+        ('access-admin', 'admin:access-control:manage'),
+        ('impersonation-admin', 'admin:access-control:impersonate')
+      ON CONFLICT DO NOTHING;
+
+      INSERT INTO auth_groups(group_key, name, description, is_system)
+      VALUES
+        ('admins', 'Admins', 'Users who can manage access control.', TRUE),
+        ('workspace-members', 'Workspace Members', 'Internal workspace users from the allowed Google domain.', TRUE),
+        ('xmonitor-guests', 'X Monitor Guests', 'External guests with X Monitor access.', TRUE),
+        ('zodl-roadmap-guests', 'Zodl Roadmap Guests', 'External guests for the Zodl Roadmap dashboard.', TRUE),
+        ('accrediv-guests', 'Accrediv Guests', 'External guests for Accrediv Updates and PGPZ status.', TRUE),
+        ('arktouros-guests', 'Arktouros Guests', 'External guests for the Arktouros dashboard.', TRUE)
+      ON CONFLICT (group_key) DO UPDATE
+      SET name = EXCLUDED.name,
+          description = EXCLUDED.description,
+          is_system = EXCLUDED.is_system;
+
+      INSERT INTO auth_group_roles(group_key, role_key, scope_type, scope_key)
+      VALUES
+        ('admins', 'access-admin', 'global', '*'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'x-monitor'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'arktouros'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'cipherpay-test'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'regulatory-risk'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', 'app-store-compliance'),
+        ('xmonitor-guests', 'dashboard-viewer', 'dashboard', 'x-monitor'),
+        ('zodl-roadmap-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
+        ('zodl-roadmap-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
+        ('zodl-roadmap-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
+        ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
+        ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
+        ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
+        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
+        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
+        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'arktouros')
+      ON CONFLICT DO NOTHING;
+    `
+  );
+}
+
+async function upsertAccessSubject(email, actorEmail = null) {
+  const normalizedEmail = validateEmailAddress(email);
+  if (!normalizedEmail) return;
+  await getPool().query(
+    `
+      INSERT INTO auth_subjects(email, status, created_by, updated_by)
+      VALUES ($1, 'active', $2, $2)
+      ON CONFLICT (email) DO UPDATE
+      SET updated_by = COALESCE(EXCLUDED.updated_by, auth_subjects.updated_by)
+    `,
+    [normalizedEmail, actorEmail]
+  );
+}
+
+async function upsertAccessMembership(groupKey, email, actorEmail = null) {
+  const normalizedEmail = validateEmailAddress(email);
+  if (!normalizedEmail) return;
+  await upsertAccessSubject(normalizedEmail, actorEmail);
+  await getPool().query(
+    `
+      INSERT INTO auth_group_memberships(group_key, email, created_by)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (group_key, email) DO NOTHING
+    `,
+    [groupKey, normalizedEmail, actorEmail]
+  );
+}
+
+async function seedAccessMembershipsForEmail(email) {
+  await ensureAccessControlSchema();
+  const normalizedEmail = validateEmailAddress(email);
+  if (!normalizedEmail) return;
+  if (accessBootstrapAdminEmails().has(normalizedEmail)) {
+    await upsertAccessMembership("admins", normalizedEmail, "bootstrap");
+  }
+  if (isWorkspaceViewerEmail(normalizedEmail)) {
+    await upsertAccessMembership("workspace-members", normalizedEmail, "workspace-domain");
+  }
+  if (allowedXMonitorGuestEmailsForAccess().has(normalizedEmail)) {
+    await upsertAccessMembership("xmonitor-guests", normalizedEmail, "legacy-env");
+  }
+  if (allowedRoadmapGuestEmailsForAccess().has(normalizedEmail)) {
+    await upsertAccessMembership("zodl-roadmap-guests", normalizedEmail, "legacy-env");
+  }
+  if (allowedArktourosGuestEmailsForAccess().has(normalizedEmail)) {
+    await upsertAccessMembership("arktouros-guests", normalizedEmail, "legacy-env");
+  }
+}
+
+async function resolveAccessControlForEmail(email) {
+  const normalizedEmail = validateEmailAddress(email);
+  if (!normalizedEmail) {
+    throw createStatusError(400, "email is invalid");
+  }
+  await seedAccessMembershipsForEmail(normalizedEmail);
+
+  const subject = await getPool().query("SELECT email, status FROM auth_subjects WHERE email = $1 LIMIT 1", [normalizedEmail]);
+  const status = subject.rows[0]?.status || "inactive";
+  if (status !== "active") {
+    return {
+      email: normalizedEmail,
+      accessLevel: isWorkspaceViewerEmail(normalizedEmail) ? "workspace" : "guest",
+      status,
+      groups: [],
+      roles: [],
+      permissions: [],
+      source: "access-control",
+    };
+  }
+
+  const result = await getPool().query(
+    `
+      SELECT
+        gm.group_key,
+        gr.role_key,
+        rp.permission_key,
+        p.resource_type,
+        p.resource_key,
+        p.action,
+        gr.scope_type,
+        gr.scope_key
+      FROM auth_group_memberships gm
+      JOIN auth_group_roles gr ON gr.group_key = gm.group_key
+      JOIN auth_role_permissions rp ON rp.role_key = gr.role_key
+      JOIN auth_permissions p ON p.permission_key = rp.permission_key
+      WHERE gm.email = $1
+        AND (gm.expires_at IS NULL OR gm.expires_at > now())
+    `,
+    [normalizedEmail]
+  );
+
+  const groups = new Set();
+  const roles = new Set();
+  const permissions = new Set();
+  for (const row of result.rows) {
+    groups.add(row.group_key);
+    roles.add(row.role_key);
+    const permission = permissionFromAccessRow(row);
+    if (permission) permissions.add(permission);
+  }
+  const permissionList = Array.from(permissions).sort();
+  return {
+    email: normalizedEmail,
+    accessLevel: accessLevelFromPermissions(normalizedEmail, permissionList),
+    status,
+    groups: Array.from(groups).sort(),
+    roles: Array.from(roles).sort(),
+    permissions: permissionList,
+    source: "access-control",
+  };
+}
+
+function hasAccessPermission(access, permissionKey) {
+  if (access?.permissions?.includes(permissionKey)) return true;
+  return permissionKey.startsWith("dashboard:") && permissionKey.endsWith(":read") && access?.permissions?.includes("dashboard:*:read");
+}
+
+async function requireAccessAdmin(email) {
+  const access = await resolveAccessControlForEmail(email);
+  if (!hasAccessPermission(access, ACCESS_ADMIN_PERMISSION)) {
+    throw createStatusError(403, "access-control admin permission required");
+  }
+  return access;
 }
 
 async function ensureEmailSchema() {
@@ -5708,6 +6147,602 @@ async function recordXMonitorAccessEvent({
   return result.rows[0] || null;
 }
 
+async function recordAccessAdminAudit(actorEmail, action, targetType, targetKey, before, after) {
+  await getPool().query(
+    `
+      INSERT INTO auth_admin_audit_events(actor_email, action, target_type, target_key, before_json, after_json)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+    `,
+    [actorEmail, action, targetType, targetKey, before ? JSON.stringify(before) : null, after ? JSON.stringify(after) : null]
+  );
+}
+
+function accessRowIso(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  return new Date(String(value)).toISOString();
+}
+
+async function buildAccessControlSnapshot(actorEmail) {
+  const actor = await requireAccessAdmin(actorEmail);
+  const db = getPool();
+  const [users, groups, roles, permissions, memberships, groupRoles, rolePermissions, invitations] = await Promise.all([
+    db.query(`
+      SELECT email, first_name, last_name, admin_note, status, pending_email, email_confirmed_at, email_change_requested_at, created_at, updated_at
+      FROM auth_subjects
+      ORDER BY email
+    `),
+    db.query(`
+      SELECT g.group_key, g.name, g.description, g.admin_note, g.is_system, COUNT(gm.email)::int AS member_count
+      FROM auth_groups g
+      LEFT JOIN auth_group_memberships gm ON gm.group_key = g.group_key
+      GROUP BY g.group_key, g.name, g.description, g.admin_note, g.is_system
+      ORDER BY g.is_system DESC, g.name
+    `),
+    db.query(`SELECT role_key, name, description, is_system FROM auth_roles ORDER BY is_system DESC, name`),
+    db.query(`SELECT permission_key, resource_type, resource_key, action, name, description, is_system FROM auth_permissions ORDER BY resource_type, resource_key, action`),
+    db.query(`SELECT group_key, email, expires_at, created_at FROM auth_group_memberships ORDER BY group_key, email`),
+    db.query(`SELECT assignment_id, group_key, role_key, scope_type, scope_key, created_at FROM auth_group_roles ORDER BY group_key, role_key, scope_type, scope_key`),
+    db.query(`SELECT role_key, permission_key, created_at FROM auth_role_permissions ORDER BY role_key, permission_key`),
+    db.query(`
+      SELECT invitation_id, email, previous_email, kind, status, invited_by, invited_at, expires_at, accepted_at, welcome_email_sent_at, error_message
+      FROM auth_invitations
+      ORDER BY invited_at DESC
+      LIMIT 100
+    `),
+  ]);
+
+  return {
+    actor,
+    users: users.rows.map((row) => ({
+      email: normalizeEmail(row.email),
+      firstName: row.first_name || null,
+      lastName: row.last_name || null,
+      adminNote: row.admin_note || null,
+      status: row.status,
+      pendingEmail: row.pending_email ? normalizeEmail(row.pending_email) : null,
+      emailConfirmedAt: accessRowIso(row.email_confirmed_at),
+      emailChangeRequestedAt: accessRowIso(row.email_change_requested_at),
+      createdAt: accessRowIso(row.created_at),
+      updatedAt: accessRowIso(row.updated_at),
+    })),
+    groups: groups.rows.map((row) => ({
+      groupKey: row.group_key,
+      name: row.name,
+      description: row.description || null,
+      adminNote: row.admin_note || null,
+      isSystem: row.is_system,
+      memberCount: row.member_count,
+    })),
+    roles: roles.rows.map((row) => ({
+      roleKey: row.role_key,
+      name: row.name,
+      description: row.description || null,
+      isSystem: row.is_system,
+    })),
+    permissions: permissions.rows.map((row) => ({
+      permissionKey: row.permission_key,
+      resourceType: row.resource_type,
+      resourceKey: row.resource_key,
+      action: row.action,
+      name: row.name,
+      description: row.description || null,
+      isSystem: row.is_system,
+    })),
+    memberships: memberships.rows.map((row) => ({
+      groupKey: row.group_key,
+      email: normalizeEmail(row.email),
+      expiresAt: accessRowIso(row.expires_at),
+      createdAt: accessRowIso(row.created_at),
+    })),
+    groupRoles: groupRoles.rows.map((row) => ({
+      assignmentId: String(row.assignment_id),
+      groupKey: row.group_key,
+      roleKey: row.role_key,
+      scopeType: row.scope_type,
+      scopeKey: row.scope_key,
+      createdAt: accessRowIso(row.created_at),
+    })),
+    rolePermissions: rolePermissions.rows.map((row) => ({
+      roleKey: row.role_key,
+      permissionKey: row.permission_key,
+      createdAt: accessRowIso(row.created_at),
+    })),
+    invitations: invitations.rows.map((row) => ({
+      invitationId: String(row.invitation_id),
+      email: normalizeEmail(row.email),
+      previousEmail: row.previous_email ? normalizeEmail(row.previous_email) : null,
+      kind: row.kind,
+      status: row.status,
+      invitedBy: normalizeEmail(row.invited_by),
+      invitedAt: accessRowIso(row.invited_at),
+      expiresAt: accessRowIso(row.expires_at),
+      acceptedAt: accessRowIso(row.accepted_at),
+      welcomeEmailSentAt: accessRowIso(row.welcome_email_sent_at),
+      errorMessage: row.error_message || null,
+    })),
+    dashboards: ACCESS_CONTROL_DASHBOARDS,
+  };
+}
+
+function normalizeAccessKey(value, label) {
+  const key = asString(value)?.toLowerCase();
+  if (!key || !/^[a-z0-9][a-z0-9-]*$/.test(key)) {
+    throw createStatusError(400, `${label} must use lowercase letters, numbers, and hyphens`);
+  }
+  return key;
+}
+
+function dashboardNameForAccessId(dashboardId) {
+  return ACCESS_CONTROL_DASHBOARDS.find((dashboard) => dashboard.id === dashboardId)?.name || dashboardId || null;
+}
+
+function accessInvitationTokenHash(token) {
+  return createHash("sha256").update(token).digest("hex");
+}
+
+function accessAppBaseUrl(value) {
+  return (asString(value) || process.env.NEXTAUTH_URL || "https://www.zodldashboard.com").replace(/\/+$/, "");
+}
+
+async function createAccessInvitation({ actorEmail, email, previousEmail = null, kind = "welcome" }) {
+  const token = `${randomUUID()}${randomUUID()}`.replace(/-/g, "");
+  const tokenHash = accessInvitationTokenHash(token);
+  const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 24 * 14).toISOString();
+  const result = await getPool().query(
+    `
+      INSERT INTO auth_invitations(email, previous_email, token_hash, kind, status, invited_by, expires_at)
+      VALUES ($1, $2, $3, $4, 'pending', $5, $6::timestamptz)
+      RETURNING invitation_id, email, previous_email, kind, status, invited_by, invited_at, expires_at, accepted_at, welcome_email_sent_at, error_message
+    `,
+    [email, previousEmail, tokenHash, kind, actorEmail, expiresAt]
+  );
+  return { invitation: result.rows[0], token };
+}
+
+function accessSummaryText(access) {
+  const allowed = ACCESS_CONTROL_DASHBOARDS
+    .filter((dashboard) => dashboard.visible && (access.permissions.includes(dashboard.permissionKey) || access.permissions.includes("dashboard:*:read")))
+    .map((dashboard) => `- ${dashboard.name}`);
+  return allowed.length ? allowed.join("\n") : "- No dashboards yet";
+}
+
+async function sendAccessInvitationEmail({ actorEmail, email, subject, bodyText }) {
+  const delivery = await sendEmailDelivery({
+    ownerEmail: actorEmail,
+    source: "manual",
+    recipients: [email],
+    subject,
+    bodyMarkdown: bodyText,
+    bodyText,
+  });
+  if (!delivery.ok) {
+    throw createStatusError(502, delivery.error_message || "failed to send invitation email");
+  }
+  return delivery.data;
+}
+
+async function sendAccessWelcome(actorEmail, email, appBaseUrlValue) {
+  const normalizedEmail = validateEmailAddress(email);
+  if (!normalizedEmail) throw createStatusError(400, "email is invalid");
+  await upsertAccessSubject(normalizedEmail, actorEmail);
+  const { invitation, token } = await createAccessInvitation({ actorEmail, email: normalizedEmail, kind: "welcome" });
+  const access = await resolveAccessControlForEmail(normalizedEmail);
+  const acceptUrl = `${accessAppBaseUrl(appBaseUrlValue)}/api/v1/admin/access-control/invitations/accept?token=${encodeURIComponent(token)}`;
+  const bodyText = [
+    "Welcome to ZODL Dashboard.",
+    "",
+    "Your account has been added and the current dashboard access preview is:",
+    accessSummaryText(access),
+    "",
+    `Open this link to acknowledge the invitation and continue to sign in: ${acceptUrl}`,
+    "",
+    "Use Google sign-in if you have a ZODL workspace account. Approved external guests can use email-link sign-in when it is enabled.",
+    "",
+    "Do not forward invitation or sign-in links. If your access looks wrong, reply to the person who invited you.",
+  ].join("\n");
+  const delivery = await sendAccessInvitationEmail({
+    actorEmail,
+    email: normalizedEmail,
+    subject: "Welcome to ZODL Dashboard",
+    bodyText,
+  });
+  await getPool().query(
+    `
+      UPDATE auth_invitations
+      SET welcome_email_sent_at = now(),
+          provider_message_id = $2,
+          error_message = NULL
+      WHERE invitation_id = $1
+    `,
+    [invitation.invitation_id, delivery.provider_message_id || null]
+  );
+  return { ...invitation, welcome_email_sent_at: new Date().toISOString(), error_message: null };
+}
+
+async function sendAccessEmailChange(actorEmail, currentEmail, pendingEmail, appBaseUrlValue) {
+  const current = validateEmailAddress(currentEmail);
+  const pending = validateEmailAddress(pendingEmail);
+  if (!current || !pending) throw createStatusError(400, "email is invalid");
+  if (current === pending) throw createStatusError(400, "new email must be different from current email");
+  const existing = await getPool().query("SELECT email FROM auth_subjects WHERE email = $1 LIMIT 1", [pending]);
+  if (existing.rows[0]) throw createStatusError(400, "a user with the new email already exists");
+  await getPool().query(
+    `
+      UPDATE auth_subjects
+      SET pending_email = $2,
+          email_change_requested_at = now(),
+          updated_by = $3
+      WHERE email = $1
+    `,
+    [current, pending, actorEmail]
+  );
+  const { invitation, token } = await createAccessInvitation({
+    actorEmail,
+    email: pending,
+    previousEmail: current,
+    kind: "email-change",
+  });
+  const confirmUrl = `${accessAppBaseUrl(appBaseUrlValue)}/api/v1/admin/access-control/invitations/accept?token=${encodeURIComponent(token)}`;
+  const bodyText = [
+    "Confirm your ZODL Dashboard email change.",
+    "",
+    `An admin requested that your dashboard login email change from ${current} to ${pending}.`,
+    "",
+    `Confirm the change here: ${confirmUrl}`,
+    "",
+    "If you did not expect this, do not open the link and contact the dashboard admin.",
+  ].join("\n");
+  const delivery = await sendAccessInvitationEmail({
+    actorEmail,
+    email: pending,
+    subject: "Confirm your ZODL Dashboard email change",
+    bodyText,
+  });
+  await getPool().query(
+    `
+      UPDATE auth_invitations
+      SET welcome_email_sent_at = now(),
+          provider_message_id = $2,
+          error_message = NULL
+      WHERE invitation_id = $1
+    `,
+    [invitation.invitation_id, delivery.provider_message_id || null]
+  );
+  return { ...invitation, welcome_email_sent_at: new Date().toISOString(), error_message: null };
+}
+
+async function ensureNotLastAccessAdmin(email) {
+  const normalizedEmail = validateEmailAddress(email);
+  if (!normalizedEmail) return;
+  const result = await getPool().query(
+    `
+      SELECT COUNT(DISTINCT gm.email)::int AS admin_count
+      FROM auth_group_memberships gm
+      JOIN auth_group_roles gr ON gr.group_key = gm.group_key
+      JOIN auth_role_permissions rp ON rp.role_key = gr.role_key
+      WHERE rp.permission_key = $1
+        AND (gm.expires_at IS NULL OR gm.expires_at > now())
+        AND gm.email <> $2
+    `,
+    [ACCESS_ADMIN_PERMISSION, normalizedEmail]
+  );
+  if ((result.rows[0]?.admin_count || 0) < 1) {
+    throw createStatusError(400, "cannot remove the last access-control admin");
+  }
+}
+
+async function buildAccessControlAccessLog(actorEmail, body) {
+  await requireAccessAdmin(actorEmail);
+  const eventType = ["login", "dashboard"].includes(asString(body.eventType)) ? asString(body.eventType) : "all";
+  const dashboardId = asString(body.dashboardId) && asString(body.dashboardId) !== "all" ? normalizeAccessKey(body.dashboardId, "dashboardId") : null;
+  const requestedLimit = Number.parseInt(String(body.limit || ""), 10);
+  const filters = {
+    eventType,
+    email: validateEmailAddress(body.email) || null,
+    dashboardId,
+    from: asString(body.from) || null,
+    to: asString(body.to) || null,
+    limit: Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(requestedLimit, 500) : 100,
+  };
+  const values = [];
+  const clauses = [];
+  function addParam(value) {
+    values.push(value);
+    return `$${values.length}`;
+  }
+  if (filters.eventType !== "all") clauses.push(`event_type = ${addParam(filters.eventType)}`);
+  if (filters.email) clauses.push(`email = ${addParam(filters.email)}`);
+  if (filters.dashboardId) clauses.push(`dashboard_id = ${addParam(filters.dashboardId)}`);
+  if (filters.from) clauses.push(`occurred_at >= ${addParam(filters.from)}::timestamptz`);
+  if (filters.to) clauses.push(`occurred_at <= ${addParam(filters.to)}::timestamptz`);
+  const limitParam = addParam(filters.limit);
+
+  const result = await getPool().query(
+    `
+      WITH access_events AS (
+        SELECT event_id::text, 'login'::text AS event_type, email::text, provider::text, auth_mode::text,
+          access_level::text, NULL::text AS dashboard_id, NULL::text AS path, NULL::text AS outcome,
+          NULL::integer AS status_code, logged_in_at AS occurred_at
+        FROM auth_login_events
+        UNION ALL
+        SELECT event_id::text, 'dashboard'::text AS event_type, email::text, NULL::text AS provider, auth_mode::text,
+          access_level::text, 'x-monitor'::text AS dashboard_id, path::text, 'allowed'::text AS outcome,
+          status_code, accessed_at AS occurred_at
+        FROM xmonitor_access_events
+        UNION ALL
+        SELECT event_id::text, 'dashboard'::text AS event_type, email::text, NULL::text AS provider, auth_mode::text,
+          access_level::text,
+          CASE
+            WHEN path = '/zodl-roadmap' OR path LIKE '/zodl-roadmap/%' THEN 'zodl-roadmap'
+            WHEN path = '/pgpz-roadmap' OR path LIKE '/pgpz-roadmap/%' THEN 'pgpz-roadmap'
+            WHEN path = '/arktouros' OR path LIKE '/arktouros/%' THEN 'arktouros'
+            ELSE NULL
+          END AS dashboard_id,
+          path::text, outcome::text, status_code, accessed_at AS occurred_at
+        FROM roadmap_access_events
+      )
+      SELECT *
+      FROM access_events
+      ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+      ORDER BY occurred_at DESC
+      LIMIT ${limitParam}
+    `,
+    values
+  );
+
+  return result.rows.map((row) => ({
+    eventId: row.event_id,
+    eventType: row.event_type,
+    email: normalizeEmail(row.email),
+    provider: row.provider || null,
+    authMode: row.auth_mode,
+    accessLevel: row.access_level,
+    dashboardId: row.dashboard_id || null,
+    dashboardName: dashboardNameForAccessId(row.dashboard_id),
+    path: row.path || null,
+    outcome: row.outcome || null,
+    statusCode: row.status_code ?? null,
+    occurredAt: accessRowIso(row.occurred_at),
+  }));
+}
+
+async function performAccessControlOperation(actorEmail, body) {
+  const actor = await requireAccessAdmin(actorEmail);
+  const operation = asString(body.operation);
+  if (!operation) throw createStatusError(400, "operation is required");
+  const db = getPool();
+
+  if (operation === "snapshot") return { snapshot: await buildAccessControlSnapshot(actor.email) };
+  if (operation === "preview_user") return { preview: await resolveAccessControlForEmail(body.email) };
+  if (operation === "access_log") return { accessLog: await buildAccessControlAccessLog(actor.email, body) };
+  if (operation === "send_welcome") {
+    const invitation = await sendAccessWelcome(actor.email, body.email, body.app_base_url);
+    await recordAccessAdminAudit(actor.email, "send_welcome", "user", normalizeEmail(body.email), null, invitation);
+    return { invitation, message: "Welcome email sent." };
+  }
+  if (operation === "request_email_change") {
+    const invitation = await sendAccessEmailChange(actor.email, body.email, body.pending_email, body.app_base_url);
+    await recordAccessAdminAudit(actor.email, "request_email_change", "user", normalizeEmail(body.email), null, invitation);
+    return { invitation, message: "Email confirmation sent." };
+  }
+  if (operation === "upsert_user") {
+    const email = validateEmailAddress(body.email);
+    if (!email) throw createStatusError(400, "email is invalid");
+    const before = await db.query("SELECT * FROM auth_subjects WHERE email = $1", [email]);
+    const status = body.status === "inactive" ? "inactive" : "active";
+    const result = await db.query(
+      `
+        INSERT INTO auth_subjects(email, first_name, last_name, admin_note, status, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $5, $6, $6)
+        ON CONFLICT (email) DO UPDATE
+        SET first_name = EXCLUDED.first_name,
+            last_name = EXCLUDED.last_name,
+            admin_note = EXCLUDED.admin_note,
+            status = EXCLUDED.status,
+            updated_by = EXCLUDED.updated_by
+        RETURNING *
+      `,
+      [email, asNullableString(body.first_name), asNullableString(body.last_name), asNullableString(body.admin_note), status, actor.email]
+    );
+    await recordAccessAdminAudit(actor.email, "upsert_user", "user", email, before.rows[0] || null, result.rows[0] || null);
+    return { message: "User saved." };
+  }
+  if (operation === "delete_user") {
+    const email = validateEmailAddress(body.email);
+    if (!email) throw createStatusError(400, "email is invalid");
+    await ensureNotLastAccessAdmin(email);
+    const before = await db.query("SELECT * FROM auth_subjects WHERE email = $1", [email]);
+    await db.query("DELETE FROM auth_subjects WHERE email = $1", [email]);
+    await recordAccessAdminAudit(actor.email, "delete_user", "user", email, before.rows[0] || null, null);
+    return { message: "User deleted." };
+  }
+  if (operation === "upsert_group") {
+    const groupKey = normalizeAccessKey(body.group_key, "group_key");
+    const before = await db.query("SELECT * FROM auth_groups WHERE group_key = $1", [groupKey]);
+    const result = await db.query(
+      `
+        INSERT INTO auth_groups(group_key, name, description, admin_note, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $5, $5)
+        ON CONFLICT (group_key) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            admin_note = EXCLUDED.admin_note,
+            updated_by = EXCLUDED.updated_by
+        RETURNING *
+      `,
+      [groupKey, asString(body.name), asNullableString(body.description), asNullableString(body.admin_note), actor.email]
+    );
+    await recordAccessAdminAudit(actor.email, "upsert_group", "group", groupKey, before.rows[0] || null, result.rows[0] || null);
+    return { message: "Group saved." };
+  }
+  if (operation === "delete_group") {
+    const groupKey = normalizeAccessKey(body.group_key, "group_key");
+    const before = await db.query("SELECT * FROM auth_groups WHERE group_key = $1", [groupKey]);
+    if (before.rows[0]?.is_system) throw createStatusError(400, "system groups cannot be deleted");
+    await db.query("DELETE FROM auth_groups WHERE group_key = $1", [groupKey]);
+    await recordAccessAdminAudit(actor.email, "delete_group", "group", groupKey, before.rows[0] || null, null);
+    return { message: "Group deleted." };
+  }
+  if (operation === "upsert_role") {
+    const roleKey = normalizeAccessKey(body.role_key, "role_key");
+    const before = await db.query("SELECT * FROM auth_roles WHERE role_key = $1", [roleKey]);
+    const result = await db.query(
+      `
+        INSERT INTO auth_roles(role_key, name, description, created_by, updated_by)
+        VALUES ($1, $2, $3, $4, $4)
+        ON CONFLICT (role_key) DO UPDATE
+        SET name = EXCLUDED.name,
+            description = EXCLUDED.description,
+            updated_by = EXCLUDED.updated_by
+        RETURNING *
+      `,
+      [roleKey, asString(body.name), asNullableString(body.description), actor.email]
+    );
+    await recordAccessAdminAudit(actor.email, "upsert_role", "role", roleKey, before.rows[0] || null, result.rows[0] || null);
+    return { message: "Role saved." };
+  }
+  if (operation === "delete_role") {
+    const roleKey = normalizeAccessKey(body.role_key, "role_key");
+    const before = await db.query("SELECT * FROM auth_roles WHERE role_key = $1", [roleKey]);
+    if (before.rows[0]?.is_system) throw createStatusError(400, "system roles cannot be deleted");
+    await db.query("DELETE FROM auth_roles WHERE role_key = $1", [roleKey]);
+    await recordAccessAdminAudit(actor.email, "delete_role", "role", roleKey, before.rows[0] || null, null);
+    return { message: "Role deleted." };
+  }
+  if (operation === "set_group_membership") {
+    const groupKey = normalizeAccessKey(body.group_key, "group_key");
+    const email = validateEmailAddress(body.email);
+    if (!email) throw createStatusError(400, "email is invalid");
+    await upsertAccessSubject(email, actor.email);
+    const before = await db.query("SELECT * FROM auth_group_memberships WHERE group_key = $1 AND email = $2", [groupKey, email]);
+    if (body.enabled === false) {
+      if (groupKey === "admins") await ensureNotLastAccessAdmin(email);
+      await db.query("DELETE FROM auth_group_memberships WHERE group_key = $1 AND email = $2", [groupKey, email]);
+      await recordAccessAdminAudit(actor.email, "remove_group_membership", "membership", `${groupKey}:${email}`, before.rows[0] || null, null);
+      return { message: "Membership removed." };
+    }
+    const result = await db.query(
+      `
+        INSERT INTO auth_group_memberships(group_key, email, expires_at, created_by)
+        VALUES ($1, $2, $3::timestamptz, $4)
+        ON CONFLICT (group_key, email) DO UPDATE
+        SET expires_at = EXCLUDED.expires_at
+        RETURNING *
+      `,
+      [groupKey, email, asNullableString(body.expires_at), actor.email]
+    );
+    await recordAccessAdminAudit(actor.email, "add_group_membership", "membership", `${groupKey}:${email}`, before.rows[0] || null, result.rows[0] || null);
+    return { message: "Membership added." };
+  }
+  if (operation === "set_role_permission") {
+    const roleKey = normalizeAccessKey(body.role_key, "role_key");
+    const permissionKey = asString(body.permission_key);
+    if (!permissionKey) throw createStatusError(400, "permission_key is required");
+    const before = await db.query("SELECT * FROM auth_role_permissions WHERE role_key = $1 AND permission_key = $2", [roleKey, permissionKey]);
+    if (body.enabled === false) {
+      await db.query("DELETE FROM auth_role_permissions WHERE role_key = $1 AND permission_key = $2", [roleKey, permissionKey]);
+      await recordAccessAdminAudit(actor.email, "remove_role_permission", "role_permission", `${roleKey}:${permissionKey}`, before.rows[0] || null, null);
+      return { message: "Permission removed." };
+    }
+    const result = await db.query(
+      `
+        INSERT INTO auth_role_permissions(role_key, permission_key, created_by)
+        VALUES ($1, $2, $3)
+        ON CONFLICT DO NOTHING
+        RETURNING *
+      `,
+      [roleKey, permissionKey, actor.email]
+    );
+    await recordAccessAdminAudit(actor.email, "add_role_permission", "role_permission", `${roleKey}:${permissionKey}`, before.rows[0] || null, result.rows[0] || null);
+    return { message: "Permission assigned." };
+  }
+  if (operation === "assign_group_role") {
+    const groupKey = normalizeAccessKey(body.group_key, "group_key");
+    const roleKey = normalizeAccessKey(body.role_key, "role_key");
+    const scopeType = body.scope_type === "dashboard" ? "dashboard" : "global";
+    const scopeKey = scopeType === "dashboard" ? normalizeAccessKey(body.scope_key, "scope_key") : "*";
+    const result = await db.query(
+      `
+        INSERT INTO auth_group_roles(group_key, role_key, scope_type, scope_key, created_by)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (group_key, role_key, scope_type, scope_key) DO UPDATE
+        SET created_by = COALESCE(auth_group_roles.created_by, EXCLUDED.created_by)
+        RETURNING *
+      `,
+      [groupKey, roleKey, scopeType, scopeKey, actor.email]
+    );
+    await recordAccessAdminAudit(actor.email, "assign_group_role", "group_role", `${groupKey}:${roleKey}:${scopeType}:${scopeKey}`, null, result.rows[0] || null);
+    return { message: "Role assignment saved." };
+  }
+  if (operation === "remove_group_role") {
+    const assignmentId = asString(body.assignment_id);
+    if (!assignmentId) throw createStatusError(400, "assignment_id is required");
+    const before = await db.query("SELECT * FROM auth_group_roles WHERE assignment_id = $1", [assignmentId]);
+    await db.query("DELETE FROM auth_group_roles WHERE assignment_id = $1", [assignmentId]);
+    await recordAccessAdminAudit(actor.email, "remove_group_role", "group_role", assignmentId, before.rows[0] || null, null);
+    return { message: "Role assignment removed." };
+  }
+  throw createStatusError(400, "unsupported access-control operation");
+}
+
+async function acceptAccessControlInvitation(token) {
+  await ensureAccessControlSchema();
+  const tokenValue = asString(token);
+  if (!tokenValue) throw createStatusError(400, "token is required");
+  const tokenHash = accessInvitationTokenHash(tokenValue);
+  const result = await getPool().query(
+    `
+      SELECT invitation_id, email, previous_email, kind, status, expires_at
+      FROM auth_invitations
+      WHERE token_hash = $1
+      LIMIT 1
+    `,
+    [tokenHash]
+  );
+  const invitation = result.rows[0];
+  if (!invitation || invitation.status !== "pending") {
+    throw createStatusError(400, "invitation is invalid or already used");
+  }
+  if (invitation.expires_at && new Date(invitation.expires_at).getTime() < Date.now()) {
+    await getPool().query("UPDATE auth_invitations SET status = 'expired' WHERE invitation_id = $1", [invitation.invitation_id]);
+    throw createStatusError(400, "invitation has expired");
+  }
+
+  const email = normalizeEmail(invitation.email);
+  if (invitation.kind === "email-change") {
+    const previousEmail = normalizeEmail(invitation.previous_email);
+    if (!previousEmail) throw createStatusError(400, "email change invitation is missing the previous email");
+    const existing = await getPool().query("SELECT email FROM auth_subjects WHERE email = $1 AND email <> $2 LIMIT 1", [email, previousEmail]);
+    if (existing.rows[0]) throw createStatusError(400, "a user with the new email already exists");
+    await getPool().query(
+      `
+        UPDATE auth_subjects
+        SET email = $2,
+            pending_email = NULL,
+            email_change_requested_at = NULL,
+            email_confirmed_at = now()
+        WHERE email = $1
+      `,
+      [previousEmail, email]
+    );
+  } else {
+    await upsertAccessSubject(email, "invitation");
+    await getPool().query("UPDATE auth_subjects SET email_confirmed_at = COALESCE(email_confirmed_at, now()) WHERE email = $1", [email]);
+  }
+
+  await getPool().query(
+    `
+      UPDATE auth_invitations
+      SET status = 'accepted',
+          accepted_at = now()
+      WHERE invitation_id = $1
+    `,
+    [invitation.invitation_id]
+  );
+  return { kind: invitation.kind, email };
+}
+
 function isDirectRoadmapReportInvocation(event) {
   return asString(event?.source) === "zodl-roadmap-private.report";
 }
@@ -7987,6 +9022,62 @@ async function handleGuestEmailTokenUse(event) {
   }
 }
 
+async function handleAccessControlEffectiveAccess(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+  await ensureAccessControlSchema();
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const email = validateEmailAddress(parsedBody.body?.email) || validateEmailAddress(headerValue(event?.headers, VIEWER_EMAIL_HEADER));
+  if (!email) return jsonError("email is required", 400);
+
+  try {
+    const access = await resolveAccessControlForEmail(email);
+    return jsonOk({ access });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to resolve effective access", error.status || 503);
+  }
+}
+
+async function handleAccessControlAdmin(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) return jsonError(viewer.error, viewer.status);
+  await ensureAccessControlSchema();
+
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+
+  try {
+    const result = await performAccessControlOperation(viewer.viewer.email, parsedBody.body);
+    return jsonOk(result);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "access-control operation failed", error.status || 400);
+  }
+}
+
+async function handleAccessControlInvitationAccept(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  try {
+    const item = await acceptAccessControlInvitation(parsedBody.body?.token);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to accept invitation", error.status || 400);
+  }
+}
+
 async function handleEmailSchedulesList(event) {
   if (!emailEnabled() || !emailSchedulesEnabled()) {
     return jsonError("email schedules are disabled", 503);
@@ -9775,6 +10866,18 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/auth/guest-email/tokens/use") {
     return handleGuestEmailTokenUse(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/access-control/effective-access") {
+    return handleAccessControlEffectiveAccess(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/access-control/admin") {
+    return handleAccessControlAdmin(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/access-control/invitations/accept") {
+    return handleAccessControlInvitationAccept(event);
   }
 
   if (method === "GET" && path === "/v1/email/schedules") {

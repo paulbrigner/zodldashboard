@@ -1,8 +1,8 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { SignOutButton } from "../sign-out-button";
+import { canReadDashboard } from "@/lib/access-control";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import { isGuestAccessLevel } from "@/lib/viewer-access";
 import { getRegulatoryRiskData } from "@/lib/regulatory-risk/data";
 import { formatIsoDate } from "@/lib/regulatory-risk/insights";
 import { RegulatoryRiskNavLinks } from "./nav-links";
@@ -15,7 +15,7 @@ export default async function RegulatoryRiskLayout({
   children: React.ReactNode;
 }>) {
   const viewer = await requireAuthenticatedViewer("/regulatory-risk");
-  if (isGuestAccessLevel(viewer.accessLevel)) {
+  if (!canReadDashboard(viewer, "regulatory-risk")) {
     redirect("/");
   }
 

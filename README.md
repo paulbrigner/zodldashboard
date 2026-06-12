@@ -107,6 +107,7 @@ NEXTAUTH_SECRET=<random-secret>
 GOOGLE_CLIENT_ID=<google-web-oauth-client-id>
 GOOGLE_CLIENT_SECRET=<google-web-oauth-client-secret>
 ALLOWED_GOOGLE_DOMAIN=zodl.com
+ACCESS_BOOTSTRAP_ADMIN_EMAILS=paul@zodl.com
 ```
 
 ### Choose a read mode
@@ -148,6 +149,7 @@ Commonly used variables:
   - `GOOGLE_CLIENT_ID`
   - `GOOGLE_CLIENT_SECRET`
   - `ALLOWED_GOOGLE_DOMAIN`
+  - `ACCESS_BOOTSTRAP_ADMIN_EMAILS`
   - `GUEST_GOOGLE_OAUTH_ENABLED`
   - `GUEST_MAGIC_LINK_ENABLED`
   - `ALLOWED_GUEST_GOOGLE_EMAILS`
@@ -319,6 +321,7 @@ timestamp/email rows. Use `--json` for the full structured report.
 - Verify X Monitor-only guests are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS`.
 - Verify guests who need currently available private dashboards are allowlisted in `ALLOWED_ROADMAP_GUEST_EMAILS`.
 - Verify Arktouros-specific users are allowlisted in `ALLOWED_ARKTOUROS_GUEST_EMAILS`; these users can access all currently available private dashboards, but future dashboard access is undecided until each dashboard is added.
+- Verify access admins are in the DB-backed `admins` group or temporarily listed in `ACCESS_BOOTSTRAP_ADMIN_EMAILS`.
 
 ### Read path issues
 

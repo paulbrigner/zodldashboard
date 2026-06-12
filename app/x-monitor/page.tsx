@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { canReadDashboard } from "@/lib/access-control";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { recordXMonitorAccess } from "@/lib/xmonitor-access-events";
 import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
@@ -542,6 +544,9 @@ async function fetchTrendsViaApi(
 
 export default async function HomePage({ searchParams }: HomePageProps) {
   const viewer = await requireAuthenticatedViewer("/x-monitor");
+  if (!canReadDashboard(viewer, "x-monitor")) {
+    redirect("/");
+  }
   const requestHeaders = await headers();
   await recordXMonitorAccess({ viewer, headers: requestHeaders });
 

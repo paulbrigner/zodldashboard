@@ -13,11 +13,13 @@ import {
   type RoadmapAccessOutcome,
 } from "@/lib/roadmap-access-events";
 import {
-  canAccessArktouros,
-  canAccessPgpzRoadmap,
-  canAccessRoadmap,
-  type ViewerAccessLevel,
-} from "@/lib/viewer-access";
+  ACCESS_ADMIN_PERMISSION,
+  canReadDashboard,
+  dashboardReadPermission,
+  hasAccessPermission,
+  type EffectiveAccess,
+} from "@/lib/access-control";
+import { type ViewerAccessLevel } from "@/lib/viewer-access";
 import type { AuthenticatedViewer } from "@/lib/viewer-auth";
 
 type HeaderReader = {
@@ -27,6 +29,7 @@ type HeaderReader = {
 type DashboardAccessInput = {
   accessLevel: ViewerAccessLevel;
   email: string;
+  permissions?: EffectiveAccess["permissions"];
 };
 
 export type DashboardKind = "app" | "private-html" | "placeholder";
@@ -46,6 +49,7 @@ type DashboardBase = {
   href?: string;
   prefetch?: boolean;
   workspaceOnly?: boolean;
+  requiredPermission?: string;
   visible: boolean;
 };
 
@@ -83,13 +87,14 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     contentHref: "/zodl-roadmap/content",
     prefetch: false,
     workspaceOnly: true,
+    requiredPermission: dashboardReadPermission("zodl-roadmap"),
     visible: true,
     missingTitle: "Zodl Roadmap unavailable",
     missingHeading: "Zodl Roadmap content is not configured",
     missingBody: "The private HTML file was not found in the configured roadmap content path.",
     readHtml: readZodlRoadmapHtml,
     getHtmlPath: getZodlRoadmapHtmlPath,
-    canAccess: (viewer) => canAccessRoadmap(viewer.accessLevel),
+    canAccess: (viewer) => canReadDashboard({ accessLevel: viewer.accessLevel, permissions: viewer.permissions || [] }, "zodl-roadmap"),
     recordAccess: recordZodlRoadmapAccess,
   },
   {
@@ -103,13 +108,14 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     contentHref: "/pgpz-roadmap/content",
     prefetch: false,
     workspaceOnly: true,
+    requiredPermission: dashboardReadPermission("pgpz-roadmap"),
     visible: true,
     missingTitle: "PGPZ Roadmap unavailable",
     missingHeading: "PGPZ Roadmap content is not configured",
     missingBody: "The private HTML file was not found in the configured PGPZ roadmap content path.",
     readHtml: readPgpzRoadmapHtml,
     getHtmlPath: getPgpzRoadmapHtmlPath,
-    canAccess: (viewer) => canAccessPgpzRoadmap(viewer.accessLevel),
+    canAccess: (viewer) => canReadDashboard({ accessLevel: viewer.accessLevel, permissions: viewer.permissions || [] }, "pgpz-roadmap"),
     recordAccess: recordPgpzRoadmapAccess,
   },
   {
@@ -123,13 +129,14 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     contentHref: "/arktouros/content",
     prefetch: false,
     workspaceOnly: true,
+    requiredPermission: dashboardReadPermission("arktouros"),
     visible: true,
     missingTitle: "Arktouros unavailable",
     missingHeading: "Arktouros content is not configured",
     missingBody: "The private HTML file was not found in the configured Arktouros content path.",
     readHtml: readArktourosHtml,
     getHtmlPath: getArktourosHtmlPath,
-    canAccess: (viewer) => canAccessArktouros(viewer.accessLevel, viewer.email),
+    canAccess: (viewer) => canReadDashboard({ accessLevel: viewer.accessLevel, permissions: viewer.permissions || [] }, "arktouros"),
     recordAccess: recordArktourosAccess,
   },
   {
@@ -140,6 +147,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     description:
       "Monitor the Zcash conversation on X with searchable captured posts, relevance filtering, trend summaries, and source-backed AI answers.",
     href: "/x-monitor",
+    requiredPermission: dashboardReadPermission("x-monitor"),
     visible: true,
   },
   {
@@ -149,6 +157,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     navLabel: "CipherPay Test",
     description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
     href: "/cipherpay-test",
+    requiredPermission: dashboardReadPermission("cipherpay-test"),
     visible: false,
   },
   {
@@ -159,6 +168,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     description: "Tiered jurisdiction risk, recommendations, policy posture, and activity feed.",
     href: "/regulatory-risk",
     workspaceOnly: true,
+    requiredPermission: dashboardReadPermission("regulatory-risk"),
     visible: false,
   },
   {
@@ -169,7 +179,18 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     description: "Compliance posture, declarations, submissions, reviewer cases, and evidence bundles.",
     href: "/app-stores",
     workspaceOnly: true,
+    requiredPermission: dashboardReadPermission("app-store-compliance"),
     visible: false,
+  },
+  {
+    id: "admin-access",
+    kind: "app",
+    name: "Access Admin",
+    navLabel: "Access Admin",
+    description: "Manage users, groups, roles, dashboard privileges, invitations, and access audit logs.",
+    href: "/admin/access",
+    requiredPermission: ACCESS_ADMIN_PERMISSION,
+    visible: true,
   },
   {
     id: "placeholder",
@@ -203,7 +224,13 @@ export function findPrivateHtmlDashboard(id: string): PrivateHtmlDashboard {
 }
 
 export function canAccessDashboard(dashboard: DashboardCatalogItem, viewer: DashboardAccessInput): boolean {
+  if (dashboard.requiredPermission?.startsWith("dashboard:")) {
+    return canReadDashboard({ accessLevel: viewer.accessLevel, permissions: viewer.permissions || [] }, dashboard.id);
+  }
+  if (dashboard.requiredPermission) {
+    return hasAccessPermission({ permissions: viewer.permissions || [] }, dashboard.requiredPermission);
+  }
   if (!dashboard.workspaceOnly) return true;
   if (dashboard.kind === "private-html") return dashboard.canAccess(viewer);
-  return viewer.accessLevel === "workspace" || viewer.accessLevel === "local-bypass";
+  return viewer.accessLevel === "local-bypass";
 }

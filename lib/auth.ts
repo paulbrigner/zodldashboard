@@ -1,13 +1,12 @@
 import type { NextAuthOptions } from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import EmailProvider from "next-auth/providers/email";
+import { canAuthenticateWithAccessControl, resolveEffectiveAccess } from "@/lib/access-control";
 import { recordSuccessfulAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
 import {
   GUEST_EMAIL_PROVIDER_ID,
   allowedCurrentPrivateDashboardGuestEmails,
   allowedGuestEmails,
-  guestAccessLevelForEmail,
-  guestEmailAllowed,
   guestMagicLinkEnabled,
   guestMagicLinkMaxAgeSeconds,
   normalizeEmail,
@@ -26,10 +25,10 @@ const allowedGuestEmailSet = allowedGuestEmails();
 const allowedCurrentPrivateDashboardGuestEmailSet = allowedCurrentPrivateDashboardGuestEmails();
 const guestMagicLinksEnabled = guestMagicLinkEnabled();
 
-function accessLevelForProvider(provider: string, email: string): AuthLoginAccessLevel | null {
-  if (provider === "google") return "workspace";
-  if (provider === "google-guest") return guestAccessLevelForEmail(email);
-  if (provider === GUEST_EMAIL_PROVIDER_ID) return guestAccessLevelForEmail(email);
+async function accessLevelForProvider(provider: string, email: string): Promise<AuthLoginAccessLevel | null> {
+  if (provider === "google" || provider === "google-guest" || provider === GUEST_EMAIL_PROVIDER_ID) {
+    return (await resolveEffectiveAccess(email)).accessLevel as AuthLoginAccessLevel;
+  }
   return null;
 }
 
@@ -132,7 +131,7 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (provider === "google") {
-        const allowed = normalizedEmail.endsWith(`@${allowedDomain}`);
+        const allowed = normalizedEmail.endsWith(`@${allowedDomain}`) && (await canAuthenticateWithAccessControl(normalizedEmail));
         console.info(
           `[auth] ${allowed ? "allow" : "deny"} provider=google email=${normalizedEmail} reason=domain_${allowed ? "match" : "mismatch"}`
         );
@@ -140,8 +139,8 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (provider === "google-guest") {
-        const allowed = guestOauthEnabled && allowedGuestEmailSet.has(normalizedEmail);
-        const accessLevel = guestAccessLevelForEmail(normalizedEmail);
+        const allowed = guestOauthEnabled && (await canAuthenticateWithAccessControl(normalizedEmail));
+        const accessLevel = (await resolveEffectiveAccess(normalizedEmail)).accessLevel;
         console.info(
           `[auth] ${allowed ? "allow" : "deny"} provider=google-guest email=${normalizedEmail} access_level=${accessLevel} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
         );
@@ -149,8 +148,8 @@ export const authOptions: NextAuthOptions = {
       }
 
       if (provider === GUEST_EMAIL_PROVIDER_ID) {
-        const allowed = guestMagicLinksEnabled && guestEmailAllowed(normalizedEmail);
-        const accessLevel = guestAccessLevelForEmail(normalizedEmail);
+        const allowed = guestMagicLinksEnabled && (await canAuthenticateWithAccessControl(normalizedEmail));
+        const accessLevel = (await resolveEffectiveAccess(normalizedEmail)).accessLevel;
         if (verificationRequest) {
           console.info(
             `[auth] ${allowed ? "allow" : "suppress"} provider=${GUEST_EMAIL_PROVIDER_ID} email=${normalizedEmail} access_level=${accessLevel} reason=${allowed ? "guest_allowlist" : "guest_not_allowlisted"}`
@@ -179,7 +178,7 @@ export const authOptions: NextAuthOptions = {
       const email = normalizeEmail((profile as { email?: unknown } | undefined)?.email ?? user?.email);
       if (!email) return;
 
-      const accessLevel = accessLevelForProvider(provider, email);
+      const accessLevel = await accessLevelForProvider(provider, email);
       if (!accessLevel) return;
 
       await recordSuccessfulAuthLogin({

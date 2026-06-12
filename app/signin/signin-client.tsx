@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { signIn } from "next-auth/react";
-import { GUEST_EMAIL_PROVIDER_ID } from "@/lib/auth-guest-email";
+import { GUEST_EMAIL_PROVIDER_ID } from "@/lib/auth-constants";
 
 const errorText: Record<string, string> = {
   AccessDenied: "Access denied. Use a verified account from the allowed company domain or the configured guest allowlist.",

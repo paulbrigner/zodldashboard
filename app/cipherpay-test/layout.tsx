@@ -1,4 +1,6 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
+import { canReadDashboard } from "@/lib/access-control";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { SignOutButton } from "../sign-out-button";
 import { CipherPayTestNavLinks } from "./nav-links";
@@ -11,6 +13,9 @@ export default async function CipherPayTestLayout({
   children: React.ReactNode;
 }>) {
   const viewer = await requireAuthenticatedViewer("/cipherpay-test");
+  if (!canReadDashboard(viewer, "cipherpay-test")) {
+    redirect("/");
+  }
 
   const identityText =
     viewer.mode === "local-bypass"

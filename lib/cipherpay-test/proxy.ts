@@ -1,6 +1,7 @@
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { jsonError } from "@/lib/xmonitor/http";
 import { resolveApiRouteViewer } from "@/lib/api-route-viewer";
+import { canReadDashboard } from "@/lib/access-control";
 
 function proxySecret(): string | null {
   const value = process.env.XMONITOR_USER_PROXY_SECRET;
@@ -30,6 +31,9 @@ export async function proxyCipherPayViewerRequest(request: Request, targetPath: 
   const viewer = await resolveApiRouteViewer(new URL(request.url).pathname);
   if (!viewer) {
     return jsonError("authentication required", 401);
+  }
+  if (!canReadDashboard(viewer, "cipherpay-test")) {
+    return jsonError("forbidden", 403);
   }
 
   const secret = proxySecret();

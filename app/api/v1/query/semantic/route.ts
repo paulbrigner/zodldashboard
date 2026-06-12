@@ -1,4 +1,5 @@
 import { resolveApiRouteViewer } from "@/lib/api-route-viewer";
+import { canReadDashboard } from "@/lib/access-control";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { jsonError } from "@/lib/xmonitor/http";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
@@ -11,6 +12,9 @@ export async function POST(request: Request) {
   const viewer = await resolveApiRouteViewer(new URL(request.url).pathname);
   if (!viewer) {
     return jsonError("authentication required", 401);
+  }
+  if (!canReadDashboard(viewer, "x-monitor")) {
+    return jsonError("forbidden", 403);
   }
 
   const viewerHeaders = buildViewerProxyHeaders(viewer);

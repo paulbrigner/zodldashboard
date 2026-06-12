@@ -2782,6 +2782,182 @@ p {
   color: #9e1835;
 }
 
+.access-admin-shell {
+  width: min(1280px, 100%);
+}
+
+.access-admin-body {
+  margin-top: 1.15rem;
+  display: grid;
+  gap: 1.1rem;
+}
+
+.access-admin-section {
+  border: 1px solid var(--border);
+  border-radius: 0.85rem;
+  background: #ffffff;
+  padding: 0.95rem;
+  display: grid;
+  gap: 0.9rem;
+}
+
+.access-admin-section-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.85rem;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.access-admin-section-header h2,
+.access-admin-section h3,
+.access-admin-section h4 {
+  margin: 0;
+}
+
+.access-admin-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.95fr) minmax(280px, 1fr);
+  gap: 0.9rem;
+  align-items: start;
+}
+
+.access-admin-grid-wide {
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.access-admin-form,
+.access-admin-panel {
+  border: 1px solid #d8e4fb;
+  border-radius: 0.75rem;
+  background: var(--surface-alt);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.72rem;
+}
+
+.access-admin-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.72rem;
+  align-items: end;
+}
+
+.access-admin-field {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.access-admin-field span,
+.access-admin-checkbox span {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #315a9e;
+  font-weight: 700;
+}
+
+.access-admin-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.56rem;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.92rem;
+  background: #ffffff;
+  color: var(--text-primary);
+  font-family: inherit;
+}
+
+.access-admin-checkbox {
+  display: flex;
+  gap: 0.48rem;
+  align-items: center;
+}
+
+.access-admin-inline-button {
+  align-self: end;
+}
+
+.access-admin-preview-grid,
+.access-admin-log-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+  align-items: end;
+}
+
+.access-admin-preview-grid ul {
+  margin: 0.45rem 0 0;
+  padding-left: 1.1rem;
+}
+
+.access-admin-preview-grid li {
+  margin-top: 0.28rem;
+}
+
+.access-admin-table-wrap {
+  overflow-x: auto;
+}
+
+.access-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.access-admin-table th,
+.access-admin-table td {
+  border-bottom: 1px solid #d8e4fb;
+  text-align: left;
+  vertical-align: top;
+  padding: 0.58rem;
+}
+
+.access-admin-table th {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #315a9e;
+}
+
+.access-admin-table p {
+  margin: 0.22rem 0 0;
+}
+
+.access-admin-mono {
+  font-family: "SFMono-Regular", "Consolas", "Liberation Mono", monospace;
+  font-size: 0.82rem;
+  word-break: break-word;
+}
+
+.access-admin-assignment-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.access-admin-assignment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.42rem;
+  border: 1px solid #cbd9f3;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #254f95;
+  padding: 0.28rem 0.36rem 0.28rem 0.58rem;
+}
+
+.access-admin-assignment-chip button {
+  border: 1px solid #cbd9f3;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #254f95;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.76rem;
+  padding: 0.16rem 0.42rem;
+}
+
 @media (max-width: 720px) {
   .page {
     padding: 1rem;
@@ -2841,6 +3017,11 @@ p {
     min-width: 0;
   }
 
+  .access-admin-grid,
+  .access-admin-two-col {
+    grid-template-columns: 1fr;
+  }
+
   .regulatory-two-column,
   .regulatory-kanban,
   .appstores-two-column {
@@ -2852,7 +3033,9 @@ p {
   .appstores-table th,
   .appstores-table td,
   .cipherpay-table th,
-  .cipherpay-table td {
+  .cipherpay-table td,
+  .access-admin-table th,
+  .access-admin-table td {
     padding: 0.48rem;
     font-size: 0.84rem;
   }

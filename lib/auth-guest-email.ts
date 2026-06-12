@@ -1,4 +1,6 @@
 import type { SendVerificationRequestParams } from "next-auth/providers/email";
+import { canAuthenticateWithAccessControl } from "@/lib/access-control";
+import { GUEST_EMAIL_PROVIDER_ID } from "@/lib/auth-constants";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { allowedGuestEmails, guestEmailAllowed, normalizeEmail } from "@/lib/viewer-access";
 
@@ -14,11 +16,11 @@ export {
   parseEmailAllowlist,
 } from "@/lib/viewer-access";
 
+export { GUEST_EMAIL_PROVIDER_ID } from "@/lib/auth-constants";
+
 const PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const DEFAULT_MAX_AGE_SECONDS = 15 * 60;
 const DEFAULT_TIMEOUT_MS = 10_000;
-
-export const GUEST_EMAIL_PROVIDER_ID = "email";
 
 function trimValue(value: string | undefined): string | null {
   if (typeof value !== "string") return null;
@@ -177,7 +179,7 @@ export async function sendGuestMagicLinkVerificationRequest(
 ): Promise<void> {
   const identifier = normalizeEmail(params.identifier);
   const enabled = guestMagicLinkEnabled();
-  const allowed = enabled && guestEmailAllowed(identifier);
+  const allowed = enabled && (await canAuthenticateWithAccessControl(identifier));
 
   if (!enabled) {
     throw new Error("guest email magic links are disabled");
