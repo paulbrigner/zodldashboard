@@ -152,6 +152,7 @@ VALUES
   ('dashboard:zodl-roadmap:read', 'dashboard', 'zodl-roadmap', 'read', 'Read Zodl Roadmap', 'Open the Zodl Roadmap private dashboard.', TRUE),
   ('dashboard:pgpz-roadmap:read', 'dashboard', 'pgpz-roadmap', 'read', 'Read Accrediv Updates', 'Open the Accrediv Updates and PGPZ private dashboard.', TRUE),
   ('dashboard:arktouros:read', 'dashboard', 'arktouros', 'read', 'Read Arktouros', 'Open the Arktouros private dashboard.', TRUE),
+  ('dashboard:2026-zodl-summit:read', 'dashboard', '2026-zodl-summit', 'read', 'Read Zodl Summit', 'Open the 2026 Zodl Summit private dashboard.', TRUE),
   ('dashboard:cipherpay-test:read', 'dashboard', 'cipherpay-test', 'read', 'Read CipherPay Test', 'Open the CipherPay Test dashboard.', TRUE),
   ('dashboard:regulatory-risk:read', 'dashboard', 'regulatory-risk', 'read', 'Read Regulatory Risk', 'Open the Regulatory Risk dashboard.', TRUE),
   ('dashboard:app-store-compliance:read', 'dashboard', 'app-store-compliance', 'read', 'Read App Store Dashboard', 'Open the App Store Compliance dashboard.', TRUE),
@@ -189,7 +190,8 @@ VALUES
   ('xmonitor-guests', 'X Monitor Guests', 'External guests with X Monitor access.', TRUE),
   ('zodl-roadmap-guests', 'Zodl Roadmap Guests', 'External guests for the Zodl Roadmap dashboard.', TRUE),
   ('accrediv-guests', 'Accrediv Guests', 'External guests for Accrediv Updates and PGPZ status.', TRUE),
-  ('arktouros-guests', 'Arktouros Guests', 'External guests for the Arktouros dashboard.', TRUE)
+  ('arktouros-guests', 'Arktouros Guests', 'External guests for the Arktouros dashboard.', TRUE),
+  ('2026-zodl-summit-guests', '2026 Zodl Summit Guests', 'External guests for the 2026 Zodl Summit dashboard.', TRUE)
 ON CONFLICT (group_key) DO UPDATE
 SET name = EXCLUDED.name,
     description = EXCLUDED.description,
@@ -202,6 +204,7 @@ VALUES
   ('workspace-members', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
   ('workspace-members', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
   ('workspace-members', 'dashboard-viewer', 'dashboard', 'arktouros'),
+  ('workspace-members', 'dashboard-viewer', 'dashboard', '2026-zodl-summit'),
   ('workspace-members', 'dashboard-viewer', 'dashboard', 'cipherpay-test'),
   ('workspace-members', 'dashboard-viewer', 'dashboard', 'regulatory-risk'),
   ('workspace-members', 'dashboard-viewer', 'dashboard', 'app-store-compliance'),
@@ -214,7 +217,8 @@ VALUES
   ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
   ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
   ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
-  ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'arktouros')
+  ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
+  ('2026-zodl-summit-guests', 'dashboard-viewer', 'dashboard', '2026-zodl-summit')
 ON CONFLICT DO NOTHING;
 
 DO $$

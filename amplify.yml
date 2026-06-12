@@ -75,6 +75,28 @@ frontend:
           else
             echo "Arktouros private repo env vars not complete; skipping private content checkout."
           fi
+        - |
+          if [ -n "${ZODL_SUMMIT_PRIVATE_REPO:-}" ] && [ -n "${ZODL_SUMMIT_DEPLOY_KEY_B64:-}" ]; then
+            rm -rf .private/2026-zodl-summit
+            mkdir -p ~/.ssh
+            trap 'rm -f ~/.ssh/zodl-summit-deploy-key' EXIT
+            printf "%s" "$ZODL_SUMMIT_DEPLOY_KEY_B64" | base64 --decode > ~/.ssh/zodl-summit-deploy-key
+            chmod 600 ~/.ssh/zodl-summit-deploy-key
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/zodl-summit-deploy-key -o IdentitiesOnly=yes" git clone --depth 1 --branch "${ZODL_SUMMIT_PRIVATE_BRANCH:-main}" "$ZODL_SUMMIT_PRIVATE_REPO" .private/2026-zodl-summit
+            rm -f ~/.ssh/zodl-summit-deploy-key
+            trap - EXIT
+          elif [ -n "${ZODL_SUMMIT_PRIVATE_REPO:-}" ] && [ -n "${ZODL_SUMMIT_GITHUB_TOKEN:-}" ]; then
+            rm -rf .private/2026-zodl-summit
+            trap 'rm -f ~/.netrc' EXIT
+            printf "machine github.com\n  login x-access-token\n  password %s\n" "$ZODL_SUMMIT_GITHUB_TOKEN" > ~/.netrc
+            chmod 600 ~/.netrc
+            git clone --depth 1 --branch "${ZODL_SUMMIT_PRIVATE_BRANCH:-main}" "$ZODL_SUMMIT_PRIVATE_REPO" .private/2026-zodl-summit
+            rm -f ~/.netrc
+            trap - EXIT
+          else
+            echo "Zodl Summit private repo env vars not complete; skipping private content checkout."
+          fi
     build:
       commands:
         - rm -f .env.production
@@ -102,6 +124,8 @@ frontend:
         - env | grep -e ZODL_ROADMAP_HTML_PATH >> .env.production || true
         - env | grep -e PGPZ_ROADMAP_HTML_PATH >> .env.production || true
         - env | grep -e ARKTOUROS_HTML_PATH >> .env.production || true
+        - env | grep -e ZODL_SUMMIT_HTML_PATH >> .env.production || true
+        - env | grep -e ALLOWED_ZODL_SUMMIT_GUEST_EMAILS >> .env.production || true
         - env | grep -e DATABASE_URL >> .env.production || true
         - env | grep -e PGHOST >> .env.production || true
         - env | grep -e PGPORT >> .env.production || true

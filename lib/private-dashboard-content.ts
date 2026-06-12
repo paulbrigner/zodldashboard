@@ -4,6 +4,7 @@ import { isAbsolute, resolve } from "node:path";
 const DEFAULT_ZODL_ROADMAP_HTML_PATH = ".private/zodl-roadmap/index.html";
 const DEFAULT_PGPZ_ROADMAP_HTML_PATH = ".private/pgpz-roadmap/index.html";
 const DEFAULT_ARKTOUROS_HTML_PATH = ".private/arktouros/index.html";
+const DEFAULT_ZODL_SUMMIT_HTML_PATH = ".private/2026-zodl-summit/index.html";
 
 type NodeSystemError = Error & {
   code?: string;
@@ -29,6 +30,10 @@ export function getPgpzRoadmapHtmlPath(): string {
 
 export function getArktourosHtmlPath(): string {
   return resolvePrivatePath(process.env.ARKTOUROS_HTML_PATH, DEFAULT_ARKTOUROS_HTML_PATH);
+}
+
+export function getZodlSummitHtmlPath(): string {
+  return resolvePrivatePath(process.env.ZODL_SUMMIT_HTML_PATH, DEFAULT_ZODL_SUMMIT_HTML_PATH);
 }
 
 export async function readZodlRoadmapHtml(): Promise<string | null> {
@@ -61,6 +66,20 @@ export async function readPgpzRoadmapHtml(): Promise<string | null> {
 
 export async function readArktourosHtml(): Promise<string | null> {
   const htmlPath = getArktourosHtmlPath();
+
+  try {
+    return await readFile(htmlPath, "utf8");
+  } catch (error) {
+    if (isMissingFileError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function readZodlSummitHtml(): Promise<string | null> {
+  const htmlPath = getZodlSummitHtmlPath();
 
   try {
     return await readFile(htmlPath, "utf8");

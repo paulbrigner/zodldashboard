@@ -1,14 +1,17 @@
 import {
   getArktourosHtmlPath,
   getPgpzRoadmapHtmlPath,
+  getZodlSummitHtmlPath,
   getZodlRoadmapHtmlPath,
   readArktourosHtml,
   readPgpzRoadmapHtml,
+  readZodlSummitHtml,
   readZodlRoadmapHtml,
 } from "@/lib/private-dashboard-content";
 import {
   recordArktourosAccess,
   recordPgpzRoadmapAccess,
+  recordZodlSummitAccess,
   recordZodlRoadmapAccess,
   type RoadmapAccessOutcome,
 } from "@/lib/roadmap-access-events";
@@ -138,6 +141,27 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     getHtmlPath: getArktourosHtmlPath,
     canAccess: (viewer) => canReadDashboard({ accessLevel: viewer.accessLevel, permissions: viewer.permissions || [] }, "arktouros"),
     recordAccess: recordArktourosAccess,
+  },
+  {
+    id: "2026-zodl-summit",
+    kind: "private-html",
+    name: "Zodl Summit",
+    navLabel: "Zodl Summit",
+    description:
+      "Private working dashboard for the 2026 Zodl Summit: planning context, logistics, agenda tracks, stakeholder notes, and coordination status.",
+    href: "/2026-zodl-summit",
+    contentHref: "/2026-zodl-summit/content",
+    prefetch: false,
+    workspaceOnly: true,
+    requiredPermission: dashboardReadPermission("2026-zodl-summit"),
+    visible: true,
+    missingTitle: "Zodl Summit unavailable",
+    missingHeading: "Zodl Summit content is not configured",
+    missingBody: "The private HTML file was not found in the configured 2026 Zodl Summit content path.",
+    readHtml: readZodlSummitHtml,
+    getHtmlPath: getZodlSummitHtmlPath,
+    canAccess: (viewer) => canReadDashboard({ accessLevel: viewer.accessLevel, permissions: viewer.permissions || [] }, "2026-zodl-summit"),
+    recordAccess: recordZodlSummitAccess,
   },
   {
     id: "x-monitor",

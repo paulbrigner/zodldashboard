@@ -10,7 +10,12 @@ const DEFAULT_METHOD = "GET";
 const ZODL_ROADMAP_PATH = "/zodl-roadmap";
 const PGPZ_ROADMAP_PATH = "/pgpz-roadmap";
 const ARKTOUROS_PATH = "/arktouros";
-type PrivateDashboardAccessEventName = "zodl_roadmap_access" | "pgpz_roadmap_access" | "arktouros_access";
+const ZODL_SUMMIT_PATH = "/2026-zodl-summit";
+type PrivateDashboardAccessEventName =
+  | "zodl_roadmap_access"
+  | "pgpz_roadmap_access"
+  | "arktouros_access"
+  | "zodl_summit_access";
 
 type HeaderReader = {
   get(name: string): string | null;
@@ -252,5 +257,13 @@ export async function recordArktourosAccess(input: Omit<RoadmapAccessEventInput,
     ...input,
     eventName: "arktouros_access",
     path: ARKTOUROS_PATH,
+  });
+}
+
+export async function recordZodlSummitAccess(input: Omit<RoadmapAccessEventInput, "eventName" | "path">): Promise<void> {
+  await recordZodlRoadmapAccess({
+    ...input,
+    eventName: "zodl_summit_access",
+    path: ZODL_SUMMIT_PATH,
   });
 }

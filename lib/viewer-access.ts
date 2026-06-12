@@ -48,12 +48,16 @@ export function allowedArktourosGuestEmails(): Set<string> {
   );
 }
 
+export function allowedZodlSummitGuestEmails(): Set<string> {
+  return parseEmailAllowlist(process.env.ALLOWED_ZODL_SUMMIT_GUEST_EMAILS || "");
+}
+
 export function allowedCurrentPrivateDashboardGuestEmails(): Set<string> {
   return mergeEmailSets(allowedRoadmapGuestEmails(), allowedArktourosGuestEmails());
 }
 
 export function allowedGuestEmails(): Set<string> {
-  return mergeEmailSets(allowedXMonitorGuestEmails(), allowedCurrentPrivateDashboardGuestEmails());
+  return mergeEmailSets(allowedXMonitorGuestEmails(), allowedCurrentPrivateDashboardGuestEmails(), allowedZodlSummitGuestEmails());
 }
 
 export function guestEmailAllowed(email: string): boolean {

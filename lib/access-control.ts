@@ -8,6 +8,7 @@ import {
   allowedGuestEmails,
   allowedRoadmapGuestEmails,
   allowedXMonitorGuestEmails,
+  allowedZodlSummitGuestEmails,
   guestAccessLevelForEmail,
   normalizeEmail,
   parseEmailAllowlist,
@@ -188,7 +189,7 @@ type PermissionRow = {
   scope_key: string;
 };
 
-const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros"];
+const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros", "2026-zodl-summit"];
 
 export const accessControlDashboards: AccessControlDashboardResource[] = [
   { id: "x-monitor", name: "X Monitor", permissionKey: dashboardReadPermission("x-monitor"), visible: true },
@@ -200,6 +201,7 @@ export const accessControlDashboards: AccessControlDashboardResource[] = [
     visible: true,
   },
   { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: dashboardReadPermission("arktouros"), visible: true },
+  { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: dashboardReadPermission("2026-zodl-summit"), visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: dashboardReadPermission("cipherpay-test"), visible: false },
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: dashboardReadPermission("regulatory-risk"), visible: false },
   {
@@ -230,6 +232,7 @@ function configuredAccessEmails(): Set<string> {
     ...allowedXMonitorGuestEmails(),
     ...allowedRoadmapGuestEmails(),
     ...allowedArktourosGuestEmails(),
+    ...allowedZodlSummitGuestEmails(),
   ]);
 }
 
@@ -428,6 +431,10 @@ async function seedEnvMembershipsForEmail(email: string): Promise<void> {
 
   if (allowedArktourosGuestEmails().has(normalizedEmail)) {
     await upsertMembership("arktouros-guests", normalizedEmail, "legacy-env");
+  }
+
+  if (allowedZodlSummitGuestEmails().has(normalizedEmail)) {
+    await upsertMembership("2026-zodl-summit-guests", normalizedEmail, "legacy-env");
   }
 }
 
@@ -768,6 +775,7 @@ function dashboardIdForPath(path: string | null): string | null {
   if (pathname === "/zodl-roadmap" || pathname.startsWith("/zodl-roadmap/")) return "zodl-roadmap";
   if (pathname === "/pgpz-roadmap" || pathname.startsWith("/pgpz-roadmap/")) return "pgpz-roadmap";
   if (pathname === "/arktouros" || pathname.startsWith("/arktouros/")) return "arktouros";
+  if (pathname === "/2026-zodl-summit" || pathname.startsWith("/2026-zodl-summit/")) return "2026-zodl-summit";
   if (pathname === "/cipherpay-test" || pathname.startsWith("/cipherpay-test/")) return "cipherpay-test";
   if (pathname === "/regulatory-risk" || pathname.startsWith("/regulatory-risk/")) return "regulatory-risk";
   if (pathname === "/app-stores" || pathname.startsWith("/app-stores/")) return "app-store-compliance";
@@ -868,6 +876,7 @@ async function directAccessLog(actorEmail: string, filters: AccessControlAccessL
             WHEN path = '/zodl-roadmap' OR path LIKE '/zodl-roadmap/%' THEN 'zodl-roadmap'
             WHEN path = '/pgpz-roadmap' OR path LIKE '/pgpz-roadmap/%' THEN 'pgpz-roadmap'
             WHEN path = '/arktouros' OR path LIKE '/arktouros/%' THEN 'arktouros'
+            WHEN path = '/2026-zodl-summit' OR path LIKE '/2026-zodl-summit/%' THEN '2026-zodl-summit'
             ELSE NULL
           END AS dashboard_id,
           path::text,

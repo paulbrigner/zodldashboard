@@ -20,12 +20,13 @@ const ROADMAP_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "l
 const ROADMAP_ACCESS_OUTCOMES = new Set(["allowed", "denied_guest", "content_missing"]);
 const XMONITOR_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "local-bypass"]);
 const ACCESS_ADMIN_PERMISSION = "admin:access-control:manage";
-const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros"];
+const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros", "2026-zodl-summit"];
 const ACCESS_CONTROL_DASHBOARDS = [
   { id: "x-monitor", name: "X Monitor", permissionKey: "dashboard:x-monitor:read", visible: true },
   { id: "zodl-roadmap", name: "Zodl Roadmap", permissionKey: "dashboard:zodl-roadmap:read", visible: true },
   { id: "pgpz-roadmap", name: "Accrediv Updates & PGPZ Status", permissionKey: "dashboard:pgpz-roadmap:read", visible: true },
   { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: "dashboard:arktouros:read", visible: true },
+  { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: "dashboard:2026-zodl-summit:read", visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: "dashboard:cipherpay-test:read", visible: false },
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },
   { id: "app-store-compliance", name: "App Store Dashboard", permissionKey: "dashboard:app-store-compliance:read", visible: false },
@@ -2681,6 +2682,7 @@ function configuredAccessEmailsForAccess() {
     ...allowedXMonitorGuestEmailsForAccess(),
     ...allowedRoadmapGuestEmailsForAccess(),
     ...allowedArktourosGuestEmailsForAccess(),
+    ...allowedZodlSummitGuestEmailsForAccess(),
   ]);
 }
 
@@ -2700,6 +2702,10 @@ function allowedArktourosGuestEmailsForAccess() {
     ...parseAccessEmailAllowlist(BUILT_IN_ARKTOUROS_GUEST_EMAILS),
     ...parseAccessEmailAllowlist(process.env.ALLOWED_ARKTOUROS_GUEST_EMAILS || ""),
   ]);
+}
+
+function allowedZodlSummitGuestEmailsForAccess() {
+  return parseAccessEmailAllowlist(process.env.ALLOWED_ZODL_SUMMIT_GUEST_EMAILS || "");
 }
 
 function accessLevelFromPermissions(email, permissions) {
@@ -2733,6 +2739,7 @@ async function seedAccessControlDefaults() {
         ('dashboard:zodl-roadmap:read', 'dashboard', 'zodl-roadmap', 'read', 'Read Zodl Roadmap', 'Open the Zodl Roadmap private dashboard.', TRUE),
         ('dashboard:pgpz-roadmap:read', 'dashboard', 'pgpz-roadmap', 'read', 'Read Accrediv Updates', 'Open the Accrediv Updates and PGPZ private dashboard.', TRUE),
         ('dashboard:arktouros:read', 'dashboard', 'arktouros', 'read', 'Read Arktouros', 'Open the Arktouros private dashboard.', TRUE),
+        ('dashboard:2026-zodl-summit:read', 'dashboard', '2026-zodl-summit', 'read', 'Read Zodl Summit', 'Open the 2026 Zodl Summit private dashboard.', TRUE),
         ('dashboard:cipherpay-test:read', 'dashboard', 'cipherpay-test', 'read', 'Read CipherPay Test', 'Open the CipherPay Test dashboard.', TRUE),
         ('dashboard:regulatory-risk:read', 'dashboard', 'regulatory-risk', 'read', 'Read Regulatory Risk', 'Open the Regulatory Risk dashboard.', TRUE),
         ('dashboard:app-store-compliance:read', 'dashboard', 'app-store-compliance', 'read', 'Read App Store Dashboard', 'Open the App Store Compliance dashboard.', TRUE),
@@ -2770,7 +2777,8 @@ async function seedAccessControlDefaults() {
         ('xmonitor-guests', 'X Monitor Guests', 'External guests with X Monitor access.', TRUE),
         ('zodl-roadmap-guests', 'Zodl Roadmap Guests', 'External guests for the Zodl Roadmap dashboard.', TRUE),
         ('accrediv-guests', 'Accrediv Guests', 'External guests for Accrediv Updates and PGPZ status.', TRUE),
-        ('arktouros-guests', 'Arktouros Guests', 'External guests for the Arktouros dashboard.', TRUE)
+        ('arktouros-guests', 'Arktouros Guests', 'External guests for the Arktouros dashboard.', TRUE),
+        ('2026-zodl-summit-guests', '2026 Zodl Summit Guests', 'External guests for the 2026 Zodl Summit dashboard.', TRUE)
       ON CONFLICT (group_key) DO UPDATE
       SET name = EXCLUDED.name,
           description = EXCLUDED.description,
@@ -2783,6 +2791,7 @@ async function seedAccessControlDefaults() {
         ('workspace-members', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
         ('workspace-members', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
         ('workspace-members', 'dashboard-viewer', 'dashboard', 'arktouros'),
+        ('workspace-members', 'dashboard-viewer', 'dashboard', '2026-zodl-summit'),
         ('workspace-members', 'dashboard-viewer', 'dashboard', 'cipherpay-test'),
         ('workspace-members', 'dashboard-viewer', 'dashboard', 'regulatory-risk'),
         ('workspace-members', 'dashboard-viewer', 'dashboard', 'app-store-compliance'),
@@ -2795,7 +2804,8 @@ async function seedAccessControlDefaults() {
         ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
         ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
         ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
-        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'arktouros')
+        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
+        ('2026-zodl-summit-guests', 'dashboard-viewer', 'dashboard', '2026-zodl-summit')
       ON CONFLICT DO NOTHING;
     `
   );
@@ -2847,6 +2857,9 @@ async function seedAccessMembershipsForEmail(email) {
   }
   if (allowedArktourosGuestEmailsForAccess().has(normalizedEmail)) {
     await upsertAccessMembership("arktouros-guests", normalizedEmail, "legacy-env");
+  }
+  if (allowedZodlSummitGuestEmailsForAccess().has(normalizedEmail)) {
+    await upsertAccessMembership("2026-zodl-summit-guests", normalizedEmail, "legacy-env");
   }
 }
 
@@ -6530,6 +6543,7 @@ async function buildAccessControlAccessLog(actorEmail, body) {
             WHEN path = '/zodl-roadmap' OR path LIKE '/zodl-roadmap/%' THEN 'zodl-roadmap'
             WHEN path = '/pgpz-roadmap' OR path LIKE '/pgpz-roadmap/%' THEN 'pgpz-roadmap'
             WHEN path = '/arktouros' OR path LIKE '/arktouros/%' THEN 'arktouros'
+            WHEN path = '/2026-zodl-summit' OR path LIKE '/2026-zodl-summit/%' THEN '2026-zodl-summit'
             ELSE NULL
           END AS dashboard_id,
           path::text, outcome::text, status_code, accessed_at AS occurred_at

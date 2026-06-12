@@ -10,6 +10,7 @@ export {
   allowedGuestEmails,
   allowedRoadmapGuestEmails,
   allowedXMonitorGuestEmails,
+  allowedZodlSummitGuestEmails,
   guestAccessLevelForEmail,
   guestEmailAllowed,
   normalizeEmail,
