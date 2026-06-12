@@ -27,6 +27,7 @@ const COLLECTOR_MODES = new Set(["priority", "discovery"]);
 
 const DEFAULT_WATCHLIST_TIERS = {
   bostonzcash: "teammate",
+  cozymaximalist: "teammate",
   dwillems42: "teammate",
   feministplt: "teammate",
   jswihart: "teammate",

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { canAccessDashboard, visibleDashboards } from "@/lib/dashboard-catalog";
+import { canAccessDashboard, visibleDashboardsForViewer } from "@/lib/dashboard-catalog";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { SignOutButton } from "./sign-out-button";
 
@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 export default async function HomePage() {
   const viewer = await requireAuthenticatedViewer("/");
-  const dashboards = visibleDashboards();
+  const dashboards = visibleDashboardsForViewer(viewer);
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`

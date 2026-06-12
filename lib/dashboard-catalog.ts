@@ -230,6 +230,22 @@ export function visibleDashboards(): DashboardCatalogItem[] {
   return dashboardCatalog.filter((dashboard) => dashboard.visible);
 }
 
+export function visibleDashboardsForViewer(viewer: DashboardAccessInput): DashboardCatalogItem[] {
+  return visibleDashboards()
+    .map((dashboard, index) => ({
+      dashboard,
+      index,
+      hasOpenAccess: Boolean(dashboard.href) && canAccessDashboard(dashboard, viewer),
+    }))
+    .sort((a, b) => {
+      if (a.hasOpenAccess !== b.hasOpenAccess) {
+        return a.hasOpenAccess ? -1 : 1;
+      }
+      return a.index - b.index;
+    })
+    .map((item) => item.dashboard);
+}
+
 export function navigableDashboards(): DashboardCatalogItem[] {
   return visibleDashboards().filter((dashboard) => Boolean(dashboard.href));
 }
