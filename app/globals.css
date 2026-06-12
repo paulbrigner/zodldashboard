@@ -2943,6 +2943,23 @@ p {
   word-break: break-word;
 }
 
+.access-admin-disclosure {
+  border: 1px solid var(--border);
+  border-radius: 0.72rem;
+  background: #f7faff;
+  padding: 0.62rem 0.72rem;
+}
+
+.access-admin-disclosure summary {
+  cursor: pointer;
+  color: #244a8d;
+  font-weight: 700;
+}
+
+.access-admin-disclosure[open] summary {
+  margin-bottom: 0.58rem;
+}
+
 .access-admin-assignment-list {
   display: flex;
   flex-wrap: wrap;

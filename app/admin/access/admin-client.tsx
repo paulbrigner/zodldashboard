@@ -42,6 +42,11 @@ function userLabel(user: AccessControlUser): string {
   return name ? `${name} <${user.email}>` : user.email;
 }
 
+function userLabelForEmail(snapshot: AccessControlSnapshot, email: string): string {
+  const user = snapshot.users.find((item) => item.email === email);
+  return user ? userLabel(user) : email;
+}
+
 function normalizeFormEmail(value: string): string {
   return value.trim().toLowerCase();
 }
@@ -388,6 +393,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
 
   const selectedGroups = !editingNewUser && selectedEmail ? userGroupKeys(snapshot, selectedEmail) : [];
   const selectedRoleAssignments = !editingNewUser && selectedEmail ? userRoleAssignments(snapshot, selectedEmail) : [];
+  const selectedGroupMembers = selectedGroup ? groupMemberEmails(snapshot, selectedGroup.groupKey) : [];
   const allowedDashboards = preview
     ? snapshot.dashboards.filter((dashboard) => dashboard.visible && (preview.permissions.includes(dashboard.permissionKey) || preview.permissions.includes("dashboard:*:read")))
     : [];
@@ -526,17 +532,19 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 ? selectedGroups.map((key) => `${groupLabel(snapshot, key)} (${key})`).join(", ")
                 : "No group memberships"}
             </p>
-            <h3>Current Role Assignments</h3>
-            <div className="access-admin-assignment-list">
-              {selectedRoleAssignments.map((assignment) => (
-                <span className="access-admin-assignment-chip" key={assignment.assignmentId}>
-                  {roleLabel(snapshot, assignment.roleKey)} via {groupLabel(snapshot, assignment.groupKey)}
-                  {" "}
-                  ({assignment.scopeType}:{dashboardLabel(snapshot, assignment.scopeKey)})
-                </span>
-              ))}
-              {selectedRoleAssignments.length === 0 ? <p className="subtle-text">No role assignments from current groups.</p> : null}
-            </div>
+            <details className="access-admin-disclosure">
+              <summary>Current Role Assignments ({selectedRoleAssignments.length})</summary>
+              <div className="access-admin-assignment-list">
+                {selectedRoleAssignments.map((assignment) => (
+                  <span className="access-admin-assignment-chip" key={assignment.assignmentId}>
+                    {roleLabel(snapshot, assignment.roleKey)} via {groupLabel(snapshot, assignment.groupKey)}
+                    {" "}
+                    ({assignment.scopeType}:{dashboardLabel(snapshot, assignment.scopeKey)})
+                  </span>
+                ))}
+                {selectedRoleAssignments.length === 0 ? <p className="subtle-text">No role assignments from current groups.</p> : null}
+              </div>
+            </details>
           </div>
         </div>
       </section>
@@ -592,6 +600,18 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               <span>Admin note</span>
               <textarea className="access-admin-input" onChange={(event) => setGroupAdminNote(event.target.value)} rows={3} value={groupAdminNote} />
             </label>
+            <details className="access-admin-disclosure">
+              <summary>Group Members ({selectedGroupMembers.length})</summary>
+              <div className="access-admin-assignment-list">
+                {selectedGroupMembers.map((email) => (
+                  <span className="access-admin-assignment-chip" key={email}>
+                    {userLabelForEmail(snapshot, email)}
+                  </span>
+                ))}
+                {!selectedGroup ? <p className="subtle-text">Select a group to view its members.</p> : null}
+                {selectedGroup && selectedGroupMembers.length === 0 ? <p className="subtle-text">No users are assigned to this group.</p> : null}
+              </div>
+            </details>
             <div className="button-row">
               <button className="button" disabled={loading} type="submit">{editingNewGroup ? "Create group" : "Save group"}</button>
               <button className="button button-secondary" disabled={loading} onClick={clearGroupForm} type="button">
