@@ -1,0 +1,128 @@
+"use client";
+
+import Link from "next/link";
+import { signOut } from "next-auth/react";
+import { useEffect, useId, useRef, useState } from "react";
+
+export type PrivateDashboardGlobalNavItem = {
+  href: string;
+  label: string;
+  active?: boolean;
+  prefetch?: boolean;
+};
+
+type PrivateDashboardGlobalNavProps = {
+  items: PrivateDashboardGlobalNavItem[];
+  canSignOut: boolean;
+};
+
+function linkClassName(active?: boolean): string {
+  return `private-dashboard-link${active ? " private-dashboard-link-active" : ""}`;
+}
+
+function menuLinkClassName(active?: boolean): string {
+  return `private-dashboard-menu-link${active ? " private-dashboard-menu-link-active" : ""}`;
+}
+
+export function PrivateDashboardGlobalNav({ items, canSignOut }: PrivateDashboardGlobalNavProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const menuId = useId();
+
+  useEffect(() => {
+    if (!menuOpen) return;
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+      }
+    }
+
+    function handlePointerDown(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [menuOpen]);
+
+  return (
+    <div className="private-dashboard-actions">
+      <nav className="private-dashboard-links private-dashboard-links-desktop" aria-label="Dashboard navigation">
+        {items.map((item) => (
+          <Link
+            aria-current={item.active ? "page" : undefined}
+            className={linkClassName(item.active)}
+            href={item.href}
+            key={item.href}
+            prefetch={item.prefetch}
+          >
+            {item.label}
+          </Link>
+        ))}
+      </nav>
+
+      <div className="private-dashboard-menu" ref={menuRef}>
+        <button
+          aria-controls={menuId}
+          aria-expanded={menuOpen}
+          aria-label={menuOpen ? "Close dashboard navigation" : "Open dashboard navigation"}
+          className="private-dashboard-menu-button"
+          onClick={() => setMenuOpen((open) => !open)}
+          type="button"
+        >
+          <span className="private-dashboard-menu-icon" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <span className="sr-only">Dashboard navigation</span>
+        </button>
+
+        {menuOpen ? (
+          <div className="private-dashboard-menu-panel" id={menuId}>
+            <nav className="private-dashboard-menu-links" aria-label="Dashboard navigation">
+              {items.map((item) => (
+                <Link
+                  aria-current={item.active ? "page" : undefined}
+                  className={menuLinkClassName(item.active)}
+                  href={item.href}
+                  key={item.href}
+                  onClick={() => setMenuOpen(false)}
+                  prefetch={item.prefetch}
+                >
+                  {item.label}
+                </Link>
+              ))}
+            </nav>
+            {canSignOut ? (
+              <button
+                className="button button-secondary private-dashboard-menu-signout"
+                onClick={() => void signOut({ callbackUrl: "/signin" })}
+                type="button"
+              >
+                Sign out
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+
+      {canSignOut ? (
+        <button
+          className="button button-secondary private-dashboard-signout-desktop"
+          onClick={() => void signOut({ callbackUrl: "/signin" })}
+          type="button"
+        >
+          Sign out
+        </button>
+      ) : null}
+    </div>
+  );
+}

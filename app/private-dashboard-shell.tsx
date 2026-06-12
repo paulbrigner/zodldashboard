@@ -1,24 +1,13 @@
-import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
-import {
-  canAccessDashboard,
-  findPrivateHtmlDashboard,
-  navigableDashboards,
-  type DashboardCatalogItem,
-  type PrivateHtmlDashboard,
-} from "@/lib/dashboard-catalog";
+import { canAccessDashboard, findPrivateHtmlDashboard, navigableDashboards } from "@/lib/dashboard-catalog";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import { SignOutButton } from "./sign-out-button";
+import { PrivateDashboardGlobalNav, type PrivateDashboardGlobalNavItem } from "./private-dashboard-global-nav";
 
 function identityText(viewer: Awaited<ReturnType<typeof requireAuthenticatedViewer>>): string {
   return viewer.mode === "local-bypass"
     ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
     : `Signed in as ${viewer.email}`;
-}
-
-function isActiveDashboard(dashboard: DashboardCatalogItem, activeDashboard: PrivateHtmlDashboard): boolean {
-  return dashboard.id === activeDashboard.id;
 }
 
 export async function PrivateDashboardShell({ dashboardId }: { dashboardId: string }) {
@@ -37,6 +26,15 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
   }
 
   const navDashboards = navigableDashboards().filter((item) => canAccessDashboard(item, viewer));
+  const navItems: PrivateDashboardGlobalNavItem[] = [
+    { href: "/", label: "All dashboards" },
+    ...navDashboards.map((item) => ({
+      active: item.id === dashboard.id,
+      href: item.href!,
+      label: item.navLabel,
+      prefetch: item.prefetch,
+    })),
+  ];
 
   return (
     <main className="private-dashboard-page">
@@ -51,28 +49,7 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
           <h1>{dashboard.name}</h1>
           <p className="private-dashboard-identity">{identityText(viewer)}</p>
         </div>
-        <div className="private-dashboard-actions">
-          <nav className="private-dashboard-links" aria-label="Dashboard navigation">
-            <Link className="private-dashboard-link" href="/">
-              All dashboards
-            </Link>
-            {navDashboards.map((item) => {
-              const active = isActiveDashboard(item, dashboard);
-              return (
-                <Link
-                  aria-current={active ? "page" : undefined}
-                  className={`private-dashboard-link${active ? " private-dashboard-link-active" : ""}`}
-                  href={item.href!}
-                  key={item.id}
-                  prefetch={item.prefetch}
-                >
-                  {item.navLabel}
-                </Link>
-              );
-            })}
-          </nav>
-          {viewer.canSignOut ? <SignOutButton /> : null}
-        </div>
+        <PrivateDashboardGlobalNav canSignOut={viewer.canSignOut} items={navItems} />
       </header>
       <iframe
         className="private-dashboard-frame"
