@@ -42,6 +42,11 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
     <main className="private-dashboard-page">
       <header className="private-dashboard-nav">
         <div className="private-dashboard-title-block">
+          <div className="brand-lockup brand-lockup-compact" aria-label="Zodl and Zcash">
+            <img className="brand-logo brand-logo-zodl" src="/brand/zodl-logo-black.png" alt="Zodl" width={1673} height={344} />
+            <span className="brand-divider" aria-hidden="true" />
+            <img className="brand-logo brand-logo-zcash" src="/brand/zcash-logo.svg" alt="Zcash" width={65} height={65} />
+          </div>
           <p className="eyebrow">Private dashboard</p>
           <h1>{dashboard.name}</h1>
           <p className="private-dashboard-identity">{identityText(viewer)}</p>

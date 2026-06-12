@@ -20,6 +20,15 @@ const NEW_ROLE_VALUE = "__new_role__";
 const ACCESS_LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 250];
 const DEFAULT_ACCESS_LOG_PAGE_SIZE = 50;
 
+type AccessAdminTab = "users" | "groups" | "access-log" | "directory";
+
+const ACCESS_ADMIN_TABS: Array<{ id: AccessAdminTab; label: string }> = [
+  { id: "users", label: "Users" },
+  { id: "groups", label: "Groups & Roles" },
+  { id: "access-log", label: "Access Log" },
+  { id: "directory", label: "Directory" },
+];
+
 type AdminResponse = {
   snapshot?: AccessControlSnapshot;
   preview?: EffectiveAccess;
@@ -104,6 +113,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<AccessAdminTab>("users");
 
   const [userEmail, setUserEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -413,7 +423,30 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
       {error ? <p className="cipherpay-error-text">{error}</p> : null}
       {notice ? <p className="cipherpay-valid-text">{notice}</p> : null}
 
-      <section className="access-admin-section">
+      <div className="access-admin-tabs" role="tablist" aria-label="Access admin sections">
+        {ACCESS_ADMIN_TABS.map((tab) => (
+          <button
+            aria-controls={`access-admin-panel-${tab.id}`}
+            aria-selected={activeTab === tab.id}
+            className={`access-admin-tab${activeTab === tab.id ? " access-admin-tab-active" : ""}`}
+            id={`access-admin-tab-${tab.id}`}
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            role="tab"
+            type="button"
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "users" ? (
+      <section
+        aria-labelledby="access-admin-tab-users"
+        className="access-admin-section"
+        id="access-admin-panel-users"
+        role="tabpanel"
+      >
         <header className="access-admin-section-header">
           <div>
             <h2>Users</h2>
@@ -548,8 +581,15 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section className="access-admin-section">
+      {activeTab === "groups" ? (
+      <section
+        aria-labelledby="access-admin-tab-groups"
+        className="access-admin-section"
+        id="access-admin-panel-groups"
+        role="tabpanel"
+      >
         <header className="access-admin-section-header">
           <div>
             <h2>Groups & Roles</h2>
@@ -742,7 +782,15 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
             </label>
             <div className="button-row">
               <button className="button" disabled={!membershipEmail || !membershipGroup || loading} type="submit">Apply membership</button>
-              <button className="button button-secondary" disabled={loading} onClick={clearUserForm} type="button">
+              <button
+                className="button button-secondary"
+                disabled={loading}
+                onClick={() => {
+                  clearUserForm();
+                  setActiveTab("users");
+                }}
+                type="button"
+              >
                 New user
               </button>
             </div>
@@ -805,8 +853,15 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
           </form>
         </div>
       </section>
+      ) : null}
 
-      <section className="access-admin-section">
+      {activeTab === "access-log" ? (
+      <section
+        aria-labelledby="access-admin-tab-access-log"
+        className="access-admin-section"
+        id="access-admin-panel-access-log"
+        role="tabpanel"
+      >
         <header className="access-admin-section-header">
           <div>
             <h2>User Access Log</h2>
@@ -908,8 +963,15 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
           </div>
         </div>
       </section>
+      ) : null}
 
-      <section className="access-admin-section">
+      {activeTab === "directory" ? (
+      <section
+        aria-labelledby="access-admin-tab-directory"
+        className="access-admin-section"
+        id="access-admin-panel-directory"
+        role="tabpanel"
+      >
         <header className="access-admin-section-header">
           <div>
             <h2>Directory Summary</h2>
@@ -982,6 +1044,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
           </table>
         </div>
       </section>
+      ) : null}
     </div>
   );
 }

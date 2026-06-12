@@ -44,6 +44,11 @@ export default function SignInClient({ error, guestOauthEnabled, guestEmailEnabl
   return (
     <main className="page">
       <section className="card">
+        <div className="brand-lockup" aria-label="Zodl and Zcash">
+          <img className="brand-logo brand-logo-zodl" src="/brand/zodl-logo-black.png" alt="Zodl" width={1673} height={344} />
+          <span className="brand-divider" aria-hidden="true" />
+          <img className="brand-logo brand-logo-zcash" src="/brand/zcash-logo.svg" alt="Zcash" width={65} height={65} />
+        </div>
         <p className="eyebrow">ZODL Dashboard Login</p>
         <h1>Sign in</h1>
         <p>Use your company Google account to continue. Guest sign-in may also be available through Google or an emailed magic link when pre-authorized. Email paul@zodl.com to request guest access.</p>
