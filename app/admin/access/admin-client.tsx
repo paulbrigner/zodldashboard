@@ -13,6 +13,8 @@ type AccessAdminClientProps = {
   initialSnapshot: AccessControlSnapshot;
 };
 
+const NEW_USER_VALUE = "__new_user__";
+
 type AdminResponse = {
   snapshot?: AccessControlSnapshot;
   preview?: EffectiveAccess;
@@ -56,7 +58,7 @@ function formatDateTime(value: string | null): string {
 
 export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const [selectedEmail, setSelectedEmail] = useState(initialSnapshot.users[0]?.email || "");
+  const [selectedEmail, setSelectedEmail] = useState(initialSnapshot.users[0]?.email || NEW_USER_VALUE);
   const [preview, setPreview] = useState<EffectiveAccess | null>(null);
   const [accessLog, setAccessLog] = useState<AccessControlAccessLogEntry[]>([]);
   const [notice, setNotice] = useState<string | null>(null);
@@ -103,6 +105,18 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     () => snapshot.users.find((user) => user.email === selectedEmail) || null,
     [snapshot.users, selectedEmail]
   );
+  const editingNewUser = selectedEmail === NEW_USER_VALUE;
+
+  function clearUserForm() {
+    setSelectedEmail(NEW_USER_VALUE);
+    setUserEmail("");
+    setFirstName("");
+    setLastName("");
+    setUserAdminNote("");
+    setUserStatus("active");
+    setPendingEmail("");
+    setPreview(null);
+  }
 
   useEffect(() => {
     if (!selectedUser) return;
@@ -183,7 +197,10 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   }
 
   async function previewUser(email = selectedEmail) {
-    if (!email) return;
+    if (!email || email === NEW_USER_VALUE) {
+      setPreview(null);
+      return;
+    }
     const response = await perform({ operation: "preview_user", email }, false);
     setPreview(response.preview || null);
   }
@@ -211,7 +228,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedGroups = selectedEmail ? userGroupKeys(snapshot, selectedEmail) : [];
+  const selectedGroups = !editingNewUser && selectedEmail ? userGroupKeys(snapshot, selectedEmail) : [];
   const allowedDashboards = preview
     ? snapshot.dashboards.filter((dashboard) => dashboard.visible && (preview.permissions.includes(dashboard.permissionKey) || preview.permissions.includes("dashboard:*:read")))
     : [];
@@ -230,13 +247,27 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
             <h2>Users</h2>
             <p className="subtle-text">Create users, store admin notes, request email changes, and send welcome instructions.</p>
           </div>
+          <button className="button button-secondary" disabled={loading} onClick={clearUserForm} type="button">
+            New user
+          </button>
         </header>
 
         <div className="access-admin-grid">
           <form className="access-admin-form" onSubmit={saveUser}>
             <label className="access-admin-field">
               <span>User</span>
-              <select className="access-admin-input" onChange={(event) => setSelectedEmail(event.target.value)} value={selectedEmail}>
+              <select
+                className="access-admin-input"
+                onChange={(event) => {
+                  if (event.target.value === NEW_USER_VALUE) {
+                    clearUserForm();
+                    return;
+                  }
+                  setSelectedEmail(event.target.value);
+                }}
+                value={selectedEmail}
+              >
+                <option value={NEW_USER_VALUE}>New user...</option>
                 {snapshot.users.map((user) => (
                   <option key={user.email} value={user.email}>
                     {userLabel(user)}
@@ -274,14 +305,14 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               <span>Send welcome email after saving</span>
             </label>
             <div className="button-row">
-              <button className="button" disabled={loading} type="submit">Save user</button>
+              <button className="button" disabled={loading} type="submit">{editingNewUser ? "Create user" : "Save user"}</button>
               <button className="button button-secondary" disabled={!userEmail || loading} onClick={() => void perform({ operation: "send_welcome", email: userEmail })} type="button">
                 Resend welcome
               </button>
               <button className="button button-secondary" disabled={!userEmail || loading} onClick={() => void previewUser(userEmail)} type="button">
                 Preview access
               </button>
-              <button className="button button-secondary" disabled={!userEmail || loading} onClick={() => void perform({ operation: "delete_user", email: userEmail })} type="button">
+              <button className="button button-secondary" disabled={editingNewUser || !userEmail || loading} onClick={() => void perform({ operation: "delete_user", email: userEmail })} type="button">
                 Delete user
               </button>
             </div>

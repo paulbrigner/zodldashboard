@@ -2675,6 +2675,15 @@ function accessBootstrapAdminEmails() {
   return parseAccessEmailAllowlist(process.env.ACCESS_BOOTSTRAP_ADMIN_EMAILS || "paul@zodl.com");
 }
 
+function configuredAccessEmailsForAccess() {
+  return new Set([
+    ...accessBootstrapAdminEmails(),
+    ...allowedXMonitorGuestEmailsForAccess(),
+    ...allowedRoadmapGuestEmailsForAccess(),
+    ...allowedArktourosGuestEmailsForAccess(),
+  ]);
+}
+
 function allowedXMonitorGuestEmailsForAccess() {
   return parseAccessEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
 }
@@ -2838,6 +2847,12 @@ async function seedAccessMembershipsForEmail(email) {
   }
   if (allowedArktourosGuestEmailsForAccess().has(normalizedEmail)) {
     await upsertAccessMembership("arktouros-guests", normalizedEmail, "legacy-env");
+  }
+}
+
+async function seedConfiguredAccessMemberships() {
+  for (const email of configuredAccessEmailsForAccess()) {
+    await seedAccessMembershipsForEmail(email);
   }
 }
 
@@ -6172,6 +6187,7 @@ function accessRowIso(value) {
 
 async function buildAccessControlSnapshot(actorEmail) {
   const actor = await requireAccessAdmin(actorEmail);
+  await seedConfiguredAccessMemberships();
   const db = getPool();
   const [users, groups, roles, permissions, memberships, groupRoles, rolePermissions, invitations] = await Promise.all([
     db.query(`

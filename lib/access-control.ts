@@ -224,6 +224,15 @@ function bootstrapAdminEmails(): Set<string> {
   return parseEmailAllowlist(process.env.ACCESS_BOOTSTRAP_ADMIN_EMAILS || "paul@zodl.com");
 }
 
+function configuredAccessEmails(): Set<string> {
+  return new Set([
+    ...bootstrapAdminEmails(),
+    ...allowedXMonitorGuestEmails(),
+    ...allowedRoadmapGuestEmails(),
+    ...allowedArktourosGuestEmails(),
+  ]);
+}
+
 function normalizeKey(value: unknown): string {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
@@ -422,6 +431,12 @@ async function seedEnvMembershipsForEmail(email: string): Promise<void> {
   }
 }
 
+async function seedConfiguredEnvMemberships(): Promise<void> {
+  for (const email of configuredAccessEmails()) {
+    await seedEnvMembershipsForEmail(email);
+  }
+}
+
 function permissionFromRow(row: PermissionRow): string | null {
   if (row.scope_type === "dashboard" && row.resource_type === "dashboard" && row.resource_key === "*") {
     return dashboardReadPermission(row.scope_key);
@@ -579,6 +594,7 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
 
   const actor = await resolveDirectEffectiveAccess(actorEmail);
   requireManageAccessPermission(actor);
+  await seedConfiguredEnvMemberships();
 
   const [users, groups, roles, permissions, memberships, groupRoles, rolePermissions, invitations] = await Promise.all([
     getDbPool().query(
