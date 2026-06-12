@@ -83,6 +83,10 @@ function formatDateTime(value: string | null): string {
   }).format(new Date(value));
 }
 
+function defaultMembershipEmail(snapshot: AccessControlSnapshot): string {
+  return snapshot.users.find((user) => user.status === "active")?.email || snapshot.users[0]?.email || "";
+}
+
 export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [selectedEmail, setSelectedEmail] = useState(initialSnapshot.users[0]?.email || NEW_USER_VALUE);
@@ -111,7 +115,8 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [roleName, setRoleName] = useState("");
   const [roleDescription, setRoleDescription] = useState("");
 
-  const [membershipEmail, setMembershipEmail] = useState(initialSnapshot.users[0]?.email || "");
+  const [membershipMode, setMembershipMode] = useState<"select" | "email">("select");
+  const [membershipEmail, setMembershipEmail] = useState(defaultMembershipEmail(initialSnapshot));
   const [membershipGroup, setMembershipGroup] = useState(initialSnapshot.groups[0]?.groupKey || "");
   const [membershipEnabled, setMembershipEnabled] = useState(true);
 
@@ -145,6 +150,8 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   );
   const editingNewGroup = selectedGroupKey === NEW_GROUP_VALUE;
   const editingNewRole = selectedRoleKey === NEW_ROLE_VALUE;
+  const activeUsers = useMemo(() => snapshot.users.filter((user) => user.status === "active"), [snapshot.users]);
+  const inactiveUsers = useMemo(() => snapshot.users.filter((user) => user.status !== "active"), [snapshot.users]);
 
   function clearUserForm() {
     setSelectedEmail(NEW_USER_VALUE);
@@ -209,6 +216,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
       setAssignmentGroup(snapshot.groups[0]?.groupKey || "");
     }
   }, [assignmentGroup, membershipGroup, selectedGroupKey, snapshot.groups]);
+
+  useEffect(() => {
+    if (membershipMode === "email") return;
+    if (!membershipEmail || !snapshot.users.some((user) => user.email === membershipEmail)) {
+      setMembershipEmail(defaultMembershipEmail(snapshot));
+    }
+  }, [membershipEmail, membershipMode, snapshot]);
 
   useEffect(() => {
     if (selectedRoleKey !== NEW_ROLE_VALUE && !snapshot.roles.some((role) => role.roleKey === selectedRoleKey)) {
@@ -604,19 +618,58 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
           <form className="access-admin-form" onSubmit={applyMembership}>
             <h3>User Group Membership</h3>
             <label className="access-admin-field">
-              <span>User email</span>
-              <input
+              <span>User source</span>
+              <select
                 className="access-admin-input"
-                list="access-admin-user-emails"
-                onChange={(event) => setMembershipEmail(event.target.value)}
-                placeholder="name@zodl.com"
-                required
-                type="email"
-                value={membershipEmail}
-              />
-              <datalist id="access-admin-user-emails">
-                {snapshot.users.map((user) => <option key={user.email} label={userLabel(user)} value={user.email} />)}
-              </datalist>
+                onChange={(event) => {
+                  const nextMode = event.target.value === "email" ? "email" : "select";
+                  setMembershipMode(nextMode);
+                  if (nextMode === "select" && !snapshot.users.some((user) => user.email === membershipEmail)) {
+                    setMembershipEmail(defaultMembershipEmail(snapshot));
+                  }
+                }}
+                value={membershipMode}
+              >
+                <option value="select">Known user</option>
+                <option value="email">Email entry</option>
+              </select>
+            </label>
+            <label className="access-admin-field">
+              <span>User</span>
+              {membershipMode === "select" ? (
+                <select
+                  className="access-admin-input"
+                  onChange={(event) => setMembershipEmail(event.target.value)}
+                  required
+                  value={membershipEmail}
+                >
+                  {activeUsers.length ? (
+                    <optgroup label="Active users">
+                      {activeUsers.map((user) => <option key={user.email} value={user.email}>{userLabel(user)}</option>)}
+                    </optgroup>
+                  ) : null}
+                  {inactiveUsers.length ? (
+                    <optgroup label="Inactive users">
+                      {inactiveUsers.map((user) => <option key={user.email} value={user.email}>{userLabel(user)}</option>)}
+                    </optgroup>
+                  ) : null}
+                </select>
+              ) : (
+                <>
+                  <input
+                    className="access-admin-input"
+                    list="access-admin-membership-user-emails"
+                    onChange={(event) => setMembershipEmail(event.target.value)}
+                    placeholder="name@zodl.com"
+                    required
+                    type="email"
+                    value={membershipEmail}
+                  />
+                  <datalist id="access-admin-membership-user-emails">
+                    {snapshot.users.map((user) => <option key={user.email} label={userLabel(user)} value={user.email} />)}
+                  </datalist>
+                </>
+              )}
             </label>
             <label className="access-admin-field">
               <span>Group</span>
@@ -631,7 +684,12 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 <option value="remove">Remove membership</option>
               </select>
             </label>
-            <button className="button" disabled={loading} type="submit">Apply membership</button>
+            <div className="button-row">
+              <button className="button" disabled={!membershipEmail || !membershipGroup || loading} type="submit">Apply membership</button>
+              <button className="button button-secondary" disabled={loading} onClick={clearUserForm} type="button">
+                New user
+              </button>
+            </div>
           </form>
 
           <form className="access-admin-form" onSubmit={(event) => { event.preventDefault(); void perform({ operation: "assign_group_role", group_key: assignmentGroup, role_key: assignmentRole, scope_type: assignmentScopeType, scope_key: assignmentScopeKey }); }}>
