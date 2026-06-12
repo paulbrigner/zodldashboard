@@ -555,10 +555,9 @@ cleanup_build_dir() {
 }
 trap cleanup_build_dir EXIT
 
-pushd "$LAMBDA_DIR" >/dev/null
-npm install --omit=dev >/dev/null
-cp index.mjs package.json package-lock.json "$BUILD_DIR"/
-cp -R node_modules "$BUILD_DIR"/
+cp "$LAMBDA_DIR"/index.mjs "$LAMBDA_DIR"/package.json "$LAMBDA_DIR"/package-lock.json "$BUILD_DIR"/
+pushd "$BUILD_DIR" >/dev/null
+npm ci --omit=dev >/dev/null
 popd >/dev/null
 
 mkdir -p "$BUILD_DIR/shared/xmonitor" "$BUILD_DIR/shared/cipherpay-test" "$BUILD_DIR/config/xmonitor" "$BUILD_DIR/db/migrations"
