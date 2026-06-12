@@ -38,6 +38,10 @@ function userLabel(user: AccessControlUser): string {
   return name ? `${name} <${user.email}>` : user.email;
 }
 
+function normalizeFormEmail(value: string): string {
+  return value.trim().toLowerCase();
+}
+
 function groupMemberEmails(snapshot: AccessControlSnapshot, groupKey: string): string[] {
   return snapshot.memberships.filter((membership) => membership.groupKey === groupKey).map((membership) => membership.email);
 }
@@ -256,18 +260,32 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
 
   async function saveUser(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const email = normalizeFormEmail(userEmail);
     await perform({
       operation: "upsert_user",
-      email: userEmail,
+      email,
       first_name: firstName,
       last_name: lastName,
       admin_note: userAdminNote,
       status: userStatus,
     });
     if (sendWelcome) {
-      await perform({ operation: "send_welcome", email: userEmail });
+      await perform({ operation: "send_welcome", email });
     }
-    setSelectedEmail(userEmail.trim().toLowerCase());
+    setSelectedEmail(email);
+  }
+
+  async function applyMembership(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const email = normalizeFormEmail(membershipEmail);
+    await perform({
+      operation: "set_group_membership",
+      email,
+      group_key: membershipGroup,
+      enabled: membershipEnabled,
+    });
+    setMembershipEmail(email);
+    setSelectedEmail(email);
   }
 
   async function saveGroup(event: FormEvent<HTMLFormElement>) {
@@ -583,13 +601,22 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
         </div>
 
         <div className="access-admin-grid access-admin-grid-wide">
-          <form className="access-admin-form" onSubmit={(event) => { event.preventDefault(); void perform({ operation: "set_group_membership", email: membershipEmail, group_key: membershipGroup, enabled: membershipEnabled }); }}>
+          <form className="access-admin-form" onSubmit={applyMembership}>
             <h3>User Group Membership</h3>
             <label className="access-admin-field">
-              <span>User</span>
-              <select className="access-admin-input" onChange={(event) => setMembershipEmail(event.target.value)} value={membershipEmail}>
-                {snapshot.users.map((user) => <option key={user.email} value={user.email}>{userLabel(user)}</option>)}
-              </select>
+              <span>User email</span>
+              <input
+                className="access-admin-input"
+                list="access-admin-user-emails"
+                onChange={(event) => setMembershipEmail(event.target.value)}
+                placeholder="name@zodl.com"
+                required
+                type="email"
+                value={membershipEmail}
+              />
+              <datalist id="access-admin-user-emails">
+                {snapshot.users.map((user) => <option key={user.email} label={userLabel(user)} value={user.email} />)}
+              </datalist>
             </label>
             <label className="access-admin-field">
               <span>Group</span>

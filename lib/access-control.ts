@@ -437,6 +437,31 @@ async function seedConfiguredEnvMemberships(): Promise<void> {
   }
 }
 
+async function seedWorkspaceLoginMemberships(): Promise<void> {
+  if (!(await tableExists("auth_login_events"))) return;
+
+  const result = await getDbPool().query(
+    `
+      SELECT DISTINCT lower(email::text) AS email
+      FROM auth_login_events
+      WHERE access_level = 'workspace'
+        AND split_part(lower(email::text), '@', 2) = $1
+      ORDER BY email
+      LIMIT 1000
+    `,
+    [allowedGoogleDomain()]
+  );
+
+  for (const row of result.rows) {
+    await seedEnvMembershipsForEmail(row.email);
+  }
+}
+
+async function seedAccessDirectoryMemberships(): Promise<void> {
+  await seedConfiguredEnvMemberships();
+  await seedWorkspaceLoginMemberships();
+}
+
 function permissionFromRow(row: PermissionRow): string | null {
   if (row.scope_type === "dashboard" && row.resource_type === "dashboard" && row.resource_key === "*") {
     return dashboardReadPermission(row.scope_key);
@@ -594,7 +619,7 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
 
   const actor = await resolveDirectEffectiveAccess(actorEmail);
   requireManageAccessPermission(actor);
-  await seedConfiguredEnvMemberships();
+  await seedAccessDirectoryMemberships();
 
   const [users, groups, roles, permissions, memberships, groupRoles, rolePermissions, invitations] = await Promise.all([
     getDbPool().query(

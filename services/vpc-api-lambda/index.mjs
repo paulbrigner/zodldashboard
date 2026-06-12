@@ -2856,6 +2856,36 @@ async function seedConfiguredAccessMemberships() {
   }
 }
 
+async function accessTableExists(tableName) {
+  const result = await getPool().query("SELECT to_regclass($1) AS table_name", [`public.${tableName}`]);
+  return Boolean(result.rows[0]?.table_name);
+}
+
+async function seedWorkspaceLoginAccessMemberships() {
+  if (!(await accessTableExists("auth_login_events"))) return;
+
+  const result = await getPool().query(
+    `
+      SELECT DISTINCT lower(email::text) AS email
+      FROM auth_login_events
+      WHERE access_level = 'workspace'
+        AND split_part(lower(email::text), '@', 2) = $1
+      ORDER BY email
+      LIMIT 1000
+    `,
+    [WORKSPACE_EMAIL_DOMAIN]
+  );
+
+  for (const row of result.rows) {
+    await seedAccessMembershipsForEmail(row.email);
+  }
+}
+
+async function seedAccessDirectoryMemberships() {
+  await seedConfiguredAccessMemberships();
+  await seedWorkspaceLoginAccessMemberships();
+}
+
 async function resolveAccessControlForEmail(email) {
   const normalizedEmail = validateEmailAddress(email);
   if (!normalizedEmail) {
@@ -6187,7 +6217,7 @@ function accessRowIso(value) {
 
 async function buildAccessControlSnapshot(actorEmail) {
   const actor = await requireAccessAdmin(actorEmail);
-  await seedConfiguredAccessMemberships();
+  await seedAccessDirectoryMemberships();
   const db = getPool();
   const [users, groups, roles, permissions, memberships, groupRoles, rolePermissions, invitations] = await Promise.all([
     db.query(`
