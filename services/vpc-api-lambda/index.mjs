@@ -2491,6 +2491,13 @@ async function ensureAccessControlSchema() {
   }
 
   const db = getPool();
+  const existing = await db.query("SELECT to_regclass('public.auth_subjects') AS table_name");
+  if (existing.rows[0]?.table_name) {
+    await seedAccessControlDefaults();
+    accessControlSchemaEnsured = true;
+    return;
+  }
+
   await db.query(`
     CREATE OR REPLACE FUNCTION set_updated_at()
     RETURNS trigger
