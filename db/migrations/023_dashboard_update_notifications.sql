@@ -8,7 +8,7 @@ ALTER TABLE email_deliveries
 CREATE TABLE IF NOT EXISTS dashboard_update_subscriptions (
   dashboard_id TEXT NOT NULL,
   email CITEXT NOT NULL,
-  enabled BOOLEAN NOT NULL DEFAULT TRUE,
+  enabled BOOLEAN NOT NULL DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (dashboard_id, email)
