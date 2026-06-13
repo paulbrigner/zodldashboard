@@ -294,19 +294,20 @@ tag_event_rule() {
 
 tag_scheduler_schedule() {
   local schedule="$1"
-  local arn
-  arn="$(
+  local group_name
+  group_name="$(
     aws_cli scheduler get-schedule \
-      --name "$schedule" --group-name default --query 'Arn' --output text 2>/dev/null || true
+      --name "$schedule" --group-name default --query 'GroupName' --output text 2>/dev/null || true
   )"
-  if [[ -z "$arn" || "$arn" == "None" ]]; then
+  if [[ -z "$group_name" || "$group_name" == "None" ]]; then
     echo "skip scheduler schedule: ${schedule} (not found)"
     apply_skipped=$((apply_skipped + 1))
     return
   fi
+  local arn="arn:aws:scheduler:${AWS_REGION}:${ACCOUNT_ID}:schedule-group/${group_name}"
   aws_cli scheduler tag-resource \
     --resource-arn "$arn" --tags "Key=${COST_TAG_KEY},Value=${COST_TAG_VALUE}" >/dev/null
-  echo "tagged scheduler schedule: ${schedule}"
+  echo "tagged scheduler schedule group: ${group_name} (via ${schedule})"
   apply_success=$((apply_success + 1))
 }
 

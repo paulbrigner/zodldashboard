@@ -64,6 +64,8 @@ aws --profile "$AWS_PROFILE" --region "$AWS_REGION" ce get-cost-and-usage \
 python3 - <<'PY' "$RAW_FILE" "$SUMMARY_FILE" "$TOP_N_SERVICES" "$COST_TAG_KEY" "$COST_TAG_VALUE" "$START_DATE" "$END_DATE"
 import json
 import sys
+from collections import defaultdict
+from datetime import date
 from decimal import Decimal
 
 raw_path, summary_path, top_n_raw, tag_key, tag_value, start_date, end_date = sys.argv[1:]
@@ -74,6 +76,7 @@ with open(raw_path, "r", encoding="utf-8") as fh:
 
 service_totals = {}
 daily_totals = []
+weekly_totals = defaultdict(lambda: Decimal("0"))
 currency = "USD"
 
 for period in payload.get("ResultsByTime", []):
@@ -89,9 +92,16 @@ for period in payload.get("ResultsByTime", []):
         day_total += amount
         service_totals[service] = service_totals.get(service, Decimal("0")) + amount
     daily_totals.append({"date": day, "cost": f"{day_total:.6f}", "currency": currency})
+    if day:
+        parsed_day = date.fromisoformat(day)
+        week_start = parsed_day.fromordinal(parsed_day.toordinal() - parsed_day.weekday()).isoformat()
+        weekly_totals[week_start] += day_total
 
 overall = sum(service_totals.values(), Decimal("0"))
 top_services = sorted(service_totals.items(), key=lambda kv: kv[1], reverse=True)
+day_count = len(daily_totals) or 1
+average_daily = overall / Decimal(day_count)
+weekly_rows = sorted(weekly_totals.items(), key=lambda kv: kv[0])
 
 summary = {
     "scope": {
@@ -102,9 +112,19 @@ summary = {
         "currency": currency,
     },
     "overall_cost": f"{overall:.6f}",
+    "average_daily_cost": f"{average_daily:.6f}",
     "services": [
-        {"service": service, "cost": f"{cost:.6f}", "currency": currency}
+        {
+            "service": service,
+            "cost": f"{cost:.6f}",
+            "share_percent": f"{((cost / overall) * Decimal('100')) if overall else Decimal('0'):.2f}",
+            "currency": currency,
+        }
         for service, cost in top_services
+    ],
+    "weekly_totals": [
+        {"week_starting": week_start, "cost": f"{cost:.6f}", "currency": currency}
+        for week_start, cost in weekly_rows
     ],
     "daily_totals": daily_totals,
 }
@@ -112,19 +132,42 @@ summary = {
 with open(summary_path, "w", encoding="utf-8") as fh:
     json.dump(summary, fh, indent=2)
 
+def money(value):
+    return f"${value:.2f}"
+
+def service_share(value):
+    if not overall:
+        return "0.0%"
+    return f"{((value / overall) * Decimal('100')):.1f}%"
+
 print()
 print("ZodlDashboard AWS Cost Report")
-print(f"Tag: {tag_key}={tag_value}")
-print(f"Period: {start_date} to {end_date} (end exclusive)")
-print(f"Total: {overall:.2f} {currency}")
+print("=" * 31)
+print(f"Scope:        {tag_key}={tag_value}")
+print(f"Period:       {start_date} to {end_date} (end exclusive)")
+print(f"Total:        {money(overall)} {currency}")
+print(f"Average/day:  {money(average_daily)} {currency}")
 print()
-print(f"Top {top_n} services:")
+
+print(f"Top {top_n} services")
+print("| Service | Cost | Share |")
+print("|---|---:|---:|")
 for service, cost in top_services[:top_n]:
-    print(f"- {service}: {cost:.2f} {currency}")
+    print(f"| {service} | {money(cost)} | {service_share(cost)} |")
+
 print()
-print("Daily totals:")
+print("Weekly totals")
+print("| Week starting | Cost |")
+print("|---|---:|")
+for week_start, cost in weekly_rows:
+    print(f"| {week_start} | {money(cost)} |")
+
+print()
+print("Daily totals")
+print("| Date | Cost |")
+print("|---|---:|")
 for row in daily_totals:
-    print(f"- {row['date']}: {Decimal(row['cost']):.2f} {currency}")
+    print(f"| {row['date']} | {money(Decimal(row['cost']))} |")
 print()
 print(f"Summary JSON: {summary_path}")
 print(f"Raw CE JSON:  {raw_path}")

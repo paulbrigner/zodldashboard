@@ -28,7 +28,7 @@ The setup script tags canonical resources and also discovers newer resources who
 - API Gateway HTTP API and stages
 - XMonitor Lambda functions, including collectors, VPC API, compose worker, email scheduler, and significance classifier
 - EventBridge rules
-- EventBridge Scheduler schedules
+- EventBridge Scheduler schedule groups
 - SQS queues
 - CloudWatch log groups for Lambda functions
 - CloudWatch alarms and dashboards
