@@ -30,3 +30,6 @@ pnpm-debug.log*
 services/vpc-api-lambda/function*.zip
 services/x-api-collector-lambda/function*.zip
 services/x-significance-classifier-lambda/function*.zip
+
+# local ops scratch commands
+scripts/ops/script commands.txt
