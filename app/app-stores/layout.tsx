@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canReadDashboard } from "@/lib/access-control";
+import { getDashboardUpdateSubscriptionState } from "@/lib/dashboard-update-notifications";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { formatDateTime } from "@/lib/app-stores/insights";
 import { getAppStoresDataset } from "@/lib/app-stores/data";
+import { DashboardUpdateSubscriptionToggle } from "../dashboard-update-subscription-toggle";
 import { AppStoresNavLinks } from "./nav-links";
 import { SignOutButton } from "../sign-out-button";
 
@@ -20,6 +22,7 @@ export default async function AppStoresLayout({
   }
 
   const data = getAppStoresDataset();
+  const updateSubscription = await getDashboardUpdateSubscriptionState(viewer, "app-store-compliance");
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
@@ -38,6 +41,12 @@ export default async function AppStoresLayout({
             </p>
           </div>
           <div className="button-row">
+            <DashboardUpdateSubscriptionToggle
+              dashboardId="app-store-compliance"
+              dashboardName="App Store Dashboard"
+              initialEnabled={updateSubscription.enabled}
+              available={updateSubscription.available}
+            />
             <Link className="button button-secondary" href="/">
               All dashboards
             </Link>

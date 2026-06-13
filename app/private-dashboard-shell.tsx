@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { canAccessDashboard, findPrivateHtmlDashboard, navigableDashboards } from "@/lib/dashboard-catalog";
+import { getDashboardUpdateSubscriptionState } from "@/lib/dashboard-update-notifications";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { PrivateDashboardGlobalNav, type PrivateDashboardGlobalNavItem } from "./private-dashboard-global-nav";
 
@@ -35,6 +36,7 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
       prefetch: item.prefetch,
     })),
   ];
+  const updateSubscription = await getDashboardUpdateSubscriptionState(viewer, dashboard.id);
 
   return (
     <main className="private-dashboard-page">
@@ -49,7 +51,16 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
           <h1>{dashboard.name}</h1>
           <p className="private-dashboard-identity">{identityText(viewer)}</p>
         </div>
-        <PrivateDashboardGlobalNav canSignOut={viewer.canSignOut} items={navItems} />
+        <PrivateDashboardGlobalNav
+          canSignOut={viewer.canSignOut}
+          items={navItems}
+          updateNotifications={{
+            dashboardId: dashboard.id,
+            dashboardName: dashboard.name,
+            initialEnabled: updateSubscription.enabled,
+            available: updateSubscription.available,
+          }}
+        />
       </header>
       <iframe
         className="private-dashboard-frame"

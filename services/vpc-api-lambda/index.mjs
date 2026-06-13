@@ -31,6 +31,10 @@ const ACCESS_CONTROL_DASHBOARDS = [
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },
   { id: "app-store-compliance", name: "App Store Dashboard", permissionKey: "dashboard:app-store-compliance:read", visible: false },
 ];
+const DASHBOARD_UPDATE_NOTIFICATION_IDS = new Set(
+  ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.id !== "x-monitor").map((dashboard) => dashboard.id)
+);
+const DASHBOARD_UPDATE_EVENT_SOURCES = new Set(["manual", "api", "github", "admin"]);
 const BUILT_IN_ROADMAP_GUEST_EMAILS = "div@accrediv.com";
 const BUILT_IN_ARKTOUROS_GUEST_EMAILS = "k.albersfiedler@arktouros.co";
 const CIPHERPAY_TEST_NETWORKS = new Set(["testnet", "mainnet"]);
@@ -3054,7 +3058,7 @@ async function ensureEmailSchema() {
     CREATE TABLE IF NOT EXISTS email_deliveries (
       delivery_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       owner_email CITEXT NOT NULL,
-      source TEXT NOT NULL CHECK (source IN ('manual', 'scheduled')),
+      source TEXT NOT NULL CHECK (source IN ('manual', 'scheduled', 'dashboard-update')),
       scheduled_job_id UUID REFERENCES scheduled_email_jobs(job_id) ON DELETE SET NULL,
       scheduled_run_id UUID REFERENCES scheduled_email_runs(run_id) ON DELETE SET NULL,
       compose_job_id UUID REFERENCES compose_jobs(job_id) ON DELETE SET NULL,
@@ -3077,6 +3081,65 @@ async function ensureEmailSchema() {
     CREATE INDEX IF NOT EXISTS idx_email_deliveries_status_created_at
       ON email_deliveries (status, created_at DESC);
 
+    ALTER TABLE email_deliveries
+      DROP CONSTRAINT IF EXISTS email_deliveries_source_check;
+    ALTER TABLE email_deliveries
+      ADD CONSTRAINT email_deliveries_source_check
+      CHECK (source IN ('manual', 'scheduled', 'dashboard-update'));
+
+    CREATE TABLE IF NOT EXISTS dashboard_update_subscriptions (
+      dashboard_id TEXT NOT NULL,
+      email CITEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      PRIMARY KEY (dashboard_id, email)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_update_subscriptions_email
+      ON dashboard_update_subscriptions (email, enabled, dashboard_id);
+
+    DROP TRIGGER IF EXISTS trg_dashboard_update_subscriptions_set_updated_at ON dashboard_update_subscriptions;
+    CREATE TRIGGER trg_dashboard_update_subscriptions_set_updated_at
+    BEFORE UPDATE ON dashboard_update_subscriptions
+    FOR EACH ROW
+    EXECUTE FUNCTION set_updated_at();
+
+    CREATE TABLE IF NOT EXISTS dashboard_update_events (
+      event_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      dashboard_id TEXT NOT NULL,
+      title TEXT NOT NULL,
+      summary TEXT,
+      url TEXT,
+      source TEXT NOT NULL DEFAULT 'manual' CHECK (source IN ('manual', 'api', 'github', 'admin')),
+      source_ref TEXT,
+      created_by CITEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      notified_at TIMESTAMPTZ,
+      recipient_count INTEGER NOT NULL DEFAULT 0,
+      sent_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      CHECK (length(trim(title)) > 0)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_update_events_dashboard_created_at
+      ON dashboard_update_events (dashboard_id, created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS dashboard_update_notification_deliveries (
+      event_id UUID NOT NULL REFERENCES dashboard_update_events(event_id) ON DELETE CASCADE,
+      email CITEXT NOT NULL,
+      delivery_id UUID REFERENCES email_deliveries(delivery_id) ON DELETE SET NULL,
+      status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'skipped')),
+      error_code TEXT,
+      error_message TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      sent_at TIMESTAMPTZ,
+      PRIMARY KEY (event_id, email)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboard_update_notification_deliveries_email_created_at
+      ON dashboard_update_notification_deliveries (email, created_at DESC);
+
     ALTER TABLE scheduled_email_runs
       DROP CONSTRAINT IF EXISTS fk_scheduled_email_runs_delivery;
     ALTER TABLE scheduled_email_runs
@@ -3091,6 +3154,9 @@ async function ensureEmailSchema() {
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE scheduled_email_jobs TO ${role};
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE scheduled_email_runs TO ${role};
       GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE email_deliveries TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE dashboard_update_subscriptions TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE dashboard_update_events TO ${role};
+      GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE dashboard_update_notification_deliveries TO ${role};
     `);
   }
 
@@ -6373,6 +6439,268 @@ function accessSummaryText(access) {
   return allowed.length ? allowed.join("\n") : "- No dashboards yet";
 }
 
+function dashboardUpdateDashboard(dashboardId) {
+  const normalized = asString(dashboardId)?.toLowerCase();
+  if (!normalized || !DASHBOARD_UPDATE_NOTIFICATION_IDS.has(normalized)) {
+    throw createStatusError(400, "dashboard does not support update notifications");
+  }
+  return ACCESS_CONTROL_DASHBOARDS.find((dashboard) => dashboard.id === normalized);
+}
+
+function canReadAccessDashboard(access, dashboardId) {
+  return hasAccessPermission(access, accessDashboardReadPermission(dashboardId));
+}
+
+async function requireDashboardUpdateAccess(viewer, dashboardId) {
+  if (viewer.auth_mode === "local-bypass") return null;
+  const access = await resolveAccessControlForEmail(viewer.email);
+  if (!canReadAccessDashboard(access, dashboardId)) {
+    throw createStatusError(403, "dashboard access required");
+  }
+  return access;
+}
+
+function dashboardUpdateHref(dashboardId) {
+  if (dashboardId === "app-store-compliance") return "/app-stores";
+  return `/${dashboardId}`;
+}
+
+function dashboardUpdateUrl(dashboardId, value) {
+  const raw = asString(value);
+  const baseUrl = accessAppBaseUrl();
+  if (!raw) return `${baseUrl}${dashboardUpdateHref(dashboardId)}`;
+  if (/^https?:\/\//i.test(raw)) return withLengthLimit(raw, 1000);
+  if (raw.startsWith("/")) return withLengthLimit(`${baseUrl}${raw}`, 1000);
+  return `${baseUrl}${dashboardUpdateHref(dashboardId)}`;
+}
+
+function normalizeDashboardUpdateSubscription(row, dashboard) {
+  return {
+    dashboardId: dashboard.id,
+    dashboardName: dashboard.name,
+    email: normalizeEmail(row.email),
+    enabled: row.enabled === true,
+    available: true,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+  };
+}
+
+async function getDashboardUpdateSubscription(viewer, dashboardId) {
+  await ensureEmailSchema();
+  const dashboard = dashboardUpdateDashboard(dashboardId);
+  await requireDashboardUpdateAccess(viewer, dashboard.id);
+  const result = await getPool().query(
+    `
+      SELECT dashboard_id, email, enabled, created_at, updated_at
+      FROM dashboard_update_subscriptions
+      WHERE dashboard_id = $1 AND email = $2
+      LIMIT 1
+    `,
+    [dashboard.id, viewer.email]
+  );
+  return normalizeDashboardUpdateSubscription(
+    result.rows[0] || {
+      email: viewer.email,
+      enabled: false,
+      created_at: null,
+      updated_at: null,
+    },
+    dashboard
+  );
+}
+
+async function setDashboardUpdateSubscription(viewer, body) {
+  await ensureEmailSchema();
+  const dashboard = dashboardUpdateDashboard(body.dashboard_id || body.dashboardId);
+  await requireDashboardUpdateAccess(viewer, dashboard.id);
+  const enabled = body.enabled === true;
+  const result = await getPool().query(
+    `
+      INSERT INTO dashboard_update_subscriptions(dashboard_id, email, enabled)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (dashboard_id, email)
+      DO UPDATE SET enabled = EXCLUDED.enabled
+      RETURNING dashboard_id, email, enabled, created_at, updated_at
+    `,
+    [dashboard.id, viewer.email, enabled]
+  );
+  return normalizeDashboardUpdateSubscription(result.rows[0], dashboard);
+}
+
+function normalizeDashboardUpdateEvent(row) {
+  return {
+    eventId: String(row.event_id),
+    dashboardId: row.dashboard_id,
+    title: row.title,
+    summary: row.summary || null,
+    url: row.url || null,
+    source: row.source,
+    sourceRef: row.source_ref || null,
+    createdBy: normalizeEmail(row.created_by),
+    createdAt: toIso(row.created_at) || nowIso(),
+    notifiedAt: toIso(row.notified_at),
+    recipientCount: Number(row.recipient_count || 0),
+    sentCount: Number(row.sent_count || 0),
+    failedCount: Number(row.failed_count || 0),
+  };
+}
+
+function parseDashboardUpdateEventPayload(body) {
+  const dashboard = dashboardUpdateDashboard(body.dashboard_id || body.dashboardId);
+  const source = asString(body.source)?.toLowerCase() || "api";
+  if (!DASHBOARD_UPDATE_EVENT_SOURCES.has(source)) {
+    throw createStatusError(400, "source is invalid");
+  }
+  const title = withLengthLimit(asString(body.title) || `${dashboard.name} was updated`, 240);
+  const summary = withLengthLimit(asString(body.summary) || "A dashboard update has been published.", 2000);
+  const url = dashboardUpdateUrl(dashboard.id, body.url);
+  const sourceRef = withLengthLimit(asString(body.source_ref || body.sourceRef) || "", 500) || null;
+  return { dashboard, title, summary, url, source, sourceRef };
+}
+
+function dashboardUpdateEmailBody({ dashboard, title, summary, url }) {
+  return [
+    title,
+    "",
+    summary,
+    "",
+    `Open ${dashboard.name}: ${url}`,
+    "",
+    "You are receiving this because you opted in to dashboard update emails. Sign in to ZODL Dashboard and turn off Email updates from the dashboard header if you no longer want these notices.",
+  ].join("\n");
+}
+
+async function recordDashboardUpdateDelivery({ eventId, email, status, deliveryId = null, errorCode = null, errorMessage = null, sentAt = null }) {
+  await getPool().query(
+    `
+      INSERT INTO dashboard_update_notification_deliveries(
+        event_id, email, delivery_id, status, error_code, error_message, sent_at
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (event_id, email)
+      DO UPDATE SET
+        delivery_id = EXCLUDED.delivery_id,
+        status = EXCLUDED.status,
+        error_code = EXCLUDED.error_code,
+        error_message = EXCLUDED.error_message,
+        sent_at = EXCLUDED.sent_at
+    `,
+    [eventId, email, deliveryId, status, errorCode, errorMessage, sentAt]
+  );
+}
+
+async function publishDashboardUpdateEvent(viewer, body) {
+  if (!emailEnabled()) {
+    throw createStatusError(503, "email sending is disabled");
+  }
+  await ensureEmailSchema();
+  const actor = await requireAccessAdmin(viewer.email);
+  const payload = parseDashboardUpdateEventPayload(body);
+  const inserted = await getPool().query(
+    `
+      INSERT INTO dashboard_update_events(dashboard_id, title, summary, url, source, source_ref, created_by)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
+      RETURNING event_id, dashboard_id, title, summary, url, source, source_ref, created_by, created_at,
+        notified_at, recipient_count, sent_count, failed_count
+    `,
+    [payload.dashboard.id, payload.title, payload.summary, payload.url, payload.source, payload.sourceRef, actor.email]
+  );
+  let eventRow = inserted.rows[0];
+  const eventId = String(eventRow.event_id);
+  const subscribers = await getPool().query(
+    `
+      SELECT lower(email::text) AS email
+      FROM dashboard_update_subscriptions
+      WHERE dashboard_id = $1 AND enabled = TRUE
+      ORDER BY email
+    `,
+    [payload.dashboard.id]
+  );
+
+  const deliveries = [];
+  let sentCount = 0;
+  let failedCount = 0;
+  for (const row of subscribers.rows) {
+    const email = normalizeEmail(row.email);
+    try {
+      const access = await resolveAccessControlForEmail(email);
+      if (!canReadAccessDashboard(access, payload.dashboard.id)) {
+        await recordDashboardUpdateDelivery({
+          eventId,
+          email,
+          status: "skipped",
+          errorMessage: "dashboard access no longer granted",
+        });
+        deliveries.push({ email, status: "skipped", deliveryId: null, errorMessage: "dashboard access no longer granted" });
+        continue;
+      }
+      const bodyText = dashboardUpdateEmailBody(payload);
+      const delivery = await sendEmailDelivery({
+        ownerEmail: actor.email,
+        source: "dashboard-update",
+        recipients: [email],
+        subject: payload.title,
+        bodyMarkdown: bodyText,
+        bodyText,
+      });
+      if (delivery.ok) {
+        sentCount += 1;
+        await recordDashboardUpdateDelivery({
+          eventId,
+          email,
+          status: "sent",
+          deliveryId: delivery.data.delivery_id,
+          sentAt: delivery.data.sent_at,
+        });
+        deliveries.push({ email, status: "sent", deliveryId: delivery.data.delivery_id, errorMessage: null });
+      } else {
+        failedCount += 1;
+        await recordDashboardUpdateDelivery({
+          eventId,
+          email,
+          status: "failed",
+          deliveryId: delivery.delivery_id || null,
+          errorCode: delivery.error_code || null,
+          errorMessage: delivery.error_message || "failed to send dashboard update email",
+        });
+        deliveries.push({
+          email,
+          status: "failed",
+          deliveryId: delivery.delivery_id || null,
+          errorMessage: delivery.error_message || "failed to send dashboard update email",
+        });
+      }
+    } catch (error) {
+      failedCount += 1;
+      const message = withLengthLimit(errorMessage(error) || "failed to send dashboard update email", 1200);
+      await recordDashboardUpdateDelivery({
+        eventId,
+        email,
+        status: "failed",
+        errorMessage: message,
+      });
+      deliveries.push({ email, status: "failed", deliveryId: null, errorMessage: message });
+    }
+  }
+
+  const updated = await getPool().query(
+    `
+      UPDATE dashboard_update_events
+      SET notified_at = now(),
+          recipient_count = $2,
+          sent_count = $3,
+          failed_count = $4
+      WHERE event_id = $1
+      RETURNING event_id, dashboard_id, title, summary, url, source, source_ref, created_by, created_at,
+        notified_at, recipient_count, sent_count, failed_count
+    `,
+    [eventId, subscribers.rows.length, sentCount, failedCount]
+  );
+  eventRow = updated.rows[0] || eventRow;
+  return { event: normalizeDashboardUpdateEvent(eventRow), deliveries };
+}
+
 async function sendAccessInvitationEmail({ actorEmail, email, subject, bodyText }) {
   const delivery = await sendEmailDelivery({
     ownerEmail: actorEmail,
@@ -8738,6 +9066,66 @@ async function handleEmailSend(event) {
   return jsonOk(delivery.data);
 }
 
+async function handleDashboardUpdateSubscriptionGet(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const dashboardId = asString(event?.queryStringParameters?.dashboard_id || event?.queryStringParameters?.dashboardId);
+  if (!dashboardId) {
+    return jsonError("dashboard_id is required", 400);
+  }
+  try {
+    const subscription = await getDashboardUpdateSubscription(viewer.viewer, dashboardId);
+    return jsonOk({ subscription });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to load dashboard update subscription", statusCodeForError(error, 503));
+  }
+}
+
+async function handleDashboardUpdateSubscriptionPost(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+  try {
+    const subscription = await setDashboardUpdateSubscription(viewer.viewer, parsedBody.body || {});
+    return jsonOk({ subscription });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to save dashboard update subscription", statusCodeForError(error, 503));
+  }
+}
+
+async function handleDashboardUpdateEventCreate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+  try {
+    const result = await publishDashboardUpdateEvent(viewer.viewer, parsedBody.body || {});
+    return jsonOk(result, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to publish dashboard update", statusCodeForError(error, 503));
+  }
+}
+
 async function handleAuthLoginEventCreate(event) {
   if (!hasDatabaseConfig()) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
@@ -10897,6 +11285,18 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/email/send") {
     return handleEmailSend(event);
+  }
+
+  if (method === "GET" && path === "/v1/dashboard-updates/subscription") {
+    return handleDashboardUpdateSubscriptionGet(event);
+  }
+
+  if (method === "POST" && path === "/v1/dashboard-updates/subscription") {
+    return handleDashboardUpdateSubscriptionPost(event);
+  }
+
+  if (method === "POST" && path === "/v1/dashboard-updates/events") {
+    return handleDashboardUpdateEventCreate(event);
   }
 
   if (method === "POST" && path === "/v1/auth/login-events") {

@@ -11,21 +11,43 @@ AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 ./scripts/aws/setup_zodldashboard_cost_tags.sh
 ```
 
+Preview the tagging plan without making changes:
+
+```bash
+DRY_RUN=true AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+./scripts/aws/setup_zodldashboard_cost_tags.sh
+```
+
 Default tag key/value:
 
 - `Project=ZodlDashboard`
 
-The setup script tags known resources used by this app, including:
+The setup script tags canonical resources and also discovers newer resources whose names start with `xmonitor` or `zodldashboard`. It currently covers:
 
 - Amplify app
-- API Gateway HTTP API
-- XMonitor Lambda functions
-- EventBridge schedules
+- API Gateway HTTP API and stages
+- XMonitor Lambda functions, including collectors, VPC API, compose worker, email scheduler, and significance classifier
+- EventBridge rules
+- EventBridge Scheduler schedules
 - SQS queues
 - CloudWatch log groups for Lambda functions
+- CloudWatch alarms and dashboards
 - RDS instance
-- Secrets Manager secret
-- EC2 network resources used by the VPC/Lambda path (NAT/route table/SG where discoverable by `Name` tag)
+- Secrets Manager secrets
+- SES identities
+- Route 53 hosted zones
+- EC2 network resources used by the VPC/Lambda path, including NAT, EIP, route table, security groups, and configured VPC endpoints
+
+Useful setup overrides:
+
+```bash
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+RESOURCE_NAME_PREFIXES="xmonitor zodldashboard" \
+HOSTED_ZONE_NAMES=zodldashboard.com \
+SES_IDENTITIES=zodldashboard.com \
+VPC_ENDPOINT_SERVICE_KEYWORDS=sqs \
+./scripts/aws/setup_zodldashboard_cost_tags.sh
+```
 
 ## 2) (Recommended) Backfill activation status
 

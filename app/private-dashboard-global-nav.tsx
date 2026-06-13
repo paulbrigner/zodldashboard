@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { signOut } from "next-auth/react";
 import { useEffect, useId, useRef, useState } from "react";
+import {
+  DashboardUpdateSubscriptionToggle,
+  type DashboardUpdateSubscriptionToggleProps,
+} from "./dashboard-update-subscription-toggle";
 
 export type PrivateDashboardGlobalNavItem = {
   href: string;
@@ -14,6 +18,7 @@ export type PrivateDashboardGlobalNavItem = {
 type PrivateDashboardGlobalNavProps = {
   items: PrivateDashboardGlobalNavItem[];
   canSignOut: boolean;
+  updateNotifications?: DashboardUpdateSubscriptionToggleProps;
 };
 
 function linkClassName(active?: boolean): string {
@@ -24,7 +29,7 @@ function menuLinkClassName(active?: boolean): string {
   return `private-dashboard-menu-link${active ? " private-dashboard-menu-link-active" : ""}`;
 }
 
-export function PrivateDashboardGlobalNav({ items, canSignOut }: PrivateDashboardGlobalNavProps) {
+export function PrivateDashboardGlobalNav({ items, canSignOut, updateNotifications }: PrivateDashboardGlobalNavProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -68,6 +73,10 @@ export function PrivateDashboardGlobalNav({ items, canSignOut }: PrivateDashboar
         ))}
       </nav>
 
+      {updateNotifications ? (
+        <DashboardUpdateSubscriptionToggle {...updateNotifications} className="private-dashboard-notify-desktop" />
+      ) : null}
+
       <div className="private-dashboard-menu" ref={menuRef}>
         <button
           aria-controls={menuId}
@@ -101,6 +110,9 @@ export function PrivateDashboardGlobalNav({ items, canSignOut }: PrivateDashboar
                 </Link>
               ))}
             </nav>
+            {updateNotifications ? (
+              <DashboardUpdateSubscriptionToggle {...updateNotifications} className="private-dashboard-menu-notify" />
+            ) : null}
             {canSignOut ? (
               <button
                 className="button button-secondary private-dashboard-menu-signout"

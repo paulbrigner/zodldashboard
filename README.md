@@ -234,6 +234,8 @@ See [.env.example](.env.example) for the full current env template.
 - `POST /api/v1/query/compose`
 - `POST /api/v1/query/compose/jobs`
 - `GET /api/v1/query/compose/jobs/{jobId}`
+- `GET /api/v1/dashboard-update-subscriptions`
+- `POST /api/v1/dashboard-update-subscriptions`
 
 ### Internal/write APIs
 
@@ -246,6 +248,7 @@ See [.env.example](.env.example) for the full current env template.
 - `PUT /api/v1/cipherpay/config`
 - `POST /api/v1/cipherpay/checkout`
 - `POST /api/v1/cipherpay/sessions/{sessionId}/sync`
+- `POST /api/v1/dashboard-updates`
 
 ## NPM Scripts
 

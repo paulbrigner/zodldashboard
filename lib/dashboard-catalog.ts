@@ -53,6 +53,7 @@ type DashboardBase = {
   prefetch?: boolean;
   workspaceOnly?: boolean;
   requiredPermission?: string;
+  supportsUpdateNotifications?: boolean;
   visible: boolean;
 };
 
@@ -77,6 +78,7 @@ export type PrivateHtmlDashboard = DashboardBase & {
 };
 
 export type DashboardCatalogItem = AppDashboard | PrivateHtmlDashboard | PlaceholderDashboard;
+export type DashboardUpdateNotificationItem = Extract<DashboardCatalogItem, { kind: "app" | "private-html" }>;
 
 export const dashboardCatalog: DashboardCatalogItem[] = [
   {
@@ -91,6 +93,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     prefetch: false,
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("zodl-roadmap"),
+    supportsUpdateNotifications: true,
     visible: true,
     missingTitle: "Zodl Roadmap unavailable",
     missingHeading: "Zodl Roadmap content is not configured",
@@ -112,6 +115,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     prefetch: false,
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("pgpz-roadmap"),
+    supportsUpdateNotifications: true,
     visible: true,
     missingTitle: "PGPZ Roadmap unavailable",
     missingHeading: "PGPZ Roadmap content is not configured",
@@ -133,6 +137,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     prefetch: false,
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("arktouros"),
+    supportsUpdateNotifications: true,
     visible: true,
     missingTitle: "Arktouros unavailable",
     missingHeading: "Arktouros content is not configured",
@@ -154,6 +159,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     prefetch: false,
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("2026-zodl-summit"),
+    supportsUpdateNotifications: true,
     visible: true,
     missingTitle: "Zodl Summit unavailable",
     missingHeading: "Zodl Summit content is not configured",
@@ -182,6 +188,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     description: "CipherPay admin config, webhook callback logging, and a minimal checkout simulator.",
     href: "/cipherpay-test",
     requiredPermission: dashboardReadPermission("cipherpay-test"),
+    supportsUpdateNotifications: true,
     visible: false,
   },
   {
@@ -193,6 +200,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     href: "/regulatory-risk",
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("regulatory-risk"),
+    supportsUpdateNotifications: true,
     visible: false,
   },
   {
@@ -204,6 +212,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     href: "/app-stores",
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("app-store-compliance"),
+    supportsUpdateNotifications: true,
     visible: false,
   },
   {
@@ -248,6 +257,17 @@ export function visibleDashboardsForViewer(viewer: DashboardAccessInput): Dashbo
 
 export function navigableDashboards(): DashboardCatalogItem[] {
   return visibleDashboards().filter((dashboard) => Boolean(dashboard.href));
+}
+
+export function updateNotificationDashboards(): DashboardUpdateNotificationItem[] {
+  return dashboardCatalog.filter(
+    (dashboard): dashboard is DashboardUpdateNotificationItem =>
+      dashboard.kind !== "placeholder" && Boolean(dashboard.href) && dashboard.supportsUpdateNotifications === true
+  );
+}
+
+export function findUpdateNotificationDashboard(id: string): DashboardUpdateNotificationItem | null {
+  return updateNotificationDashboards().find((dashboard) => dashboard.id === id) || null;
 }
 
 export function privateHtmlDashboards(): PrivateHtmlDashboard[] {

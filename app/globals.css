@@ -262,6 +262,66 @@ p {
   font-size: 0.84rem;
 }
 
+.dashboard-update-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.dashboard-update-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.32rem;
+  max-width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--accent-text);
+  padding: 0.46rem 0.72rem;
+  font: inherit;
+  font-size: 0.84rem;
+  font-weight: 760;
+  line-height: 1.1;
+  white-space: nowrap;
+  cursor: pointer;
+  box-shadow: 0 8px 18px rgba(21, 19, 20, 0.07);
+}
+
+.dashboard-update-toggle:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent-line);
+}
+
+.dashboard-update-toggle:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.dashboard-update-toggle-active {
+  border-color: var(--success);
+  background: #edf9f2;
+  color: var(--success);
+}
+
+.dashboard-update-toggle-dot {
+  width: 0.52rem;
+  height: 0.52rem;
+  flex: 0 0 0.52rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.58;
+  margin-right: 0.44rem;
+}
+
+.dashboard-update-status {
+  max-width: 11rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.2;
+}
+
 .button-disabled {
   background: #ece8f3;
   border-color: var(--border);
@@ -529,6 +589,19 @@ p {
   margin-top: 0.55rem;
 }
 
+.private-dashboard-menu-notify {
+  width: 100%;
+  margin-top: 0.55rem;
+}
+
+.private-dashboard-menu-notify .dashboard-update-toggle {
+  width: 100%;
+}
+
+.private-dashboard-menu-notify .dashboard-update-status {
+  margin-left: 0.15rem;
+}
+
 .private-dashboard-frame {
   display: block;
   width: 100%;
@@ -544,7 +617,8 @@ p {
   }
 
   .private-dashboard-links-desktop,
-  .private-dashboard-signout-desktop {
+  .private-dashboard-signout-desktop,
+  .private-dashboard-notify-desktop {
     display: none;
   }
 

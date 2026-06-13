@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { canReadDashboard } from "@/lib/access-control";
+import { getDashboardUpdateSubscriptionState } from "@/lib/dashboard-update-notifications";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
+import { DashboardUpdateSubscriptionToggle } from "../dashboard-update-subscription-toggle";
 import { SignOutButton } from "../sign-out-button";
 import { CipherPayTestNavLinks } from "./nav-links";
 
@@ -17,6 +19,7 @@ export default async function CipherPayTestLayout({
     redirect("/");
   }
 
+  const updateSubscription = await getDashboardUpdateSubscriptionState(viewer, "cipherpay-test");
   const identityText =
     viewer.mode === "local-bypass"
       ? `Local network bypass active (${viewer.bypassClientIp || "unknown IP"})`
@@ -35,6 +38,12 @@ export default async function CipherPayTestLayout({
             </p>
           </div>
           <div className="button-row">
+            <DashboardUpdateSubscriptionToggle
+              dashboardId="cipherpay-test"
+              dashboardName="CipherPay Test"
+              initialEnabled={updateSubscription.enabled}
+              available={updateSubscription.available}
+            />
             <Link className="button button-secondary" href="/">
               All dashboards
             </Link>
