@@ -2762,7 +2762,9 @@ async function seedAccessControlDefaults() {
       VALUES
         ('dashboard-viewer', 'Dashboard Viewer', 'Generic dashboard reader for ad hoc scoped dashboard assignments.', TRUE),
         ('workspace-dashboard-viewer', 'Workspace Dashboard Viewer', 'Read all dashboards intended for internal workspace users.', TRUE),
-        ('current-private-dashboard-viewer', 'Current Private Dashboard Viewer', 'Read the current private dashboard bundle: Zodl Roadmap, Accrediv/PGPZ, and Arktouros.', TRUE),
+        ('zodl-roadmap-viewer', 'Zodl Roadmap Viewer', 'Read the Zodl Roadmap private dashboard.', TRUE),
+        ('accrediv-dashboard-viewer', 'Accrediv Dashboard Viewer', 'Read the Accrediv Updates and PGPZ private dashboard.', TRUE),
+        ('arktouros-dashboard-viewer', 'Arktouros Dashboard Viewer', 'Read the Arktouros private dashboard.', TRUE),
         ('xmonitor-viewer', 'X Monitor Viewer', 'Read the X Monitor dashboard.', TRUE),
         ('zodl-summit-viewer', 'Zodl Summit Viewer', 'Read the 2026 Zodl Summit dashboard.', TRUE),
         ('access-admin', 'Access Admin', 'Manage access-control users, groups, roles, permissions, and invitations.', TRUE),
@@ -2783,9 +2785,9 @@ async function seedAccessControlDefaults() {
         ('workspace-dashboard-viewer', 'dashboard:cipherpay-test:read'),
         ('workspace-dashboard-viewer', 'dashboard:regulatory-risk:read'),
         ('workspace-dashboard-viewer', 'dashboard:app-store-compliance:read'),
-        ('current-private-dashboard-viewer', 'dashboard:zodl-roadmap:read'),
-        ('current-private-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
-        ('current-private-dashboard-viewer', 'dashboard:arktouros:read'),
+        ('zodl-roadmap-viewer', 'dashboard:zodl-roadmap:read'),
+        ('accrediv-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
+        ('arktouros-dashboard-viewer', 'dashboard:arktouros:read'),
         ('xmonitor-viewer', 'dashboard:x-monitor:read'),
         ('zodl-summit-viewer', 'dashboard:2026-zodl-summit:read'),
         ('access-admin', 'admin:access-control:manage'),
@@ -2810,8 +2812,9 @@ async function seedAccessControlDefaults() {
         ('admins', 'access-admin', 'global', '*'),
         ('workspace-members', 'workspace-dashboard-viewer', 'global', '*'),
         ('xmonitor-guests', 'xmonitor-viewer', 'global', '*'),
-        ('accrediv-guests', 'current-private-dashboard-viewer', 'global', '*'),
-        ('arktouros-guests', 'current-private-dashboard-viewer', 'global', '*'),
+        ('accrediv-guests', 'zodl-roadmap-viewer', 'global', '*'),
+        ('accrediv-guests', 'accrediv-dashboard-viewer', 'global', '*'),
+        ('arktouros-guests', 'arktouros-dashboard-viewer', 'global', '*'),
         ('2026-zodl-summit-guests', 'zodl-summit-viewer', 'global', '*')
       ON CONFLICT DO NOTHING;
     `

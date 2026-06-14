@@ -9,7 +9,7 @@ The access-control admin console lives at `/admin/access`.
 - Roles collect permissions.
 - Group role assignments grant a role globally or scoped to one dashboard.
 - Effective access is the union of active group memberships, role assignments, role permissions, and assignment scope.
-- Seeded groups use role bundles where practical, such as `current-private-dashboard-viewer`, so permissions live on roles and groups mostly collect users.
+- Seeded groups use role bundles where practical, and guest groups use dashboard-specific viewer roles so permissions live on roles and groups mostly collect users.
 - The generic `dashboard-viewer` role remains available for ad hoc scoped dashboard assignments.
 - The current admin interface previews effective access; full session impersonation is reserved for a future audited flow.
 
@@ -36,7 +36,9 @@ Assignment rows in **Overview** include the existing removal action. Use **Users
 ## Seeded Roles
 
 - `workspace-dashboard-viewer`
-- `current-private-dashboard-viewer`
+- `zodl-roadmap-viewer`
+- `accrediv-dashboard-viewer`
+- `arktouros-dashboard-viewer`
 - `xmonitor-viewer`
 - `zodl-summit-viewer`
 - `dashboard-viewer` for ad hoc scoped dashboard grants
