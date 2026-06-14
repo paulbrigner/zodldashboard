@@ -5,6 +5,9 @@ import type {
   AccessControlAccessLogEntry,
   AccessControlAccessLogMeta,
   AccessControlGroup,
+  AccessControlGroupRole,
+  AccessControlPermission,
+  AccessControlRole,
   AccessControlSnapshot,
   AccessControlUser,
   EffectiveAccess,
@@ -20,13 +23,13 @@ const NEW_ROLE_VALUE = "__new_role__";
 const ACCESS_LOG_PAGE_SIZE_OPTIONS = [25, 50, 100, 250];
 const DEFAULT_ACCESS_LOG_PAGE_SIZE = 50;
 
-type AccessAdminTab = "users" | "groups" | "access-log" | "directory";
+type AccessAdminTab = "directory" | "users" | "groups" | "access-log";
 
 const ACCESS_ADMIN_TABS: Array<{ id: AccessAdminTab; label: string }> = [
+  { id: "directory", label: "Overview" },
   { id: "users", label: "Users" },
   { id: "groups", label: "Groups & Roles" },
   { id: "access-log", label: "Access Log" },
-  { id: "directory", label: "Directory" },
 ];
 
 type AdminResponse = {
@@ -77,6 +80,14 @@ function rolePermissionKeys(snapshot: AccessControlSnapshot, roleKey: string): s
   return snapshot.rolePermissions.filter((item) => item.roleKey === roleKey).map((item) => item.permissionKey);
 }
 
+function groupAssignments(snapshot: AccessControlSnapshot, groupKey: string): AccessControlGroupRole[] {
+  return snapshot.groupRoles.filter((assignment) => assignment.groupKey === groupKey);
+}
+
+function roleAssignments(snapshot: AccessControlSnapshot, roleKey: string): AccessControlGroupRole[] {
+  return snapshot.groupRoles.filter((assignment) => assignment.roleKey === roleKey);
+}
+
 function groupLabel(snapshot: AccessControlSnapshot, groupKey: string): string {
   const group = snapshot.groups.find((item) => item.groupKey === groupKey);
   return group?.name || groupKey;
@@ -91,6 +102,178 @@ function dashboardLabel(snapshot: AccessControlSnapshot, dashboardId: string): s
   if (dashboardId === "*" || dashboardId === "global") return "All dashboards";
   const dashboard = snapshot.dashboards.find((item) => item.id === dashboardId);
   return dashboard?.name || dashboardId;
+}
+
+function dashboardReadPermissionKey(dashboardId: string): string {
+  return `dashboard:${dashboardId}:read`;
+}
+
+function permissionForKey(snapshot: AccessControlSnapshot, permissionKey: string): AccessControlPermission | null {
+  return snapshot.permissions.find((permission) => permission.permissionKey === permissionKey) || null;
+}
+
+function scopeLabel(snapshot: AccessControlSnapshot, assignment: AccessControlGroupRole): string {
+  if (assignment.scopeType === "global") return "Global";
+  return `Dashboard: ${dashboardLabel(snapshot, assignment.scopeKey)}`;
+}
+
+type ResolvedPermissionGrant = {
+  permissionKey: string;
+  name: string;
+  description: string | null;
+};
+
+function resolvedGrantFromPermission(
+  snapshot: AccessControlSnapshot,
+  assignment: AccessControlGroupRole,
+  permission: AccessControlPermission
+): ResolvedPermissionGrant | null {
+  if (assignment.scopeType === "dashboard" && permission.resourceType === "dashboard" && permission.resourceKey === "*") {
+    const scopedPermissionKey = dashboardReadPermissionKey(assignment.scopeKey);
+    const scopedPermission = permissionForKey(snapshot, scopedPermissionKey);
+    return {
+      permissionKey: scopedPermissionKey,
+      name: scopedPermission?.name || `Read ${dashboardLabel(snapshot, assignment.scopeKey)}`,
+      description: scopedPermission?.description || `Granted by ${permission.name} within ${dashboardLabel(snapshot, assignment.scopeKey)}.`,
+    };
+  }
+
+  if (assignment.scopeType !== "global" && permission.resourceType !== assignment.scopeType) {
+    return null;
+  }
+
+  if (assignment.scopeType !== "global" && permission.resourceKey !== "*" && permission.resourceKey !== assignment.scopeKey) {
+    return null;
+  }
+
+  return {
+    permissionKey: permission.permissionKey,
+    name: permission.name,
+    description: permission.description,
+  };
+}
+
+function assignmentPermissionGrants(snapshot: AccessControlSnapshot, assignment: AccessControlGroupRole): ResolvedPermissionGrant[] {
+  const grants = new Map<string, ResolvedPermissionGrant>();
+  for (const rolePermission of snapshot.rolePermissions.filter((item) => item.roleKey === assignment.roleKey)) {
+    const permission = permissionForKey(snapshot, rolePermission.permissionKey);
+    if (!permission) {
+      grants.set(rolePermission.permissionKey, {
+        permissionKey: rolePermission.permissionKey,
+        name: rolePermission.permissionKey,
+        description: null,
+      });
+      continue;
+    }
+
+    const resolved = resolvedGrantFromPermission(snapshot, assignment, permission);
+    if (resolved) grants.set(resolved.permissionKey, resolved);
+  }
+  return Array.from(grants.values()).sort((a, b) => a.permissionKey.localeCompare(b.permissionKey));
+}
+
+function groupPermissionGrants(snapshot: AccessControlSnapshot, groupKey: string): ResolvedPermissionGrant[] {
+  const grants = new Map<string, ResolvedPermissionGrant>();
+  for (const assignment of groupAssignments(snapshot, groupKey)) {
+    for (const grant of assignmentPermissionGrants(snapshot, assignment)) {
+      grants.set(grant.permissionKey, grant);
+    }
+  }
+  return Array.from(grants.values()).sort((a, b) => a.permissionKey.localeCompare(b.permissionKey));
+}
+
+function groupGrantsDashboard(snapshot: AccessControlSnapshot, groupKey: string, dashboardId: string): boolean {
+  const dashboardPermission = dashboardReadPermissionKey(dashboardId);
+  return groupPermissionGrants(snapshot, groupKey).some(
+    (grant) => grant.permissionKey === dashboardPermission || grant.permissionKey === "dashboard:*:read"
+  );
+}
+
+function assignmentGrantsDashboard(
+  snapshot: AccessControlSnapshot,
+  assignment: AccessControlGroupRole,
+  dashboardId: string
+): boolean {
+  const dashboardPermission = dashboardReadPermissionKey(dashboardId);
+  return assignmentPermissionGrants(snapshot, assignment).some(
+    (grant) => grant.permissionKey === dashboardPermission || grant.permissionKey === "dashboard:*:read"
+  );
+}
+
+function roleUsesPermission(snapshot: AccessControlSnapshot, roleKey: string, permissionKey: string): boolean {
+  return snapshot.rolePermissions.some((item) => item.roleKey === roleKey && item.permissionKey === permissionKey);
+}
+
+function includesDirectoryText(values: Array<string | null | undefined>, query: string): boolean {
+  if (!query) return true;
+  return values.some((value) => (value || "").toLowerCase().includes(query));
+}
+
+function groupMatchesDirectoryQuery(snapshot: AccessControlSnapshot, group: AccessControlGroup, query: string): boolean {
+  if (!query) return true;
+  const members = groupMemberEmails(snapshot, group.groupKey);
+  const assignments = groupAssignments(snapshot, group.groupKey);
+  const grants = groupPermissionGrants(snapshot, group.groupKey);
+  return includesDirectoryText(
+    [
+      group.groupKey,
+      group.name,
+      group.description,
+      group.adminNote,
+      ...members,
+      ...assignments.flatMap((assignment) => [
+        assignment.roleKey,
+        roleLabel(snapshot, assignment.roleKey),
+        assignment.scopeType,
+        assignment.scopeKey,
+        dashboardLabel(snapshot, assignment.scopeKey),
+      ]),
+      ...grants.flatMap((grant) => [grant.permissionKey, grant.name, grant.description]),
+    ],
+    query
+  );
+}
+
+function roleMatchesDirectoryQuery(snapshot: AccessControlSnapshot, role: AccessControlRole, query: string): boolean {
+  if (!query) return true;
+  const assignments = roleAssignments(snapshot, role.roleKey);
+  const permissionKeys = rolePermissionKeys(snapshot, role.roleKey);
+  return includesDirectoryText(
+    [
+      role.roleKey,
+      role.name,
+      role.description,
+      ...permissionKeys.flatMap((permissionKey) => {
+        const permission = permissionForKey(snapshot, permissionKey);
+        return [permissionKey, permission?.name, permission?.description];
+      }),
+      ...assignments.flatMap((assignment) => [
+        assignment.groupKey,
+        groupLabel(snapshot, assignment.groupKey),
+        assignment.scopeType,
+        assignment.scopeKey,
+        dashboardLabel(snapshot, assignment.scopeKey),
+      ]),
+    ],
+    query
+  );
+}
+
+function permissionMatchesDirectoryQuery(snapshot: AccessControlSnapshot, permission: AccessControlPermission, query: string): boolean {
+  if (!query) return true;
+  const roles = snapshot.roles.filter((role) => roleUsesPermission(snapshot, role.roleKey, permission.permissionKey));
+  return includesDirectoryText(
+    [
+      permission.permissionKey,
+      permission.name,
+      permission.description,
+      permission.resourceType,
+      permission.resourceKey,
+      permission.action,
+      ...roles.flatMap((role) => [role.roleKey, role.name]),
+    ],
+    query
+  );
 }
 
 function formatDateTime(value: string | null): string {
@@ -113,7 +296,8 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState<AccessAdminTab>("users");
+  const [activeTab, setActiveTab] = useState<AccessAdminTab>("directory");
+  const [directoryQuery, setDirectoryQuery] = useState("");
 
   const [userEmail, setUserEmail] = useState("");
   const [firstName, setFirstName] = useState("");
@@ -396,10 +580,16 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   }
 
   useEffect(() => {
+    if (activeTab !== "users") return;
     void previewUser(selectedEmail);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "access-log" || accessLogMeta) return;
     void loadAccessLog();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [activeTab, accessLogMeta]);
 
   const selectedGroups = !editingNewUser && selectedEmail ? userGroupKeys(snapshot, selectedEmail) : [];
   const selectedRoleAssignments = !editingNewUser && selectedEmail ? userRoleAssignments(snapshot, selectedEmail) : [];
@@ -417,6 +607,12 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const previousLogOffset = accessLogMeta?.previousOffset ?? (effectiveLogOffset > 0 ? Math.max(0, effectiveLogOffset - effectiveLogLimit) : null);
   const nextLogOffset = accessLogMeta?.nextOffset ?? null;
   const accessLogPageNumber = Math.floor(effectiveLogOffset / effectiveLogLimit) + 1;
+  const directoryQueryText = directoryQuery.trim().toLowerCase();
+  const directoryGroups = snapshot.groups.filter((group) => groupMatchesDirectoryQuery(snapshot, group, directoryQueryText));
+  const directoryRoles = snapshot.roles.filter((role) => roleMatchesDirectoryQuery(snapshot, role, directoryQueryText));
+  const directoryPermissions = snapshot.permissions.filter((permission) =>
+    permissionMatchesDirectoryQuery(snapshot, permission, directoryQueryText)
+  );
 
   return (
     <div className="access-admin-body">
@@ -974,74 +1170,337 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
       >
         <header className="access-admin-section-header">
           <div>
-            <h2>Directory Summary</h2>
-            <p className="subtle-text">A quick reference for group membership and role bindings.</p>
+            <h2>Access Overview</h2>
+            <p className="subtle-text">Inspect dashboard coverage, group grants, role permissions, and permission usage.</p>
           </div>
+          <label className="access-admin-field access-admin-directory-search">
+            <span>Search directory</span>
+            <input
+              className="access-admin-input"
+              onChange={(event) => setDirectoryQuery(event.target.value)}
+              placeholder="group, role, user, dashboard, or permission"
+              type="search"
+              value={directoryQuery}
+            />
+          </label>
         </header>
-        <div className="access-admin-table-wrap">
-          <table className="access-admin-table">
-            <thead>
-              <tr>
-                <th>Group</th>
-                <th>Members</th>
-                <th>Role assignments</th>
-                <th>Admin note</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.groups.map((group: AccessControlGroup) => (
-                <tr key={group.groupKey}>
-                  <td>
-                    <strong>{group.name}</strong>
-                    <p className="access-admin-mono">{group.groupKey}</p>
-                  </td>
-                  <td>{groupMemberEmails(snapshot, group.groupKey).join(", ") || "none"}</td>
-                  <td>
-                    <div className="access-admin-assignment-list">
-                      {snapshot.groupRoles
-                        .filter((assignment) => assignment.groupKey === group.groupKey)
-                        .map((assignment) => (
-                          <span className="access-admin-assignment-chip" key={assignment.assignmentId}>
-                            {assignment.roleKey} ({assignment.scopeType}:{assignment.scopeKey})
-                            <button
-                              aria-label={`Remove ${assignment.roleKey} from ${group.groupKey}`}
-                              onClick={() => void perform({ operation: "remove_group_role", assignment_id: assignment.assignmentId })}
-                              type="button"
-                            >
-                              Remove
-                            </button>
-                          </span>
-                        ))}
-                      {snapshot.groupRoles.filter((assignment) => assignment.groupKey === group.groupKey).length === 0 ? "none" : null}
-                    </div>
-                  </td>
-                  <td>{group.adminNote || "n/a"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+        <div className="access-admin-stat-grid" aria-label="Access-control directory totals">
+          <div className="access-admin-stat">
+            <strong>{snapshot.users.length}</strong>
+            <span>Users</span>
+          </div>
+          <div className="access-admin-stat">
+            <strong>{snapshot.groups.length}</strong>
+            <span>Groups</span>
+          </div>
+          <div className="access-admin-stat">
+            <strong>{snapshot.roles.length}</strong>
+            <span>Roles</span>
+          </div>
+          <div className="access-admin-stat">
+            <strong>{snapshot.groupRoles.length}</strong>
+            <span>Group-role assignments</span>
+          </div>
+          <div className="access-admin-stat">
+            <strong>{snapshot.permissions.length}</strong>
+            <span>Permissions</span>
+          </div>
         </div>
 
-        <div className="access-admin-table-wrap">
-          <table className="access-admin-table">
-            <thead>
-              <tr>
-                <th>Role</th>
-                <th>Permissions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {snapshot.roles.map((role) => (
-                <tr key={role.roleKey}>
-                  <td>
-                    <strong>{role.name}</strong>
-                    <p className="access-admin-mono">{role.roleKey}</p>
-                  </td>
-                  <td>{rolePermissionKeys(snapshot, role.roleKey).join(", ") || "none"}</td>
+        <div className="access-admin-subsection">
+          <h3>Dashboard Access Matrix</h3>
+          <div className="access-admin-table-wrap">
+            <table className="access-admin-table">
+              <thead>
+                <tr>
+                  <th>Dashboard</th>
+                  <th>Permission</th>
+                  <th>Groups granting access</th>
+                  <th>Assigned users</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {snapshot.dashboards.map((dashboard) => {
+                  const grantingGroups = snapshot.groups.filter((group) => groupGrantsDashboard(snapshot, group.groupKey, dashboard.id));
+                  const assignedUsers = Array.from(
+                    new Set(grantingGroups.flatMap((group) => groupMemberEmails(snapshot, group.groupKey)))
+                  ).sort();
+                  return (
+                    <tr key={dashboard.id}>
+                      <td>
+                        <strong>{dashboard.name}</strong>
+                        <p className="access-admin-mono">
+                          {dashboard.id}{dashboard.visible ? "" : " - hidden"}
+                        </p>
+                      </td>
+                      <td>
+                        <p className="access-admin-mono">{dashboard.permissionKey}</p>
+                      </td>
+                      <td>
+                        {grantingGroups.length ? (
+                          <div className="access-admin-stack">
+                            {grantingGroups.map((group) => {
+                              const dashboardAssignments = groupAssignments(snapshot, group.groupKey).filter((assignment) =>
+                                assignmentGrantsDashboard(snapshot, assignment, dashboard.id)
+                              );
+                              return (
+                                <div className="access-admin-directory-line" key={`${dashboard.id}:${group.groupKey}`}>
+                                  <strong>{group.name}</strong>
+                                  <p className="access-admin-mono">{group.groupKey}</p>
+                                  <p className="subtle-text">
+                                    {dashboardAssignments.map((assignment) => `${roleLabel(snapshot, assignment.roleKey)} - ${scopeLabel(snapshot, assignment)}`).join("; ")}
+                                  </p>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="subtle-text">No group grants this dashboard.</span>
+                        )}
+                      </td>
+                      <td>
+                        {assignedUsers.length ? (
+                          <details className="access-admin-plain-details" open={assignedUsers.length <= 8}>
+                            <summary>{assignedUsers.length} assigned user{assignedUsers.length === 1 ? "" : "s"}</summary>
+                            <div className="access-admin-assignment-list">
+                              {assignedUsers.map((email) => (
+                                <span className="access-admin-assignment-chip" key={`${dashboard.id}:${email}`}>
+                                  {userLabelForEmail(snapshot, email)}
+                                </span>
+                              ))}
+                            </div>
+                          </details>
+                        ) : (
+                          <span className="subtle-text">No users assigned.</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="access-admin-subsection">
+          <h3>Group Grants</h3>
+          <div className="access-admin-table-wrap">
+            <table className="access-admin-table">
+              <thead>
+                <tr>
+                  <th>Group</th>
+                  <th>Members</th>
+                  <th>Role assignments and resolved permissions</th>
+                  <th>Admin note</th>
+                </tr>
+              </thead>
+              <tbody>
+                {directoryGroups.map((group: AccessControlGroup) => {
+                  const members = groupMemberEmails(snapshot, group.groupKey);
+                  const assignments = groupAssignments(snapshot, group.groupKey);
+                  return (
+                    <tr key={group.groupKey}>
+                      <td>
+                        <strong>{group.name}</strong>
+                        <p className="access-admin-mono">{group.groupKey}</p>
+                        {group.description ? <p className="subtle-text">{group.description}</p> : null}
+                        <p className="subtle-text">{group.isSystem ? "System group" : "Custom group"}</p>
+                      </td>
+                      <td>
+                        {members.length ? (
+                          <details className="access-admin-plain-details" open={members.length <= 8}>
+                            <summary>{members.length} member{members.length === 1 ? "" : "s"}</summary>
+                            <div className="access-admin-assignment-list">
+                              {members.map((email) => (
+                                <span className="access-admin-assignment-chip" key={`${group.groupKey}:${email}`}>
+                                  {userLabelForEmail(snapshot, email)}
+                                </span>
+                              ))}
+                            </div>
+                          </details>
+                        ) : (
+                          <span className="subtle-text">No members.</span>
+                        )}
+                      </td>
+                      <td>
+                        {assignments.length ? (
+                          <div className="access-admin-grant-list">
+                            {assignments.map((assignment) => {
+                              const grants = assignmentPermissionGrants(snapshot, assignment);
+                              const role = snapshot.roles.find((item) => item.roleKey === assignment.roleKey);
+                              return (
+                                <details className="access-admin-grant-detail" key={assignment.assignmentId} open>
+                                  <summary>
+                                    <strong>{roleLabel(snapshot, assignment.roleKey)}</strong>
+                                    <span>{scopeLabel(snapshot, assignment)}</span>
+                                  </summary>
+                                  {role?.description ? <p className="subtle-text">{role.description}</p> : null}
+                                  {grants.length ? (
+                                    <div className="access-admin-permission-list">
+                                      {grants.map((grant) => (
+                                        <span className="access-admin-permission-chip" key={`${assignment.assignmentId}:${grant.permissionKey}`}>
+                                          <strong>{grant.name}</strong>
+                                          <span className="access-admin-mono">{grant.permissionKey}</span>
+                                          {grant.description ? <span>{grant.description}</span> : null}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  ) : (
+                                    <p className="subtle-text">This assignment does not resolve to permissions in its current scope.</p>
+                                  )}
+                                  <button
+                                    className="button button-secondary button-small"
+                                    disabled={loading}
+                                    onClick={() => void perform({ operation: "remove_group_role", assignment_id: assignment.assignmentId })}
+                                    type="button"
+                                  >
+                                    Remove assignment
+                                  </button>
+                                </details>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="subtle-text">No role assignments.</span>
+                        )}
+                      </td>
+                      <td>{group.adminNote || "n/a"}</td>
+                    </tr>
+                  );
+                })}
+                {directoryGroups.length === 0 ? (
+                  <tr>
+                    <td colSpan={4}>No groups match the current directory search.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="access-admin-subsection">
+          <h3>Roles</h3>
+          <div className="access-admin-table-wrap">
+            <table className="access-admin-table">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th>Permissions on role</th>
+                  <th>Assigned to groups</th>
+                </tr>
+              </thead>
+              <tbody>
+                {directoryRoles.map((role) => {
+                  const permissionKeys = rolePermissionKeys(snapshot, role.roleKey);
+                  const assignments = roleAssignments(snapshot, role.roleKey);
+                  return (
+                    <tr key={role.roleKey}>
+                      <td>
+                        <strong>{role.name}</strong>
+                        <p className="access-admin-mono">{role.roleKey}</p>
+                        {role.description ? <p className="subtle-text">{role.description}</p> : null}
+                        <p className="subtle-text">{role.isSystem ? "System role" : "Custom role"}</p>
+                      </td>
+                      <td>
+                        {permissionKeys.length ? (
+                          <div className="access-admin-permission-list">
+                            {permissionKeys.map((item) => {
+                              const permission = permissionForKey(snapshot, item);
+                              return (
+                                <span className="access-admin-permission-chip" key={`${role.roleKey}:${item}`}>
+                                  <strong>{permission?.name || item}</strong>
+                                  <span className="access-admin-mono">{item}</span>
+                                  {permission?.description ? <span>{permission.description}</span> : null}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <span className="subtle-text">No permissions.</span>
+                        )}
+                      </td>
+                      <td>
+                        {assignments.length ? (
+                          <div className="access-admin-stack">
+                            {assignments.map((assignment) => (
+                              <div className="access-admin-directory-line" key={`${role.roleKey}:${assignment.assignmentId}`}>
+                                <strong>{groupLabel(snapshot, assignment.groupKey)}</strong>
+                                <p className="access-admin-mono">{assignment.groupKey}</p>
+                                <p className="subtle-text">{scopeLabel(snapshot, assignment)}</p>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="subtle-text">Not assigned to any group.</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {directoryRoles.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>No roles match the current directory search.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="access-admin-subsection">
+          <h3>Permission Catalog</h3>
+          <div className="access-admin-table-wrap">
+            <table className="access-admin-table">
+              <thead>
+                <tr>
+                  <th>Permission</th>
+                  <th>Resource</th>
+                  <th>Used by roles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {directoryPermissions.map((permission) => {
+                  const rolesUsingPermission = snapshot.roles.filter((role) =>
+                    roleUsesPermission(snapshot, role.roleKey, permission.permissionKey)
+                  );
+                  return (
+                    <tr key={permission.permissionKey}>
+                      <td>
+                        <strong>{permission.name}</strong>
+                        <p className="access-admin-mono">{permission.permissionKey}</p>
+                        {permission.description ? <p className="subtle-text">{permission.description}</p> : null}
+                      </td>
+                      <td>
+                        <p className="access-admin-mono">
+                          {permission.resourceType}:{permission.resourceKey}:{permission.action}
+                        </p>
+                        <p className="subtle-text">{permission.isSystem ? "System permission" : "Custom permission"}</p>
+                      </td>
+                      <td>
+                        {rolesUsingPermission.length ? (
+                          <div className="access-admin-assignment-list">
+                            {rolesUsingPermission.map((role) => (
+                              <span className="access-admin-assignment-chip" key={`${permission.permissionKey}:${role.roleKey}`}>
+                                {role.name} ({role.roleKey})
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <span className="subtle-text">No roles use this permission.</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {directoryPermissions.length === 0 ? (
+                  <tr>
+                    <td colSpan={3}>No permissions match the current directory search.</td>
+                  </tr>
+                ) : null}
+              </tbody>
+            </table>
+          </div>
         </div>
       </section>
       ) : null}

@@ -3212,6 +3212,11 @@ p {
   align-self: end;
 }
 
+.access-admin-directory-search {
+  flex: 0 1 390px;
+  min-width: min(390px, 100%);
+}
+
 .access-admin-preview-grid,
 .access-admin-log-filters {
   display: grid;
@@ -3256,6 +3261,128 @@ p {
 
 .access-admin-table p {
   margin: 0.22rem 0 0;
+}
+
+.access-admin-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.6rem;
+}
+
+.access-admin-stat {
+  border: 1px solid var(--accent-line);
+  border-radius: 0.68rem;
+  background: var(--surface-alt);
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.access-admin-stat strong {
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+
+.access-admin-stat span {
+  color: var(--accent-text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.access-admin-subsection {
+  display: grid;
+  gap: 0.56rem;
+}
+
+.access-admin-subsection + .access-admin-subsection {
+  margin-top: 0.18rem;
+}
+
+.access-admin-stack,
+.access-admin-grant-list {
+  display: grid;
+  gap: 0.48rem;
+}
+
+.access-admin-directory-line {
+  display: grid;
+  gap: 0.12rem;
+  min-width: 13rem;
+}
+
+.access-admin-directory-line p {
+  margin: 0;
+}
+
+.access-admin-plain-details summary,
+.access-admin-grant-detail summary {
+  cursor: pointer;
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.access-admin-plain-details[open] summary {
+  margin-bottom: 0.48rem;
+}
+
+.access-admin-grant-detail {
+  border: 1px solid var(--accent-line);
+  border-radius: 0.62rem;
+  background: #ffffff;
+  padding: 0.62rem;
+}
+
+.access-admin-grant-detail[open] {
+  display: grid;
+  gap: 0.54rem;
+}
+
+.access-admin-grant-detail summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+  align-items: center;
+}
+
+.access-admin-grant-detail summary span {
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: 0.78rem;
+  padding: 0.16rem 0.44rem;
+}
+
+.access-admin-grant-detail .button {
+  justify-self: start;
+}
+
+.access-admin-permission-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.45rem;
+}
+
+.access-admin-permission-chip {
+  border: 1px solid var(--accent-line);
+  border-radius: 0.56rem;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  display: grid;
+  gap: 0.16rem;
+  padding: 0.5rem;
+}
+
+.access-admin-permission-chip strong {
+  color: var(--text-primary);
+}
+
+.access-admin-permission-chip > span:not(.access-admin-mono) {
+  font-size: 0.82rem;
+  line-height: 1.35;
 }
 
 .access-admin-pagination {
@@ -3394,6 +3521,10 @@ p {
     flex: 1 1 calc(50% - 0.36rem);
     min-width: 0;
     padding-inline: 0.42rem;
+  }
+
+  .access-admin-directory-search {
+    flex-basis: 100%;
   }
 
   .brand-logo-zodl {

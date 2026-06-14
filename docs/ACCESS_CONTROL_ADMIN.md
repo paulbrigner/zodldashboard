@@ -11,6 +11,17 @@ The access-control admin console lives at `/admin/access`.
 - Effective access is the union of active group memberships, role assignments, role permissions, and assignment scope.
 - The current admin interface previews effective access; full session impersonation is reserved for a future audited flow.
 
+## Admin UI
+
+The default `/admin/access` tab is **Overview**. Use it to audit existing access before editing:
+
+- Dashboard Access Matrix shows which groups grant each dashboard and which users inherit that access.
+- Group Grants shows each group, its members, its role assignments, and the resolved permissions created by assignment scope.
+- Roles shows role permissions and every group assignment using that role.
+- Permission Catalog shows every permission and the roles that include it.
+
+Assignment rows in **Overview** include the existing removal action. Use **Users** for a single user's effective access preview, **Groups & Roles** for adding or changing groups, memberships, role assignments, and role permissions, and **Access Log** for login/dashboard activity.
+
 ## Seeded Groups
 
 - `admins`
