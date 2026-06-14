@@ -260,7 +260,7 @@ export function navigableDashboards(): DashboardCatalogItem[] {
 }
 
 export function updateNotificationDashboards(): DashboardUpdateNotificationItem[] {
-  return dashboardCatalog.filter(
+  return visibleDashboards().filter(
     (dashboard): dashboard is DashboardUpdateNotificationItem =>
       dashboard.kind !== "placeholder" && Boolean(dashboard.href) && dashboard.supportsUpdateNotifications === true
   );

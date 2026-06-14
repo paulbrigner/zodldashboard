@@ -11,6 +11,7 @@ The access-control admin console lives at `/admin/access`.
 - Effective access is the union of active group memberships, role assignments, role permissions, and assignment scope.
 - Seeded groups use role bundles where practical, and guest groups use dashboard-specific viewer roles so permissions live on roles and groups mostly collect users.
 - The generic `dashboard-viewer` role remains available for ad hoc scoped dashboard assignments.
+- Dashboards marked `visible: false` are omitted from the admin dashboard matrix, permission catalog, role-permission display, and dashboard selectors.
 - The current admin interface previews effective access; full session impersonation is reserved for a future audited flow.
 
 ## Admin UI

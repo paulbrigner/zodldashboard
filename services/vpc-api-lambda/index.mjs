@@ -31,8 +31,10 @@ const ACCESS_CONTROL_DASHBOARDS = [
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },
   { id: "app-store-compliance", name: "App Store Dashboard", permissionKey: "dashboard:app-store-compliance:read", visible: false },
 ];
+const VISIBLE_ACCESS_CONTROL_DASHBOARDS = ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.visible);
+const VISIBLE_ACCESS_CONTROL_DASHBOARD_IDS = new Set(VISIBLE_ACCESS_CONTROL_DASHBOARDS.map((dashboard) => dashboard.id));
 const DASHBOARD_UPDATE_NOTIFICATION_IDS = new Set(
-  ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.id !== "x-monitor").map((dashboard) => dashboard.id)
+  VISIBLE_ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.id !== "x-monitor").map((dashboard) => dashboard.id)
 );
 const DASHBOARD_UPDATE_EVENT_SOURCES = new Set(["manual", "api", "github", "admin"]);
 const BUILT_IN_ACCREDIV_GUEST_EMAILS = "div@accrediv.com";
@@ -6300,6 +6302,17 @@ function accessRowIso(value) {
   return new Date(String(value)).toISOString();
 }
 
+function isExposedAccessControlPermissionRow(row) {
+  if (row.resource_type !== "dashboard") return true;
+  if (row.resource_key === "*") return true;
+  return VISIBLE_ACCESS_CONTROL_DASHBOARD_IDS.has(row.resource_key);
+}
+
+function isExposedAccessControlGroupRoleRow(row) {
+  if (row.scope_type !== "dashboard") return true;
+  return VISIBLE_ACCESS_CONTROL_DASHBOARD_IDS.has(row.scope_key);
+}
+
 async function buildAccessControlSnapshot(actorEmail) {
   const actor = await requireAccessAdmin(actorEmail);
   await seedAccessDirectoryMemberships();
@@ -6330,6 +6343,11 @@ async function buildAccessControlSnapshot(actorEmail) {
     `),
   ]);
 
+  const exposedPermissions = permissions.rows.filter(isExposedAccessControlPermissionRow);
+  const exposedPermissionKeys = new Set(exposedPermissions.map((row) => row.permission_key));
+  const exposedGroupRoles = groupRoles.rows.filter(isExposedAccessControlGroupRoleRow);
+  const exposedRolePermissions = rolePermissions.rows.filter((row) => exposedPermissionKeys.has(row.permission_key));
+
   return {
     actor,
     users: users.rows.map((row) => ({
@@ -6358,7 +6376,7 @@ async function buildAccessControlSnapshot(actorEmail) {
       description: row.description || null,
       isSystem: row.is_system,
     })),
-    permissions: permissions.rows.map((row) => ({
+    permissions: exposedPermissions.map((row) => ({
       permissionKey: row.permission_key,
       resourceType: row.resource_type,
       resourceKey: row.resource_key,
@@ -6373,7 +6391,7 @@ async function buildAccessControlSnapshot(actorEmail) {
       expiresAt: accessRowIso(row.expires_at),
       createdAt: accessRowIso(row.created_at),
     })),
-    groupRoles: groupRoles.rows.map((row) => ({
+    groupRoles: exposedGroupRoles.map((row) => ({
       assignmentId: String(row.assignment_id),
       groupKey: row.group_key,
       roleKey: row.role_key,
@@ -6381,7 +6399,7 @@ async function buildAccessControlSnapshot(actorEmail) {
       scopeKey: row.scope_key,
       createdAt: accessRowIso(row.created_at),
     })),
-    rolePermissions: rolePermissions.rows.map((row) => ({
+    rolePermissions: exposedRolePermissions.map((row) => ({
       roleKey: row.role_key,
       permissionKey: row.permission_key,
       createdAt: accessRowIso(row.created_at),
@@ -6399,7 +6417,7 @@ async function buildAccessControlSnapshot(actorEmail) {
       welcomeEmailSentAt: accessRowIso(row.welcome_email_sent_at),
       errorMessage: row.error_message || null,
     })),
-    dashboards: ACCESS_CONTROL_DASHBOARDS,
+    dashboards: VISIBLE_ACCESS_CONTROL_DASHBOARDS,
   };
 }
 

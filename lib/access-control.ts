@@ -223,6 +223,24 @@ export const accessControlDashboards: AccessControlDashboardResource[] = [
   },
 ];
 
+const visibleAccessControlDashboards = accessControlDashboards.filter((dashboard) => dashboard.visible);
+const visibleAccessControlDashboardIds = new Set(visibleAccessControlDashboards.map((dashboard) => dashboard.id));
+
+function isExposedDashboardResource(resourceKey: string): boolean {
+  if (resourceKey === "*") return true;
+  return visibleAccessControlDashboardIds.has(resourceKey);
+}
+
+function isExposedPermissionRow(row: { resource_type: string; resource_key: string }): boolean {
+  if (row.resource_type !== "dashboard") return true;
+  return isExposedDashboardResource(row.resource_key);
+}
+
+function isExposedGroupRoleRow(row: { scope_type: AccessControlScopeType; scope_key: string }): boolean {
+  if (row.scope_type !== "dashboard") return true;
+  return visibleAccessControlDashboardIds.has(row.scope_key);
+}
+
 function allowedGoogleDomain(): string {
   return (process.env.ALLOWED_GOOGLE_DOMAIN || "zodl.com").trim().toLowerCase().replace(/^@+/, "");
 }
@@ -701,6 +719,11 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
     ),
   ]);
 
+  const exposedPermissions = permissions.rows.filter(isExposedPermissionRow);
+  const exposedPermissionKeys = new Set(exposedPermissions.map((row) => row.permission_key));
+  const exposedGroupRoles = groupRoles.rows.filter(isExposedGroupRoleRow);
+  const exposedRolePermissions = rolePermissions.rows.filter((row) => exposedPermissionKeys.has(row.permission_key));
+
   return {
     actor,
     users: users.rows.map((row) => ({
@@ -729,7 +752,7 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
       description: row.description ?? null,
       isSystem: row.is_system,
     })),
-    permissions: permissions.rows.map((row) => ({
+    permissions: exposedPermissions.map((row) => ({
       permissionKey: row.permission_key,
       resourceType: row.resource_type,
       resourceKey: row.resource_key,
@@ -744,7 +767,7 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
       expiresAt: isoOrNull(row.expires_at),
       createdAt: isoOrNull(row.created_at) || "",
     })),
-    groupRoles: groupRoles.rows.map((row) => ({
+    groupRoles: exposedGroupRoles.map((row) => ({
       assignmentId: String(row.assignment_id),
       groupKey: row.group_key,
       roleKey: row.role_key,
@@ -752,7 +775,7 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
       scopeKey: row.scope_key,
       createdAt: isoOrNull(row.created_at) || "",
     })),
-    rolePermissions: rolePermissions.rows.map((row) => ({
+    rolePermissions: exposedRolePermissions.map((row) => ({
       roleKey: row.role_key,
       permissionKey: row.permission_key,
       createdAt: isoOrNull(row.created_at) || "",
@@ -770,7 +793,7 @@ async function directSnapshot(actorEmail: string): Promise<AccessControlSnapshot
       welcomeEmailSentAt: isoOrNull(row.welcome_email_sent_at),
       errorMessage: row.error_message ?? null,
     })),
-    dashboards: accessControlDashboards,
+    dashboards: visibleAccessControlDashboards,
   };
 }
 
@@ -1001,7 +1024,7 @@ function appBaseUrl(input?: string): string {
 }
 
 function accessSummary(access: EffectiveAccess): string {
-  const allowed = accessControlDashboards
+  const allowed = visibleAccessControlDashboards
     .filter((dashboard) => canReadDashboard(access, dashboard.id))
     .map((dashboard) => `- ${dashboard.name}`);
   return allowed.length ? allowed.join("\n") : "- No dashboards yet";
