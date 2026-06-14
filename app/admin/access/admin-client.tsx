@@ -32,6 +32,15 @@ const ACCESS_ADMIN_TABS: Array<{ id: AccessAdminTab; label: string }> = [
   { id: "access-log", label: "Access Log" },
 ];
 
+const DASHBOARD_VIEWER_ROLE_KEY = "dashboard-viewer";
+const DASHBOARD_SPECIFIC_ROLE_BY_ID: Record<string, string> = {
+  "x-monitor": "xmonitor-viewer",
+  "zodl-roadmap": "zodl-roadmap-viewer",
+  "pgpz-roadmap": "accrediv-dashboard-viewer",
+  arktouros: "arktouros-dashboard-viewer",
+  "2026-zodl-summit": "zodl-summit-viewer",
+};
+
 type AdminResponse = {
   snapshot?: AccessControlSnapshot;
   preview?: EffectiveAccess;
@@ -276,6 +285,27 @@ function permissionMatchesDirectoryQuery(snapshot: AccessControlSnapshot, permis
   );
 }
 
+type DashboardGrantAssignment = {
+  roleKey: string;
+  scopeType: "global" | "dashboard";
+  scopeKey: string;
+};
+
+function roleExists(snapshot: AccessControlSnapshot, roleKey: string): boolean {
+  return snapshot.roles.some((role) => role.roleKey === roleKey);
+}
+
+function dashboardGrantAssignment(snapshot: AccessControlSnapshot, dashboardId: string): DashboardGrantAssignment | null {
+  const specificRoleKey = DASHBOARD_SPECIFIC_ROLE_BY_ID[dashboardId];
+  if (specificRoleKey && roleExists(snapshot, specificRoleKey)) {
+    return { roleKey: specificRoleKey, scopeType: "global", scopeKey: "*" };
+  }
+  if (roleExists(snapshot, DASHBOARD_VIEWER_ROLE_KEY)) {
+    return { roleKey: DASHBOARD_VIEWER_ROLE_KEY, scopeType: "dashboard", scopeKey: dashboardId };
+  }
+  return null;
+}
+
 function formatDateTime(value: string | null): string {
   if (!value) return "n/a";
   return new Intl.DateTimeFormat(undefined, {
@@ -322,6 +352,9 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const [membershipEmail, setMembershipEmail] = useState(defaultMembershipEmail(initialSnapshot));
   const [membershipGroup, setMembershipGroup] = useState(initialSnapshot.groups[0]?.groupKey || "");
   const [membershipEnabled, setMembershipEnabled] = useState(true);
+
+  const [dashboardGrantGroup, setDashboardGrantGroup] = useState(initialSnapshot.groups[0]?.groupKey || "");
+  const [dashboardGrantDashboard, setDashboardGrantDashboard] = useState(initialSnapshot.dashboards[0]?.id || "");
 
   const [assignmentGroup, setAssignmentGroup] = useState(initialSnapshot.groups[0]?.groupKey || "");
   const [assignmentRole, setAssignmentRole] = useState(initialSnapshot.roles[0]?.roleKey || "");
@@ -418,10 +451,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     if (!membershipGroup || !snapshot.groups.some((group) => group.groupKey === membershipGroup)) {
       setMembershipGroup(snapshot.groups[0]?.groupKey || "");
     }
+    if (!dashboardGrantGroup || !snapshot.groups.some((group) => group.groupKey === dashboardGrantGroup)) {
+      setDashboardGrantGroup(snapshot.groups[0]?.groupKey || "");
+    }
     if (!assignmentGroup || !snapshot.groups.some((group) => group.groupKey === assignmentGroup)) {
       setAssignmentGroup(snapshot.groups[0]?.groupKey || "");
     }
-  }, [assignmentGroup, membershipGroup, selectedGroupKey, snapshot.groups]);
+  }, [assignmentGroup, dashboardGrantGroup, membershipGroup, selectedGroupKey, snapshot.groups]);
 
   useEffect(() => {
     if (membershipMode === "email") return;
@@ -447,6 +483,15 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
       setPermissionKey(snapshot.permissions[0]?.permissionKey || "");
     }
   }, [permissionKey, snapshot.permissions]);
+
+  useEffect(() => {
+    if (!dashboardGrantDashboard || !snapshot.dashboards.some((dashboard) => dashboard.id === dashboardGrantDashboard)) {
+      setDashboardGrantDashboard(snapshot.dashboards[0]?.id || "");
+    }
+    if (!assignmentScopeKey || !snapshot.dashboards.some((dashboard) => dashboard.id === assignmentScopeKey)) {
+      setAssignmentScopeKey(snapshot.dashboards[0]?.id || "");
+    }
+  }, [assignmentScopeKey, dashboardGrantDashboard, snapshot.dashboards]);
 
   async function reloadSnapshot() {
     const response = await readJsonOrThrow<AdminResponse>(
@@ -506,6 +551,22 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
     });
     setMembershipEmail(email);
     setSelectedEmail(email);
+  }
+
+  async function grantDashboardAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const assignment = dashboardGrantAssignment(snapshot, dashboardGrantDashboard);
+    if (!assignment) {
+      setError("Dashboard Viewer role is not available.");
+      return;
+    }
+    await perform({
+      operation: "assign_group_role",
+      group_key: dashboardGrantGroup,
+      role_key: assignment.roleKey,
+      scope_type: assignment.scopeType,
+      scope_key: assignment.scopeKey,
+    });
   }
 
   async function saveGroup(event: FormEvent<HTMLFormElement>) {
@@ -594,6 +655,17 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
   const selectedGroups = !editingNewUser && selectedEmail ? userGroupKeys(snapshot, selectedEmail) : [];
   const selectedRoleAssignments = !editingNewUser && selectedEmail ? userRoleAssignments(snapshot, selectedEmail) : [];
   const selectedGroupMembers = selectedGroup ? groupMemberEmails(snapshot, selectedGroup.groupKey) : [];
+  const selectedGroupAssignments = selectedGroup ? groupAssignments(snapshot, selectedGroup.groupKey) : [];
+  const selectedRolePermissionKeys = !editingNewRole && selectedRoleKey ? rolePermissionKeys(snapshot, selectedRoleKey) : [];
+  const selectedRoleGroupAssignments = !editingNewRole && selectedRoleKey ? roleAssignments(snapshot, selectedRoleKey) : [];
+  const membershipEmailNormalized = normalizeFormEmail(membershipEmail);
+  const membershipUserGroups = membershipEmailNormalized ? userGroupKeys(snapshot, membershipEmailNormalized) : [];
+  const dashboardGrantGroupAssignments = dashboardGrantGroup ? groupAssignments(snapshot, dashboardGrantGroup) : [];
+  const dashboardGrantGroupDashboards = dashboardGrantGroup
+    ? snapshot.dashboards.filter((dashboard) => groupGrantsDashboard(snapshot, dashboardGrantGroup, dashboard.id))
+    : [];
+  const assignmentGroupAssignments = assignmentGroup ? groupAssignments(snapshot, assignmentGroup) : [];
+  const permissionRolePermissionKeys = permissionRole ? rolePermissionKeys(snapshot, permissionRole) : [];
   const allowedDashboards = preview
     ? snapshot.dashboards.filter((dashboard) => dashboard.visible && (preview.permissions.includes(dashboard.permissionKey) || preview.permissions.includes("dashboard:*:read")))
     : [];
@@ -791,7 +863,7 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
             <h2>Groups & Roles</h2>
             <p className="subtle-text">
               {snapshot.groups.length} groups, {snapshot.roles.length} roles, {snapshot.permissions.length} permissions.
-              Create groups/roles, assign users to groups, grant roles to groups, and attach permissions to roles.
+              Create groups/roles, assign users to groups, grant dashboard access, and manage advanced role permissions.
             </p>
           </div>
         </header>
@@ -848,6 +920,18 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 {selectedGroup && selectedGroupMembers.length === 0 ? <p className="subtle-text">No users are assigned to this group.</p> : null}
               </div>
             </details>
+            <details className="access-admin-disclosure">
+              <summary>Group Role Assignments ({selectedGroupAssignments.length})</summary>
+              <div className="access-admin-assignment-list">
+                {selectedGroupAssignments.map((assignment) => (
+                  <span className="access-admin-assignment-chip" key={assignment.assignmentId}>
+                    {roleLabel(snapshot, assignment.roleKey)} ({scopeLabel(snapshot, assignment)})
+                  </span>
+                ))}
+                {!selectedGroup ? <p className="subtle-text">Select a group to view its role assignments.</p> : null}
+                {selectedGroup && selectedGroupAssignments.length === 0 ? <p className="subtle-text">No roles are assigned to this group.</p> : null}
+              </div>
+            </details>
             <div className="button-row">
               <button className="button" disabled={loading} type="submit">{editingNewGroup ? "Create group" : "Save group"}</button>
               <button className="button button-secondary" disabled={loading} onClick={clearGroupForm} type="button">
@@ -894,6 +978,33 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               <span>Description</span>
               <textarea className="access-admin-input" onChange={(event) => setRoleDescription(event.target.value)} rows={3} value={roleDescription} />
             </label>
+            <details className="access-admin-disclosure">
+              <summary>Role Permissions ({selectedRolePermissionKeys.length})</summary>
+              <div className="access-admin-assignment-list">
+                {selectedRolePermissionKeys.map((item) => {
+                  const permission = permissionForKey(snapshot, item);
+                  return (
+                    <span className="access-admin-assignment-chip" key={`${selectedRoleKey}:${item}`}>
+                      {permission?.name || item}
+                    </span>
+                  );
+                })}
+                {editingNewRole ? <p className="subtle-text">Select a role to view its permissions.</p> : null}
+                {!editingNewRole && selectedRolePermissionKeys.length === 0 ? <p className="subtle-text">No permissions are attached to this role.</p> : null}
+              </div>
+            </details>
+            <details className="access-admin-disclosure">
+              <summary>Assigned Groups ({selectedRoleGroupAssignments.length})</summary>
+              <div className="access-admin-assignment-list">
+                {selectedRoleGroupAssignments.map((assignment) => (
+                  <span className="access-admin-assignment-chip" key={`${selectedRoleKey}:${assignment.assignmentId}`}>
+                    {groupLabel(snapshot, assignment.groupKey)} ({scopeLabel(snapshot, assignment)})
+                  </span>
+                ))}
+                {editingNewRole ? <p className="subtle-text">Select a role to view its group assignments.</p> : null}
+                {!editingNewRole && selectedRoleGroupAssignments.length === 0 ? <p className="subtle-text">No groups use this role.</p> : null}
+              </div>
+            </details>
             <div className="button-row">
               <button className="button" disabled={loading} type="submit">{editingNewRole ? "Create role" : "Save role"}</button>
               <button className="button button-secondary" disabled={loading} onClick={clearRoleForm} type="button">
@@ -907,6 +1018,47 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
         </div>
 
         <div className="access-admin-grid access-admin-grid-wide">
+          <form className="access-admin-form" onSubmit={grantDashboardAccess}>
+            <h3>Dashboard Access</h3>
+            <label className="access-admin-field">
+              <span>Group</span>
+              <select className="access-admin-input" onChange={(event) => setDashboardGrantGroup(event.target.value)} value={dashboardGrantGroup}>
+                {snapshot.groups.map((group) => <option key={group.groupKey} value={group.groupKey}>{group.name}</option>)}
+              </select>
+            </label>
+            <label className="access-admin-field">
+              <span>Dashboard</span>
+              <select className="access-admin-input" onChange={(event) => setDashboardGrantDashboard(event.target.value)} value={dashboardGrantDashboard}>
+                {snapshot.dashboards.map((dashboard) => <option key={dashboard.id} value={dashboard.id}>{dashboard.name}</option>)}
+              </select>
+            </label>
+            <details className="access-admin-disclosure">
+              <summary>Current Dashboard Access ({dashboardGrantGroupDashboards.length})</summary>
+              <div className="access-admin-assignment-list">
+                {dashboardGrantGroupDashboards.map((dashboard) => (
+                  <span className="access-admin-assignment-chip" key={`${dashboardGrantGroup}:${dashboard.id}`}>
+                    {dashboard.name}
+                  </span>
+                ))}
+                {dashboardGrantGroupDashboards.length === 0 ? <p className="subtle-text">This group does not grant visible dashboard access.</p> : null}
+              </div>
+            </details>
+            <details className="access-admin-disclosure">
+              <summary>Underlying Assignments ({dashboardGrantGroupAssignments.length})</summary>
+              <div className="access-admin-assignment-list">
+                {dashboardGrantGroupAssignments.map((assignment) => (
+                  <span className="access-admin-assignment-chip" key={`dashboard-grant:${assignment.assignmentId}`}>
+                    {roleLabel(snapshot, assignment.roleKey)} ({scopeLabel(snapshot, assignment)})
+                  </span>
+                ))}
+                {dashboardGrantGroupAssignments.length === 0 ? <p className="subtle-text">No roles are assigned to this group.</p> : null}
+              </div>
+            </details>
+            <button className="button" disabled={!dashboardGrantGroup || !dashboardGrantDashboard || loading} type="submit">
+              Grant dashboard access
+            </button>
+          </form>
+
           <form className="access-admin-form" onSubmit={applyMembership}>
             <h3>User Group Membership</h3>
             <label className="access-admin-field">
@@ -976,6 +1128,17 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 <option value="remove">Remove membership</option>
               </select>
             </label>
+            <details className="access-admin-disclosure">
+              <summary>Current User Groups ({membershipUserGroups.length})</summary>
+              <div className="access-admin-assignment-list">
+                {membershipUserGroups.map((key) => (
+                  <span className="access-admin-assignment-chip" key={`${membershipEmailNormalized}:${key}`}>
+                    {groupLabel(snapshot, key)}
+                  </span>
+                ))}
+                {membershipUserGroups.length === 0 ? <p className="subtle-text">This user is not assigned to any groups.</p> : null}
+              </div>
+            </details>
             <div className="button-row">
               <button className="button" disabled={!membershipEmail || !membershipGroup || loading} type="submit">Apply membership</button>
               <button
@@ -991,7 +1154,11 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
               </button>
             </div>
           </form>
+        </div>
 
+        <details className="access-admin-disclosure access-admin-advanced-controls">
+          <summary>Advanced role and permission controls</summary>
+          <div className="access-admin-grid access-admin-grid-wide access-admin-advanced-grid">
           <form className="access-admin-form" onSubmit={(event) => { event.preventDefault(); void perform({ operation: "assign_group_role", group_key: assignmentGroup, role_key: assignmentRole, scope_type: assignmentScopeType, scope_key: assignmentScopeKey }); }}>
             <h3>Group Role Assignment</h3>
             <label className="access-admin-field">
@@ -1021,6 +1188,17 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 </select>
               </label>
             ) : null}
+            <details className="access-admin-disclosure">
+              <summary>Current Group Assignments ({assignmentGroupAssignments.length})</summary>
+              <div className="access-admin-assignment-list">
+                {assignmentGroupAssignments.map((assignment) => (
+                  <span className="access-admin-assignment-chip" key={`assignment-group:${assignment.assignmentId}`}>
+                    {roleLabel(snapshot, assignment.roleKey)} ({scopeLabel(snapshot, assignment)})
+                  </span>
+                ))}
+                {assignmentGroupAssignments.length === 0 ? <p className="subtle-text">No roles are assigned to this group.</p> : null}
+              </div>
+            </details>
             <button className="button" disabled={loading} type="submit">Assign role</button>
           </form>
 
@@ -1045,9 +1223,24 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 <option value="remove">Remove permission</option>
               </select>
             </label>
+            <details className="access-admin-disclosure">
+              <summary>Current Role Permissions ({permissionRolePermissionKeys.length})</summary>
+              <div className="access-admin-assignment-list">
+                {permissionRolePermissionKeys.map((item) => {
+                  const permission = permissionForKey(snapshot, item);
+                  return (
+                    <span className="access-admin-assignment-chip" key={`${permissionRole}:${item}`}>
+                      {permission?.name || item}
+                    </span>
+                  );
+                })}
+                {permissionRolePermissionKeys.length === 0 ? <p className="subtle-text">No permissions are attached to this role.</p> : null}
+              </div>
+            </details>
             <button className="button" disabled={loading} type="submit">Apply permission</button>
           </form>
-        </div>
+          </div>
+        </details>
       </section>
       ) : null}
 

@@ -3421,6 +3421,14 @@ p {
   margin-bottom: 0.58rem;
 }
 
+.access-admin-advanced-controls {
+  margin-top: 0.9rem;
+}
+
+.access-admin-advanced-grid {
+  margin-top: 0.65rem;
+}
+
 .access-admin-assignment-list {
   display: flex;
   flex-wrap: wrap;

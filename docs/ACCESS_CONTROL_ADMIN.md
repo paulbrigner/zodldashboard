@@ -23,7 +23,9 @@ The default `/admin/access` tab is **Overview**. Use it to audit existing access
 - Roles shows role permissions and every group assignment using that role.
 - Permission Catalog shows every permission and the roles that include it.
 
-Assignment rows in **Overview** include the existing removal action. Use **Users** for a single user's effective access preview, **Groups & Roles** for adding or changing groups, memberships, role assignments, and role permissions, and **Access Log** for login/dashboard activity.
+Assignment rows in **Overview** include the existing removal action. Use **Users** for a single user's effective access preview, **Groups & Roles** for adding or changing groups, memberships, and dashboard access, and **Access Log** for login/dashboard activity.
+
+In **Groups & Roles**, the everyday dashboard grant path is **Dashboard Access**: pick a group, pick a dashboard, and grant access. The raw role/scope and role-permission forms remain available under **Advanced role and permission controls** for unusual policy edits.
 
 ## Seeded Groups
 
