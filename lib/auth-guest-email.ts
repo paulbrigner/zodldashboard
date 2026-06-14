@@ -5,6 +5,7 @@ import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { allowedGuestEmails, guestEmailAllowed, normalizeEmail } from "@/lib/viewer-access";
 
 export {
+  allowedAccredivGuestEmails,
   allowedArktourosGuestEmails,
   allowedCurrentPrivateDashboardGuestEmails,
   allowedGuestEmails,

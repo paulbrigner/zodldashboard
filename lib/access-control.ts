@@ -4,9 +4,9 @@ import { hasDatabaseConfig } from "@/lib/xmonitor/config";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { buildViewerProxyHeaders } from "@/lib/xmonitor/viewer-proxy";
 import {
+  allowedAccredivGuestEmails,
   allowedArktourosGuestEmails,
   allowedGuestEmails,
-  allowedRoadmapGuestEmails,
   allowedXMonitorGuestEmails,
   allowedZodlSummitGuestEmails,
   guestAccessLevelForEmail,
@@ -241,7 +241,7 @@ function configuredAccessEmails(): Set<string> {
   return new Set([
     ...bootstrapAdminEmails(),
     ...allowedXMonitorGuestEmails(),
-    ...allowedRoadmapGuestEmails(),
+    ...allowedAccredivGuestEmails(),
     ...allowedArktourosGuestEmails(),
     ...allowedZodlSummitGuestEmails(),
   ]);
@@ -436,8 +436,8 @@ async function seedEnvMembershipsForEmail(email: string): Promise<void> {
     await upsertMembership("xmonitor-guests", normalizedEmail, "legacy-env");
   }
 
-  if (allowedRoadmapGuestEmails().has(normalizedEmail)) {
-    await upsertMembership("zodl-roadmap-guests", normalizedEmail, "legacy-env");
+  if (allowedAccredivGuestEmails().has(normalizedEmail)) {
+    await upsertMembership("accrediv-guests", normalizedEmail, "legacy-env");
   }
 
   if (allowedArktourosGuestEmails().has(normalizedEmail)) {

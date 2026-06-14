@@ -12,7 +12,7 @@ The title card text lives in this public repo, but guest users see the same blur
 `/zodl-roadmap` allows:
 
 - Google Workspace OAuth users whose email domain matches `ALLOWED_GOOGLE_DOMAIN` (`zodl.com` by default);
-- dashboard-authorized guest OAuth or guest magic-link users whose email appears in `ALLOWED_ROADMAP_GUEST_EMAILS`;
+- dashboard-authorized guest OAuth or guest magic-link users whose email appears in `ALLOWED_ACCREDIV_GUEST_EMAILS` (`ALLOWED_ROADMAP_GUEST_EMAILS` remains a deprecated alias);
 - Arktouros team guest OAuth or guest magic-link users whose email appears in `ALLOWED_ARKTOUROS_GUEST_EMAILS`;
 - local-network bypass users.
 

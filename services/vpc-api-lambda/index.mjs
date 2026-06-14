@@ -35,7 +35,7 @@ const DASHBOARD_UPDATE_NOTIFICATION_IDS = new Set(
   ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.id !== "x-monitor").map((dashboard) => dashboard.id)
 );
 const DASHBOARD_UPDATE_EVENT_SOURCES = new Set(["manual", "api", "github", "admin"]);
-const BUILT_IN_ROADMAP_GUEST_EMAILS = "div@accrediv.com";
+const BUILT_IN_ACCREDIV_GUEST_EMAILS = "div@accrediv.com";
 const BUILT_IN_ARKTOUROS_GUEST_EMAILS = "k.albersfiedler@arktouros.co";
 const CIPHERPAY_TEST_NETWORKS = new Set(["testnet", "mainnet"]);
 const CIPHERPAY_TEST_SESSION_STATUSES = new Set([
@@ -2684,7 +2684,7 @@ function configuredAccessEmailsForAccess() {
   return new Set([
     ...accessBootstrapAdminEmails(),
     ...allowedXMonitorGuestEmailsForAccess(),
-    ...allowedRoadmapGuestEmailsForAccess(),
+    ...allowedAccredivGuestEmailsForAccess(),
     ...allowedArktourosGuestEmailsForAccess(),
     ...allowedZodlSummitGuestEmailsForAccess(),
   ]);
@@ -2694,9 +2694,10 @@ function allowedXMonitorGuestEmailsForAccess() {
   return parseAccessEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
 }
 
-function allowedRoadmapGuestEmailsForAccess() {
+function allowedAccredivGuestEmailsForAccess() {
   return new Set([
-    ...parseAccessEmailAllowlist(BUILT_IN_ROADMAP_GUEST_EMAILS),
+    ...parseAccessEmailAllowlist(BUILT_IN_ACCREDIV_GUEST_EMAILS),
+    ...parseAccessEmailAllowlist(process.env.ALLOWED_ACCREDIV_GUEST_EMAILS || ""),
     ...parseAccessEmailAllowlist(process.env.ALLOWED_ROADMAP_GUEST_EMAILS || ""),
   ]);
 }
@@ -2759,7 +2760,11 @@ async function seedAccessControlDefaults() {
 
       INSERT INTO auth_roles(role_key, name, description, is_system)
       VALUES
-        ('dashboard-viewer', 'Dashboard Viewer', 'Read dashboards within the assignment scope.', TRUE),
+        ('dashboard-viewer', 'Dashboard Viewer', 'Generic dashboard reader for ad hoc scoped dashboard assignments.', TRUE),
+        ('workspace-dashboard-viewer', 'Workspace Dashboard Viewer', 'Read all dashboards intended for internal workspace users.', TRUE),
+        ('current-private-dashboard-viewer', 'Current Private Dashboard Viewer', 'Read the current private dashboard bundle: Zodl Roadmap, Accrediv/PGPZ, and Arktouros.', TRUE),
+        ('xmonitor-viewer', 'X Monitor Viewer', 'Read the X Monitor dashboard.', TRUE),
+        ('zodl-summit-viewer', 'Zodl Summit Viewer', 'Read the 2026 Zodl Summit dashboard.', TRUE),
         ('access-admin', 'Access Admin', 'Manage access-control users, groups, roles, permissions, and invitations.', TRUE),
         ('impersonation-admin', 'Impersonation Admin', 'Reserved for future audited impersonation sessions.', TRUE)
       ON CONFLICT (role_key) DO UPDATE
@@ -2770,6 +2775,19 @@ async function seedAccessControlDefaults() {
       INSERT INTO auth_role_permissions(role_key, permission_key)
       VALUES
         ('dashboard-viewer', 'dashboard:*:read'),
+        ('workspace-dashboard-viewer', 'dashboard:x-monitor:read'),
+        ('workspace-dashboard-viewer', 'dashboard:zodl-roadmap:read'),
+        ('workspace-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
+        ('workspace-dashboard-viewer', 'dashboard:arktouros:read'),
+        ('workspace-dashboard-viewer', 'dashboard:2026-zodl-summit:read'),
+        ('workspace-dashboard-viewer', 'dashboard:cipherpay-test:read'),
+        ('workspace-dashboard-viewer', 'dashboard:regulatory-risk:read'),
+        ('workspace-dashboard-viewer', 'dashboard:app-store-compliance:read'),
+        ('current-private-dashboard-viewer', 'dashboard:zodl-roadmap:read'),
+        ('current-private-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
+        ('current-private-dashboard-viewer', 'dashboard:arktouros:read'),
+        ('xmonitor-viewer', 'dashboard:x-monitor:read'),
+        ('zodl-summit-viewer', 'dashboard:2026-zodl-summit:read'),
         ('access-admin', 'admin:access-control:manage'),
         ('impersonation-admin', 'admin:access-control:impersonate')
       ON CONFLICT DO NOTHING;
@@ -2779,7 +2797,6 @@ async function seedAccessControlDefaults() {
         ('admins', 'Admins', 'Users who can manage access control.', TRUE),
         ('workspace-members', 'Workspace Members', 'Internal workspace users from the allowed Google domain.', TRUE),
         ('xmonitor-guests', 'X Monitor Guests', 'External guests with X Monitor access.', TRUE),
-        ('zodl-roadmap-guests', 'Zodl Roadmap Guests', 'External guests for the Zodl Roadmap dashboard.', TRUE),
         ('accrediv-guests', 'Accrediv Guests', 'External guests for Accrediv Updates and PGPZ status.', TRUE),
         ('arktouros-guests', 'Arktouros Guests', 'External guests for the Arktouros dashboard.', TRUE),
         ('2026-zodl-summit-guests', '2026 Zodl Summit Guests', 'External guests for the 2026 Zodl Summit dashboard.', TRUE)
@@ -2791,25 +2808,11 @@ async function seedAccessControlDefaults() {
       INSERT INTO auth_group_roles(group_key, role_key, scope_type, scope_key)
       VALUES
         ('admins', 'access-admin', 'global', '*'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'x-monitor'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'arktouros'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', '2026-zodl-summit'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'cipherpay-test'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'regulatory-risk'),
-        ('workspace-members', 'dashboard-viewer', 'dashboard', 'app-store-compliance'),
-        ('xmonitor-guests', 'dashboard-viewer', 'dashboard', 'x-monitor'),
-        ('zodl-roadmap-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
-        ('zodl-roadmap-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
-        ('zodl-roadmap-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
-        ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
-        ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
-        ('accrediv-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
-        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'zodl-roadmap'),
-        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'pgpz-roadmap'),
-        ('arktouros-guests', 'dashboard-viewer', 'dashboard', 'arktouros'),
-        ('2026-zodl-summit-guests', 'dashboard-viewer', 'dashboard', '2026-zodl-summit')
+        ('workspace-members', 'workspace-dashboard-viewer', 'global', '*'),
+        ('xmonitor-guests', 'xmonitor-viewer', 'global', '*'),
+        ('accrediv-guests', 'current-private-dashboard-viewer', 'global', '*'),
+        ('arktouros-guests', 'current-private-dashboard-viewer', 'global', '*'),
+        ('2026-zodl-summit-guests', 'zodl-summit-viewer', 'global', '*')
       ON CONFLICT DO NOTHING;
     `
   );
@@ -2856,8 +2859,8 @@ async function seedAccessMembershipsForEmail(email) {
   if (allowedXMonitorGuestEmailsForAccess().has(normalizedEmail)) {
     await upsertAccessMembership("xmonitor-guests", normalizedEmail, "legacy-env");
   }
-  if (allowedRoadmapGuestEmailsForAccess().has(normalizedEmail)) {
-    await upsertAccessMembership("zodl-roadmap-guests", normalizedEmail, "legacy-env");
+  if (allowedAccredivGuestEmailsForAccess().has(normalizedEmail)) {
+    await upsertAccessMembership("accrediv-guests", normalizedEmail, "legacy-env");
   }
   if (allowedArktourosGuestEmailsForAccess().has(normalizedEmail)) {
     await upsertAccessMembership("arktouros-guests", normalizedEmail, "legacy-env");

@@ -12,7 +12,7 @@ The PGPZ collaborator does not need access to `zodl-roadmap-private` and does no
 `/pgpz-roadmap` allows:
 
 - Google Workspace OAuth users whose email domain matches `ALLOWED_GOOGLE_DOMAIN` (`zodl.com` by default);
-- dashboard-authorized guest OAuth or guest magic-link users whose email appears in `ALLOWED_ROADMAP_GUEST_EMAILS`;
+- dashboard-authorized guest OAuth or guest magic-link users whose email appears in `ALLOWED_ACCREDIV_GUEST_EMAILS` (`ALLOWED_ROADMAP_GUEST_EMAILS` remains a deprecated alias);
 - Arktouros team guest OAuth or guest magic-link users whose email appears in `ALLOWED_ARKTOUROS_GUEST_EMAILS`;
 - local-network bypass users.
 
@@ -113,7 +113,7 @@ Use a read-only GitHub deploy key scoped only to the private PGPZ roadmap repo. 
 
 Prefer setting the Amplify variables in the Amplify console so existing production secrets are not accidentally overwritten. If using the AWS CLI, fetch the existing branch environment variables first, merge in the PGPZ variables, then call `update-branch` with the full merged map.
 
-`div@accrediv.com` is currently dashboard-authorized through `ALLOWED_ROADMAP_GUEST_EMAILS`. Do not add plain X Monitor-only guests to PGPZ dashboard access unless their app role should change.
+`div@accrediv.com` is currently dashboard-authorized through `ALLOWED_ACCREDIV_GUEST_EMAILS`. Do not add plain X Monitor-only guests to PGPZ dashboard access unless their app role should change.
 
 Because auto-build is disabled, trigger the release after pushing this public repo change and after configuring the Amplify env vars:
 

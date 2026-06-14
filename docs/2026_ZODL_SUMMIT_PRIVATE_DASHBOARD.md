@@ -15,7 +15,7 @@ The stable system identifier, route slug, and private build folder are all `2026
 - local-network bypass users;
 - guest OAuth or guest magic-link users whose email appears in `ALLOWED_ZODL_SUMMIT_GUEST_EMAILS`.
 
-Summit guests are intentionally isolated in the `2026-zodl-summit-guests` group. They receive the existing `dashboard-viewer` role scoped only to the `2026-zodl-summit` dashboard. Plain X Monitor guests and the older roadmap/Accrediv/Arktouros guest groups should not receive Summit access unless an admin explicitly assigns it.
+Summit guests are intentionally isolated in the `2026-zodl-summit-guests` group. They receive the `zodl-summit-viewer` role, which carries only the `dashboard:2026-zodl-summit:read` permission. Plain X Monitor guests and the Accrediv/Arktouros guest groups should not receive Summit access unless an admin explicitly assigns it.
 
 The public `/2026-zodl-summit` route renders the shared authenticated dashboard shell. The raw private HTML is served inside that shell from `/2026-zodl-summit/content` with:
 

@@ -153,6 +153,7 @@ Commonly used variables:
   - `GUEST_GOOGLE_OAUTH_ENABLED`
   - `GUEST_MAGIC_LINK_ENABLED`
   - `ALLOWED_GUEST_GOOGLE_EMAILS`
+  - `ALLOWED_ACCREDIV_GUEST_EMAILS`
   - `ALLOWED_ROADMAP_GUEST_EMAILS`
   - `ALLOWED_ARKTOUROS_GUEST_EMAILS`
 - Read/proxy routing:
@@ -322,7 +323,7 @@ timestamp/email rows. Use `--json` for the full structured report.
 - Verify `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `NEXTAUTH_URL`, and callback URLs.
 - Verify internal users match `ALLOWED_GOOGLE_DOMAIN`.
 - Verify X Monitor-only guests are allowlisted in `ALLOWED_GUEST_GOOGLE_EMAILS`.
-- Verify guests who need currently available private dashboards are allowlisted in `ALLOWED_ROADMAP_GUEST_EMAILS`.
+- Verify Accrediv guests who need currently available private dashboards are allowlisted in `ALLOWED_ACCREDIV_GUEST_EMAILS`. `ALLOWED_ROADMAP_GUEST_EMAILS` is still accepted as a deprecated alias.
 - Verify Arktouros-specific users are allowlisted in `ALLOWED_ARKTOUROS_GUEST_EMAILS`; these users can access all currently available private dashboards, but future dashboard access is undecided until each dashboard is added.
 - Verify access admins are in the DB-backed `admins` group or temporarily listed in `ACCESS_BOOTSTRAP_ADMIN_EMAILS`.
 

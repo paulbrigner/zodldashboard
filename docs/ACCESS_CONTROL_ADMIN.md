@@ -9,6 +9,8 @@ The access-control admin console lives at `/admin/access`.
 - Roles collect permissions.
 - Group role assignments grant a role globally or scoped to one dashboard.
 - Effective access is the union of active group memberships, role assignments, role permissions, and assignment scope.
+- Seeded groups use role bundles where practical, such as `current-private-dashboard-viewer`, so permissions live on roles and groups mostly collect users.
+- The generic `dashboard-viewer` role remains available for ad hoc scoped dashboard assignments.
 - The current admin interface previews effective access; full session impersonation is reserved for a future audited flow.
 
 ## Admin UI
@@ -27,9 +29,19 @@ Assignment rows in **Overview** include the existing removal action. Use **Users
 - `admins`
 - `workspace-members`
 - `xmonitor-guests`
-- `zodl-roadmap-guests`
 - `accrediv-guests`
 - `arktouros-guests`
+- `2026-zodl-summit-guests`
+
+## Seeded Roles
+
+- `workspace-dashboard-viewer`
+- `current-private-dashboard-viewer`
+- `xmonitor-viewer`
+- `zodl-summit-viewer`
+- `dashboard-viewer` for ad hoc scoped dashboard grants
+- `access-admin`
+- `impersonation-admin`
 
 `ACCESS_BOOTSTRAP_ADMIN_EMAILS` seeds emergency admin access. The default is `paul@zodl.com`.
 
@@ -38,7 +50,7 @@ Assignment rows in **Overview** include the existing removal action. Use **Users
 1. Add the dashboard to `dashboardCatalog`.
 2. Add a `dashboard:<id>:read` permission to migration seed data and backend seed data.
 3. Add a group if access should be managed separately.
-4. Assign `dashboard-viewer` to the group with dashboard scope `<id>`.
+4. Prefer adding the dashboard permission to an appropriate role bundle, or create a dashboard-specific viewer role and assign that role globally to the group. Use `dashboard-viewer` with dashboard scope `<id>` for one-off scoped grants.
 5. Preview a test user in `/admin/access`.
 
 ## Access Log

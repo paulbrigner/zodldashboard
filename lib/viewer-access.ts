@@ -4,7 +4,7 @@ export type GuestAccessLevel = "guest" | "roadmap-guest";
 export type AuthLoginAccessLevel = "workspace" | GuestAccessLevel;
 export type ViewerAccessLevel = AuthLoginAccessLevel | "local-bypass";
 
-const BUILT_IN_ROADMAP_GUEST_EMAILS = "div@accrediv.com";
+const BUILT_IN_ACCREDIV_GUEST_EMAILS = "div@accrediv.com";
 const BUILT_IN_ARKTOUROS_GUEST_EMAILS = "k.albersfiedler@arktouros.co";
 
 export function normalizeEmail(value: unknown): string {
@@ -34,11 +34,16 @@ export function allowedXMonitorGuestEmails(): Set<string> {
   return parseEmailAllowlist(process.env.ALLOWED_GUEST_GOOGLE_EMAILS || "");
 }
 
-export function allowedRoadmapGuestEmails(): Set<string> {
+export function allowedAccredivGuestEmails(): Set<string> {
   return mergeEmailSets(
-    parseEmailAllowlist(BUILT_IN_ROADMAP_GUEST_EMAILS),
+    parseEmailAllowlist(BUILT_IN_ACCREDIV_GUEST_EMAILS),
+    parseEmailAllowlist(process.env.ALLOWED_ACCREDIV_GUEST_EMAILS || ""),
     parseEmailAllowlist(process.env.ALLOWED_ROADMAP_GUEST_EMAILS || "")
   );
+}
+
+export function allowedRoadmapGuestEmails(): Set<string> {
+  return allowedAccredivGuestEmails();
 }
 
 export function allowedArktourosGuestEmails(): Set<string> {
@@ -53,7 +58,7 @@ export function allowedZodlSummitGuestEmails(): Set<string> {
 }
 
 export function allowedCurrentPrivateDashboardGuestEmails(): Set<string> {
-  return mergeEmailSets(allowedRoadmapGuestEmails(), allowedArktourosGuestEmails());
+  return mergeEmailSets(allowedAccredivGuestEmails(), allowedArktourosGuestEmails());
 }
 
 export function allowedGuestEmails(): Set<string> {
