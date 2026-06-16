@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { canAccessDashboard, findPrivateHtmlDashboard, navigableDashboards } from "@/lib/dashboard-catalog";
 import { getDashboardUpdateSubscriptionState } from "@/lib/dashboard-update-notifications";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
+import { PrivateDashboardFrame } from "./private-dashboard-frame";
 import { PrivateDashboardGlobalNav, type PrivateDashboardGlobalNavItem } from "./private-dashboard-global-nav";
 
 function identityText(viewer: Awaited<ReturnType<typeof requireAuthenticatedViewer>>): string {
@@ -62,9 +63,9 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
           }}
         />
       </header>
-      <iframe
+      <PrivateDashboardFrame
         className="private-dashboard-frame"
-        src={dashboard.contentHref}
+        contentHref={dashboard.contentHref}
         title={`${dashboard.name} content`}
       />
     </main>
