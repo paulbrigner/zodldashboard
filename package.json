@@ -12,6 +12,7 @@
     "build": "next build",
     "start": "next start",
     "typecheck": "tsc --noEmit",
+    "smoke:guest-magic-link": "bash scripts/ops/check_guest_magic_link_backend.sh",
     "db:migrate": "bash scripts/db/apply_migrations.sh",
     "migrate:export": "python3 scripts/migrate/export_sqlite.py",
     "migrate:import": "python3 scripts/migrate/import_sqlite_jsonl_to_postgres.py",

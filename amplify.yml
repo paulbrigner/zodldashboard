@@ -108,6 +108,10 @@ frontend:
         - env | grep -e GUEST_GOOGLE_OAUTH_ENABLED >> .env.production || true
         - env | grep -e GOOGLE_GUEST_CLIENT_ID >> .env.production || true
         - env | grep -e GOOGLE_GUEST_CLIENT_SECRET >> .env.production || true
+        - env | grep -e GUEST_MAGIC_LINK_ENABLED >> .env.production || true
+        - env | grep -e GUEST_MAGIC_LINK_MAX_AGE_SECONDS >> .env.production || true
+        - env | grep -e GUEST_MAGIC_LINK_FROM_ADDRESS >> .env.production || true
+        - env | grep -e GUEST_MAGIC_LINK_FROM_NAME >> .env.production || true
         - env | grep -e ALLOWED_GUEST_GOOGLE_EMAILS >> .env.production || true
         - env | grep -e ALLOWED_ROADMAP_GUEST_EMAILS >> .env.production || true
         - env | grep -e ALLOWED_ARKTOUROS_GUEST_EMAILS >> .env.production || true
@@ -183,6 +187,7 @@ frontend:
         - env | grep -e XMONITOR_EMAIL_MAX_JOBS_PER_USER >> .env.production || true
         - env | grep -e XMONITOR_EMAIL_MAX_BODY_CHARS >> .env.production || true
         - env | grep -e XMONITOR_EMAIL_SCHEDULE_DISPATCH_LIMIT >> .env.production || true
+        - npm run smoke:guest-magic-link
         - npm run build
   artifacts:
     baseDirectory: .next
