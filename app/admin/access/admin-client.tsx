@@ -927,6 +927,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 {selectedGroupAssignments.map((assignment) => (
                   <span className="access-admin-assignment-chip" key={assignment.assignmentId}>
                     {roleLabel(snapshot, assignment.roleKey)} ({scopeLabel(snapshot, assignment)})
+                    <button
+                      disabled={loading}
+                      onClick={() => void perform({ operation: "remove_group_role", assignment_id: assignment.assignmentId })}
+                      type="button"
+                    >
+                      Remove
+                    </button>
                   </span>
                 ))}
                 {!selectedGroup ? <p className="subtle-text">Select a group to view its role assignments.</p> : null}
@@ -1000,6 +1007,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 {selectedRoleGroupAssignments.map((assignment) => (
                   <span className="access-admin-assignment-chip" key={`${selectedRoleKey}:${assignment.assignmentId}`}>
                     {groupLabel(snapshot, assignment.groupKey)} ({scopeLabel(snapshot, assignment)})
+                    <button
+                      disabled={loading}
+                      onClick={() => void perform({ operation: "remove_group_role", assignment_id: assignment.assignmentId })}
+                      type="button"
+                    >
+                      Remove
+                    </button>
                   </span>
                 ))}
                 {editingNewRole ? <p className="subtle-text">Select a role to view its group assignments.</p> : null}
@@ -1050,6 +1064,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 {dashboardGrantGroupAssignments.map((assignment) => (
                   <span className="access-admin-assignment-chip" key={`dashboard-grant:${assignment.assignmentId}`}>
                     {roleLabel(snapshot, assignment.roleKey)} ({scopeLabel(snapshot, assignment)})
+                    <button
+                      disabled={loading}
+                      onClick={() => void perform({ operation: "remove_group_role", assignment_id: assignment.assignmentId })}
+                      type="button"
+                    >
+                      Remove
+                    </button>
                   </span>
                 ))}
                 {dashboardGrantGroupAssignments.length === 0 ? <p className="subtle-text">No roles are assigned to this group.</p> : null}
@@ -1195,6 +1216,13 @@ export function AccessAdminClient({ initialSnapshot }: AccessAdminClientProps) {
                 {assignmentGroupAssignments.map((assignment) => (
                   <span className="access-admin-assignment-chip" key={`assignment-group:${assignment.assignmentId}`}>
                     {roleLabel(snapshot, assignment.roleKey)} ({scopeLabel(snapshot, assignment)})
+                    <button
+                      disabled={loading}
+                      onClick={() => void perform({ operation: "remove_group_role", assignment_id: assignment.assignmentId })}
+                      type="button"
+                    >
+                      Remove
+                    </button>
                   </span>
                 ))}
                 {assignmentGroupAssignments.length === 0 ? <p className="subtle-text">No roles are assigned to this group.</p> : null}
