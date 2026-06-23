@@ -76,6 +76,28 @@ frontend:
             echo "Arktouros private repo env vars not complete; skipping private content checkout."
           fi
         - |
+          if [ -n "${PLACEHODLR_PRIVATE_REPO:-}" ] && [ -n "${PLACEHODLR_DEPLOY_KEY_B64:-}" ]; then
+            rm -rf .private/placehodlr
+            mkdir -p ~/.ssh
+            trap 'rm -f ~/.ssh/placehodlr-deploy-key' EXIT
+            printf "%s" "$PLACEHODLR_DEPLOY_KEY_B64" | base64 --decode > ~/.ssh/placehodlr-deploy-key
+            chmod 600 ~/.ssh/placehodlr-deploy-key
+            ssh-keyscan github.com >> ~/.ssh/known_hosts
+            GIT_SSH_COMMAND="ssh -i ~/.ssh/placehodlr-deploy-key -o IdentitiesOnly=yes" git clone --depth 1 --branch "${PLACEHODLR_PRIVATE_BRANCH:-main}" "$PLACEHODLR_PRIVATE_REPO" .private/placehodlr
+            rm -f ~/.ssh/placehodlr-deploy-key
+            trap - EXIT
+          elif [ -n "${PLACEHODLR_PRIVATE_REPO:-}" ] && [ -n "${PLACEHODLR_GITHUB_TOKEN:-}" ]; then
+            rm -rf .private/placehodlr
+            trap 'rm -f ~/.netrc' EXIT
+            printf "machine github.com\n  login x-access-token\n  password %s\n" "$PLACEHODLR_GITHUB_TOKEN" > ~/.netrc
+            chmod 600 ~/.netrc
+            git clone --depth 1 --branch "${PLACEHODLR_PRIVATE_BRANCH:-main}" "$PLACEHODLR_PRIVATE_REPO" .private/placehodlr
+            rm -f ~/.netrc
+            trap - EXIT
+          else
+            echo "Placehodlr private repo env vars not complete; skipping private content checkout."
+          fi
+        - |
           if [ -n "${ZODL_SUMMIT_PRIVATE_REPO:-}" ] && [ -n "${ZODL_SUMMIT_DEPLOY_KEY_B64:-}" ]; then
             rm -rf .private/2026-zodl-summit
             mkdir -p ~/.ssh
@@ -128,6 +150,7 @@ frontend:
         - env | grep -e ZODL_ROADMAP_HTML_PATH >> .env.production || true
         - env | grep -e PGPZ_ROADMAP_HTML_PATH >> .env.production || true
         - env | grep -e ARKTOUROS_HTML_PATH >> .env.production || true
+        - env | grep -e PLACEHODLR_HTML_PATH >> .env.production || true
         - env | grep -e ZODL_SUMMIT_HTML_PATH >> .env.production || true
         - env | grep -e ALLOWED_ZODL_SUMMIT_GUEST_EMAILS >> .env.production || true
         - env | grep -e DATABASE_URL >> .env.production || true

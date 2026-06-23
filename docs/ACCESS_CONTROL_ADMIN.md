@@ -42,6 +42,7 @@ In **Groups & Roles**, the everyday dashboard grant path is **Dashboard Access**
 - `zodl-roadmap-viewer`
 - `accrediv-dashboard-viewer`
 - `arktouros-dashboard-viewer`
+- `placehodlr-dashboard-viewer`
 - `xmonitor-viewer`
 - `zodl-summit-viewer`
 - `dashboard-viewer` for ad hoc scoped dashboard grants

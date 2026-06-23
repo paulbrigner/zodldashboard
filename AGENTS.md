@@ -49,4 +49,5 @@ Use this checklist when adding another private dashboard with its own content re
 - `docs/ZODL_ROADMAP_PRIVATE_DASHBOARD.md`
 - `docs/PGPZ_ROADMAP_PRIVATE_DASHBOARD.md`
 - `docs/ARKTOUROS_PRIVATE_DASHBOARD.md`
+- `docs/PLACEHODLR_PRIVATE_DASHBOARD.md`
 - `docs/2026_ZODL_SUMMIT_PRIVATE_DASHBOARD.md`

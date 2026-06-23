@@ -38,6 +38,7 @@ const DASHBOARD_SPECIFIC_ROLE_BY_ID: Record<string, string> = {
   "zodl-roadmap": "zodl-roadmap-viewer",
   "pgpz-roadmap": "accrediv-dashboard-viewer",
   arktouros: "arktouros-dashboard-viewer",
+  placehodlr: "placehodlr-dashboard-viewer",
   "2026-zodl-summit": "zodl-summit-viewer",
 };
 

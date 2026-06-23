@@ -212,6 +212,7 @@ export const accessControlDashboards: AccessControlDashboardResource[] = [
     visible: true,
   },
   { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: dashboardReadPermission("arktouros"), visible: true },
+  { id: "placehodlr", name: "Placehodlr & EU Regulatory.", permissionKey: dashboardReadPermission("placehodlr"), visible: true },
   { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: dashboardReadPermission("2026-zodl-summit"), visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: dashboardReadPermission("cipherpay-test"), visible: false },
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: dashboardReadPermission("regulatory-risk"), visible: false },
@@ -809,6 +810,7 @@ function dashboardIdForPath(path: string | null): string | null {
   if (pathname === "/zodl-roadmap" || pathname.startsWith("/zodl-roadmap/")) return "zodl-roadmap";
   if (pathname === "/pgpz-roadmap" || pathname.startsWith("/pgpz-roadmap/")) return "pgpz-roadmap";
   if (pathname === "/arktouros" || pathname.startsWith("/arktouros/")) return "arktouros";
+  if (pathname === "/placehodlr" || pathname.startsWith("/placehodlr/")) return "placehodlr";
   if (pathname === "/2026-zodl-summit" || pathname.startsWith("/2026-zodl-summit/")) return "2026-zodl-summit";
   if (pathname === "/cipherpay-test" || pathname.startsWith("/cipherpay-test/")) return "cipherpay-test";
   if (pathname === "/regulatory-risk" || pathname.startsWith("/regulatory-risk/")) return "regulatory-risk";
@@ -919,6 +921,7 @@ async function directAccessLog(actorEmail: string, filters: AccessControlAccessL
             WHEN path = '/zodl-roadmap' OR path LIKE '/zodl-roadmap/%' THEN 'zodl-roadmap'
             WHEN path = '/pgpz-roadmap' OR path LIKE '/pgpz-roadmap/%' THEN 'pgpz-roadmap'
             WHEN path = '/arktouros' OR path LIKE '/arktouros/%' THEN 'arktouros'
+            WHEN path = '/placehodlr' OR path LIKE '/placehodlr/%' THEN 'placehodlr'
             WHEN path = '/2026-zodl-summit' OR path LIKE '/2026-zodl-summit/%' THEN '2026-zodl-summit'
             ELSE NULL
           END AS dashboard_id,

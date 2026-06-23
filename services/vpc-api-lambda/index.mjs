@@ -26,6 +26,7 @@ const ACCESS_CONTROL_DASHBOARDS = [
   { id: "zodl-roadmap", name: "Zodl Roadmap", permissionKey: "dashboard:zodl-roadmap:read", visible: true },
   { id: "pgpz-roadmap", name: "Accrediv Updates & PGPZ Status", permissionKey: "dashboard:pgpz-roadmap:read", visible: true },
   { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: "dashboard:arktouros:read", visible: true },
+  { id: "placehodlr", name: "Placehodlr & EU Regulatory.", permissionKey: "dashboard:placehodlr:read", visible: true },
   { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: "dashboard:2026-zodl-summit:read", visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: "dashboard:cipherpay-test:read", visible: false },
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },
@@ -2746,6 +2747,7 @@ async function seedAccessControlDefaults() {
         ('dashboard:zodl-roadmap:read', 'dashboard', 'zodl-roadmap', 'read', 'Read Zodl Roadmap', 'Open the Zodl Roadmap private dashboard.', TRUE),
         ('dashboard:pgpz-roadmap:read', 'dashboard', 'pgpz-roadmap', 'read', 'Read Accrediv Updates', 'Open the Accrediv Updates and PGPZ private dashboard.', TRUE),
         ('dashboard:arktouros:read', 'dashboard', 'arktouros', 'read', 'Read Arktouros', 'Open the Arktouros private dashboard.', TRUE),
+        ('dashboard:placehodlr:read', 'dashboard', 'placehodlr', 'read', 'Read Placehodlr', 'Open the Placehodlr private dashboard.', TRUE),
         ('dashboard:2026-zodl-summit:read', 'dashboard', '2026-zodl-summit', 'read', 'Read Zodl Summit', 'Open the 2026 Zodl Summit private dashboard.', TRUE),
         ('dashboard:cipherpay-test:read', 'dashboard', 'cipherpay-test', 'read', 'Read CipherPay Test', 'Open the CipherPay Test dashboard.', TRUE),
         ('dashboard:regulatory-risk:read', 'dashboard', 'regulatory-risk', 'read', 'Read Regulatory Risk', 'Open the Regulatory Risk dashboard.', TRUE),
@@ -2767,6 +2769,7 @@ async function seedAccessControlDefaults() {
         ('zodl-roadmap-viewer', 'Zodl Roadmap Viewer', 'Read the Zodl Roadmap private dashboard.', TRUE),
         ('accrediv-dashboard-viewer', 'Accrediv Dashboard Viewer', 'Read the Accrediv Updates and PGPZ private dashboard.', TRUE),
         ('arktouros-dashboard-viewer', 'Arktouros Dashboard Viewer', 'Read the Arktouros private dashboard.', TRUE),
+        ('placehodlr-dashboard-viewer', 'Placehodlr Dashboard Viewer', 'Read the Placehodlr private dashboard.', TRUE),
         ('xmonitor-viewer', 'X Monitor Viewer', 'Read the X Monitor dashboard.', TRUE),
         ('zodl-summit-viewer', 'Zodl Summit Viewer', 'Read the 2026 Zodl Summit dashboard.', TRUE),
         ('access-admin', 'Access Admin', 'Manage access-control users, groups, roles, permissions, and invitations.', TRUE),
@@ -2783,6 +2786,7 @@ async function seedAccessControlDefaults() {
         ('workspace-dashboard-viewer', 'dashboard:zodl-roadmap:read'),
         ('workspace-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
         ('workspace-dashboard-viewer', 'dashboard:arktouros:read'),
+        ('workspace-dashboard-viewer', 'dashboard:placehodlr:read'),
         ('workspace-dashboard-viewer', 'dashboard:2026-zodl-summit:read'),
         ('workspace-dashboard-viewer', 'dashboard:cipherpay-test:read'),
         ('workspace-dashboard-viewer', 'dashboard:regulatory-risk:read'),
@@ -2790,6 +2794,7 @@ async function seedAccessControlDefaults() {
         ('zodl-roadmap-viewer', 'dashboard:zodl-roadmap:read'),
         ('accrediv-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
         ('arktouros-dashboard-viewer', 'dashboard:arktouros:read'),
+        ('placehodlr-dashboard-viewer', 'dashboard:placehodlr:read'),
         ('xmonitor-viewer', 'dashboard:x-monitor:read'),
         ('zodl-summit-viewer', 'dashboard:2026-zodl-summit:read'),
         ('access-admin', 'admin:access-control:manage'),
@@ -6898,6 +6903,7 @@ async function buildAccessControlAccessLog(actorEmail, body) {
             WHEN path = '/zodl-roadmap' OR path LIKE '/zodl-roadmap/%' THEN 'zodl-roadmap'
             WHEN path = '/pgpz-roadmap' OR path LIKE '/pgpz-roadmap/%' THEN 'pgpz-roadmap'
             WHEN path = '/arktouros' OR path LIKE '/arktouros/%' THEN 'arktouros'
+            WHEN path = '/placehodlr' OR path LIKE '/placehodlr/%' THEN 'placehodlr'
             WHEN path = '/2026-zodl-summit' OR path LIKE '/2026-zodl-summit/%' THEN '2026-zodl-summit'
             ELSE NULL
           END AS dashboard_id,
