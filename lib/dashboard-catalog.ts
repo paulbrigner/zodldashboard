@@ -153,7 +153,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
   {
     id: "placehodlr",
     kind: "private-html",
-    name: "Placehodlr & EU Regulatory.",
+    name: "Placehodlr & EU Regulatory",
     navLabel: "Placehodlr",
     description:
       "Private workspace for Placehodlr project context, EU regulatory coordination, current priorities, source files, and the dashboard change trail.",

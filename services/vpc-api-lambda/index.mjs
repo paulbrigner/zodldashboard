@@ -26,7 +26,7 @@ const ACCESS_CONTROL_DASHBOARDS = [
   { id: "zodl-roadmap", name: "Zodl Roadmap", permissionKey: "dashboard:zodl-roadmap:read", visible: true },
   { id: "pgpz-roadmap", name: "Accrediv Updates & PGPZ Status", permissionKey: "dashboard:pgpz-roadmap:read", visible: true },
   { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: "dashboard:arktouros:read", visible: true },
-  { id: "placehodlr", name: "Placehodlr & EU Regulatory.", permissionKey: "dashboard:placehodlr:read", visible: true },
+  { id: "placehodlr", name: "Placehodlr & EU Regulatory", permissionKey: "dashboard:placehodlr:read", visible: true },
   { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: "dashboard:2026-zodl-summit:read", visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: "dashboard:cipherpay-test:read", visible: false },
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },

@@ -212,7 +212,7 @@ export const accessControlDashboards: AccessControlDashboardResource[] = [
     visible: true,
   },
   { id: "arktouros", name: "Arktouros & U.S. Regulatory", permissionKey: dashboardReadPermission("arktouros"), visible: true },
-  { id: "placehodlr", name: "Placehodlr & EU Regulatory.", permissionKey: dashboardReadPermission("placehodlr"), visible: true },
+  { id: "placehodlr", name: "Placehodlr & EU Regulatory", permissionKey: dashboardReadPermission("placehodlr"), visible: true },
   { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: dashboardReadPermission("2026-zodl-summit"), visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: dashboardReadPermission("cipherpay-test"), visible: false },
   { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: dashboardReadPermission("regulatory-risk"), visible: false },
