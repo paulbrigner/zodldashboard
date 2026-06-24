@@ -6442,8 +6442,25 @@ function accessInvitationTokenHash(token) {
   return createHash("sha256").update(token).digest("hex");
 }
 
+const DEFAULT_ACCESS_APP_BASE_URL = "https://www.zodldashboard.com";
+const LOCAL_ACCESS_APP_HOSTS = new Set(["localhost", "0.0.0.0", "127.0.0.1", "::1"]);
+
+function isLocalAccessAppHost(hostname) {
+  const normalized = String(hostname || "").toLowerCase().replace(/^\[|\]$/g, "");
+  return LOCAL_ACCESS_APP_HOSTS.has(normalized) || normalized.startsWith("127.");
+}
+
 function accessAppBaseUrl(value) {
-  return (asString(value) || process.env.NEXTAUTH_URL || "https://www.zodldashboard.com").replace(/\/+$/, "");
+  const candidate = (asString(value) || process.env.NEXTAUTH_URL || DEFAULT_ACCESS_APP_BASE_URL).replace(/\/+$/, "");
+  try {
+    const url = new URL(candidate);
+    if (!["http:", "https:"].includes(url.protocol) || isLocalAccessAppHost(url.hostname)) {
+      return DEFAULT_ACCESS_APP_BASE_URL;
+    }
+    return candidate;
+  } catch {
+    return DEFAULT_ACCESS_APP_BASE_URL;
+  }
 }
 
 async function createAccessInvitation({ actorEmail, email, previousEmail = null, kind = "welcome" }) {

@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { acceptAccessInvitation } from "@/lib/access-control";
+import { acceptAccessInvitation, appBaseUrl } from "@/lib/access-control";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
   const token = url.searchParams.get("token") || "";
-  const redirectUrl = new URL("/signin", url.origin);
+  const redirectUrl = new URL("/signin", appBaseUrl(url.origin));
 
   try {
     await acceptAccessInvitation(token);

@@ -1022,8 +1022,25 @@ async function sendAccessEmail({
   };
 }
 
-function appBaseUrl(input?: string): string {
-  return (input || process.env.NEXTAUTH_URL || "https://www.zodldashboard.com").replace(/\/+$/, "");
+const DEFAULT_APP_BASE_URL = "https://www.zodldashboard.com";
+const LOCAL_APP_HOSTS = new Set(["localhost", "0.0.0.0", "127.0.0.1", "::1"]);
+
+function isLocalAppHost(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+  return LOCAL_APP_HOSTS.has(normalized) || normalized.startsWith("127.");
+}
+
+export function appBaseUrl(input?: string): string {
+  const candidate = (input || process.env.NEXTAUTH_URL || DEFAULT_APP_BASE_URL).trim().replace(/\/+$/, "");
+  try {
+    const url = new URL(candidate);
+    if (!["http:", "https:"].includes(url.protocol) || isLocalAppHost(url.hostname)) {
+      return DEFAULT_APP_BASE_URL;
+    }
+    return candidate;
+  } catch {
+    return DEFAULT_APP_BASE_URL;
+  }
 }
 
 function accessSummary(access: EffectiveAccess): string {
