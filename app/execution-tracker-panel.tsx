@@ -103,6 +103,39 @@ export function ExecutionTrackerPanel({ dashboardId, dashboardName }: ExecutionT
     }
   }, [open, state, loading, loadedOnce]);
 
+  useEffect(() => {
+    function openFromLocation() {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("tracker") === "open" || window.location.hash === "#execution-tracker") {
+        setOpen(true);
+      }
+    }
+
+    openFromLocation();
+    window.addEventListener("hashchange", openFromLocation);
+    window.addEventListener("popstate", openFromLocation);
+    return () => {
+      window.removeEventListener("hashchange", openFromLocation);
+      window.removeEventListener("popstate", openFromLocation);
+    };
+  }, []);
+
+  useEffect(() => {
+    function openFromMessage(event: MessageEvent) {
+      if (event.origin !== window.location.origin) return;
+      if (!event.data || typeof event.data !== "object") return;
+
+      const data = event.data as { type?: unknown; dashboardId?: unknown };
+      if (data.type !== "zodldashboard:open-execution-tracker") return;
+      if (typeof data.dashboardId === "string" && data.dashboardId !== dashboardId) return;
+
+      setOpen(true);
+    }
+
+    window.addEventListener("message", openFromMessage);
+    return () => window.removeEventListener("message", openFromMessage);
+  }, [dashboardId]);
+
   const itemsByStatus = useMemo(() => {
     const grouped = new Map<string, ExecutionTrackerItem[]>();
     for (const status of state?.statuses || []) {
