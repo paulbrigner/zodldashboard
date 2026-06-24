@@ -200,7 +200,7 @@ type PermissionRow = {
   scope_key: string;
 };
 
-const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros", "2026-zodl-summit"];
+const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros", "placehodlr", "2026-zodl-summit"];
 
 export const accessControlDashboards: AccessControlDashboardResource[] = [
   { id: "x-monitor", name: "X Monitor", permissionKey: dashboardReadPermission("x-monitor"), visible: true },
@@ -321,6 +321,10 @@ function newInvitationToken(): string {
 
 export function dashboardReadPermission(dashboardId: string): string {
   return `dashboard:${dashboardId}:read`;
+}
+
+export function dashboardTrackPermission(dashboardId: string): string {
+  return `dashboard:${dashboardId}:track`;
 }
 
 export function hasAccessPermission(access: Pick<EffectiveAccess, "permissions">, permissionKey: string): boolean {

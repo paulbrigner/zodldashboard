@@ -20,7 +20,7 @@ const ROADMAP_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "l
 const ROADMAP_ACCESS_OUTCOMES = new Set(["allowed", "denied_guest", "content_missing"]);
 const XMONITOR_ACCESS_LEVELS = new Set(["workspace", "guest", "roadmap-guest", "local-bypass"]);
 const ACCESS_ADMIN_PERMISSION = "admin:access-control:manage";
-const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros", "2026-zodl-summit"];
+const PRIVATE_DASHBOARD_IDS = ["zodl-roadmap", "pgpz-roadmap", "arktouros", "placehodlr", "2026-zodl-summit"];
 const ACCESS_CONTROL_DASHBOARDS = [
   { id: "x-monitor", name: "X Monitor", permissionKey: "dashboard:x-monitor:read", visible: true },
   { id: "zodl-roadmap", name: "Zodl Roadmap", permissionKey: "dashboard:zodl-roadmap:read", visible: true },
@@ -38,6 +38,16 @@ const DASHBOARD_UPDATE_NOTIFICATION_IDS = new Set(
   VISIBLE_ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.id !== "x-monitor").map((dashboard) => dashboard.id)
 );
 const DASHBOARD_UPDATE_EVENT_SOURCES = new Set(["manual", "api", "github", "admin"]);
+const EXECUTION_TRACKER_DASHBOARD_IDS = new Set(["pgpz-roadmap", "arktouros", "placehodlr"]);
+const DEFAULT_EXECUTION_TRACKER_STATUSES = [
+  { key: "not-started", label: "Not Yet Started" },
+  { key: "in-progress", label: "In Progress" },
+  { key: "drafting", label: "Drafting" },
+  { key: "reviewing", label: "Reviewing" },
+  { key: "finalizing", label: "Finalizing" },
+  { key: "publishing", label: "Publishing" },
+  { key: "complete", label: "Complete", terminal: true },
+];
 const BUILT_IN_ACCREDIV_GUEST_EMAILS = "div@accrediv.com";
 const BUILT_IN_ARKTOUROS_GUEST_EMAILS = "k.albersfiedler@arktouros.co";
 const CIPHERPAY_TEST_NETWORKS = new Set(["testnet", "mainnet"]);
@@ -2752,6 +2762,9 @@ async function seedAccessControlDefaults() {
         ('dashboard:cipherpay-test:read', 'dashboard', 'cipherpay-test', 'read', 'Read CipherPay Test', 'Open the CipherPay Test dashboard.', TRUE),
         ('dashboard:regulatory-risk:read', 'dashboard', 'regulatory-risk', 'read', 'Read Regulatory Risk', 'Open the Regulatory Risk dashboard.', TRUE),
         ('dashboard:app-store-compliance:read', 'dashboard', 'app-store-compliance', 'read', 'Read App Store Dashboard', 'Open the App Store Compliance dashboard.', TRUE),
+        ('dashboard:pgpz-roadmap:track', 'dashboard', 'pgpz-roadmap', 'track', 'Edit PGPZ execution tracker', 'Create, update, move, and archive PGPZ roadmap tracker items.', TRUE),
+        ('dashboard:arktouros:track', 'dashboard', 'arktouros', 'track', 'Edit Arktouros execution tracker', 'Create, update, move, and archive Arktouros tracker items.', TRUE),
+        ('dashboard:placehodlr:track', 'dashboard', 'placehodlr', 'track', 'Edit Placehodlr execution tracker', 'Create, update, move, and archive Placehodlr tracker items.', TRUE),
         ('admin:access-control:manage', 'admin', 'access-control', 'manage', 'Manage access control', 'Manage users, groups, roles, permissions, invitations, and access previews.', TRUE),
         ('admin:access-control:impersonate', 'admin', 'access-control', 'impersonate', 'Impersonate users', 'Reserved for a future audited impersonation session.', TRUE)
       ON CONFLICT (permission_key) DO UPDATE
@@ -2772,6 +2785,10 @@ async function seedAccessControlDefaults() {
         ('placehodlr-dashboard-viewer', 'Placehodlr Dashboard Viewer', 'Read the Placehodlr private dashboard.', TRUE),
         ('xmonitor-viewer', 'X Monitor Viewer', 'Read the X Monitor dashboard.', TRUE),
         ('zodl-summit-viewer', 'Zodl Summit Viewer', 'Read the 2026 Zodl Summit dashboard.', TRUE),
+        ('workspace-tracker-editor', 'Workspace Tracker Editor', 'Edit execution trackers on selected workspace dashboards.', TRUE),
+        ('accrediv-tracker-editor', 'Accrediv Tracker Editor', 'Edit the PGPZ roadmap execution tracker.', TRUE),
+        ('arktouros-tracker-editor', 'Arktouros Tracker Editor', 'Edit the Arktouros execution tracker.', TRUE),
+        ('placehodlr-tracker-editor', 'Placehodlr Tracker Editor', 'Edit the Placehodlr execution tracker.', TRUE),
         ('access-admin', 'Access Admin', 'Manage access-control users, groups, roles, permissions, and invitations.', TRUE),
         ('impersonation-admin', 'Impersonation Admin', 'Reserved for future audited impersonation sessions.', TRUE)
       ON CONFLICT (role_key) DO UPDATE
@@ -2797,6 +2814,12 @@ async function seedAccessControlDefaults() {
         ('placehodlr-dashboard-viewer', 'dashboard:placehodlr:read'),
         ('xmonitor-viewer', 'dashboard:x-monitor:read'),
         ('zodl-summit-viewer', 'dashboard:2026-zodl-summit:read'),
+        ('workspace-tracker-editor', 'dashboard:pgpz-roadmap:track'),
+        ('workspace-tracker-editor', 'dashboard:arktouros:track'),
+        ('workspace-tracker-editor', 'dashboard:placehodlr:track'),
+        ('accrediv-tracker-editor', 'dashboard:pgpz-roadmap:track'),
+        ('arktouros-tracker-editor', 'dashboard:arktouros:track'),
+        ('placehodlr-tracker-editor', 'dashboard:placehodlr:track'),
         ('access-admin', 'admin:access-control:manage'),
         ('impersonation-admin', 'admin:access-control:impersonate')
       ON CONFLICT DO NOTHING;
@@ -2818,10 +2841,13 @@ async function seedAccessControlDefaults() {
       VALUES
         ('admins', 'access-admin', 'global', '*'),
         ('workspace-members', 'workspace-dashboard-viewer', 'global', '*'),
+        ('workspace-members', 'workspace-tracker-editor', 'global', '*'),
         ('xmonitor-guests', 'xmonitor-viewer', 'global', '*'),
         ('accrediv-guests', 'zodl-roadmap-viewer', 'global', '*'),
         ('accrediv-guests', 'accrediv-dashboard-viewer', 'global', '*'),
+        ('accrediv-guests', 'accrediv-tracker-editor', 'global', '*'),
         ('arktouros-guests', 'arktouros-dashboard-viewer', 'global', '*'),
+        ('arktouros-guests', 'arktouros-tracker-editor', 'global', '*'),
         ('2026-zodl-summit-guests', 'zodl-summit-viewer', 'global', '*')
       ON CONFLICT DO NOTHING;
     `
@@ -6747,6 +6773,427 @@ async function publishDashboardUpdateEvent(viewer, body) {
   return { event: normalizeDashboardUpdateEvent(eventRow), deliveries };
 }
 
+function accessDashboardTrackPermission(dashboardId) {
+  return `dashboard:${dashboardId}:track`;
+}
+
+function executionTrackerDashboard(dashboardId) {
+  const normalized = asString(dashboardId)?.toLowerCase();
+  if (!normalized || !EXECUTION_TRACKER_DASHBOARD_IDS.has(normalized)) {
+    throw createStatusError(400, "dashboard does not support execution tracking");
+  }
+  return ACCESS_CONTROL_DASHBOARDS.find((dashboard) => dashboard.id === normalized);
+}
+
+function executionTrackerBoardKey(value) {
+  return asString(value)?.toLowerCase() || "default";
+}
+
+function executionTrackerTitle(value) {
+  const title = withLengthLimit(asString(value) || "", 240);
+  if (!title) throw createStatusError(400, "title is required");
+  return title;
+}
+
+function executionTrackerText(value, maxChars) {
+  return withLengthLimit(asString(value) || "", maxChars) || null;
+}
+
+function executionTrackerDate(value) {
+  const date = asString(value);
+  if (!date) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw createStatusError(400, "due_date must use YYYY-MM-DD");
+  }
+  return date;
+}
+
+function executionTrackerLabels(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => executionTrackerText(entry, 48))
+    .filter(Boolean)
+    .slice(0, 12);
+}
+
+function executionTrackerLinks(value) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const url = executionTrackerText(entry.url, 1000);
+      if (!url) return null;
+      return {
+        label: executionTrackerText(entry.label, 120) || url,
+        url,
+      };
+    })
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function executionTrackerStatusList(value) {
+  if (!Array.isArray(value)) return DEFAULT_EXECUTION_TRACKER_STATUSES;
+  const statuses = value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const key = executionTrackerText(entry.key, 80);
+      const label = executionTrackerText(entry.label, 120);
+      if (!key || !label) return null;
+      return {
+        key,
+        label,
+        terminal: entry.terminal === true,
+      };
+    })
+    .filter(Boolean);
+  return statuses.length ? statuses : DEFAULT_EXECUTION_TRACKER_STATUSES;
+}
+
+function executionTrackerItem(row) {
+  return {
+    itemId: String(row.item_id),
+    dashboardId: row.dashboard_id,
+    boardKey: row.board_key,
+    title: row.title,
+    description: row.description || null,
+    statusKey: row.status_key,
+    position: Number(row.position),
+    assignee: row.assignee || null,
+    dueDate: row.due_date ? String(row.due_date instanceof Date ? row.due_date.toISOString().slice(0, 10) : String(row.due_date).slice(0, 10)) : null,
+    labels: executionTrackerLabels(row.labels),
+    links: executionTrackerLinks(row.links),
+    createdBy: normalizeEmail(row.created_by),
+    updatedBy: row.updated_by ? normalizeEmail(row.updated_by) : null,
+    createdAt: toIso(row.created_at) || nowIso(),
+    updatedAt: toIso(row.updated_at) || nowIso(),
+    archivedAt: toIso(row.archived_at),
+    version: Number(row.version || 1),
+  };
+}
+
+function executionTrackerSnapshot(item) {
+  return {
+    title: item.title,
+    description: item.description,
+    statusKey: item.statusKey,
+    position: item.position,
+    assignee: item.assignee,
+    dueDate: item.dueDate,
+    labels: item.labels,
+    links: item.links,
+    version: item.version,
+    archivedAt: item.archivedAt,
+  };
+}
+
+function assertExecutionTrackerStatus(statuses, statusKey) {
+  const normalized = executionTrackerText(statusKey, 80);
+  if (!normalized || !statuses.some((status) => status.key === normalized)) {
+    throw createStatusError(400, "status_key is invalid");
+  }
+  return normalized;
+}
+
+async function requireExecutionTrackerAccess(viewer, dashboardId, { edit = false } = {}) {
+  if (viewer.auth_mode === "local-bypass") return null;
+  const access = await resolveAccessControlForEmail(viewer.email);
+  if (!canReadAccessDashboard(access, dashboardId)) {
+    throw createStatusError(403, "dashboard access required");
+  }
+  if (edit && !hasAccessPermission(access, accessDashboardTrackPermission(dashboardId))) {
+    throw createStatusError(403, "execution tracker edit permission required");
+  }
+  return access;
+}
+
+async function ensureExecutionTrackerBoard(dashboardId, boardKey, actorEmail) {
+  const result = await getPool().query(
+    `
+      INSERT INTO execution_tracker_boards(dashboard_id, board_key, title, status_config, created_by)
+      VALUES ($1, $2, 'Execution Tracker', $3::jsonb, $4)
+      ON CONFLICT (dashboard_id, board_key)
+      DO UPDATE SET dashboard_id = EXCLUDED.dashboard_id
+      RETURNING dashboard_id, board_key, title, status_config, enabled
+    `,
+    [dashboardId, boardKey, JSON.stringify(DEFAULT_EXECUTION_TRACKER_STATUSES), actorEmail]
+  );
+  return result.rows[0];
+}
+
+async function executionTrackerPositionForMove(client, dashboardId, boardKey, statusKey, beforeItemId, afterItemId, excludedItemId) {
+  if (beforeItemId || afterItemId) {
+    const ids = [beforeItemId, afterItemId].filter(Boolean);
+    const params = [dashboardId, boardKey, statusKey, ids];
+    const excludedClause = excludedItemId ? `AND item_id <> $${params.push(excludedItemId)}` : "";
+    const neighbors = await client.query(
+      `
+        SELECT item_id, position
+        FROM execution_tracker_items
+        WHERE dashboard_id = $1 AND board_key = $2 AND status_key = $3 AND archived_at IS NULL
+          AND item_id = ANY($4::uuid[])
+          ${excludedClause}
+      `,
+      params
+    );
+    const byId = new Map(neighbors.rows.map((row) => [String(row.item_id), Number(row.position)]));
+    const beforePosition = beforeItemId ? byId.get(beforeItemId) : undefined;
+    const afterPosition = afterItemId ? byId.get(afterItemId) : undefined;
+    if (beforeItemId && beforePosition === undefined) throw createStatusError(400, "before_item_id is invalid");
+    if (afterItemId && afterPosition === undefined) throw createStatusError(400, "after_item_id is invalid");
+    if (beforePosition !== undefined && afterPosition !== undefined) return (beforePosition + afterPosition) / 2;
+    if (beforePosition !== undefined) return beforePosition + 1000;
+    if (afterPosition !== undefined) return afterPosition > 1 ? afterPosition / 2 : afterPosition - 1000;
+  }
+
+  const params = [dashboardId, boardKey, statusKey];
+  const excludedClause = excludedItemId ? `AND item_id <> $${params.push(excludedItemId)}` : "";
+  const result = await client.query(
+    `
+      SELECT COALESCE(MAX(position), 0) + 1000 AS position
+      FROM execution_tracker_items
+      WHERE dashboard_id = $1 AND board_key = $2 AND status_key = $3 AND archived_at IS NULL
+        ${excludedClause}
+    `,
+    params
+  );
+  return Number(result.rows[0]?.position || 1000);
+}
+
+async function recordExecutionTrackerEvent(client, { itemId, dashboardId, boardKey, actorEmail, action, before, after }) {
+  await client.query(
+    `
+      INSERT INTO execution_tracker_item_events(item_id, dashboard_id, board_key, actor_email, action, before_json, after_json)
+      VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7::jsonb)
+    `,
+    [
+      itemId,
+      dashboardId,
+      boardKey,
+      actorEmail,
+      action,
+      before ? JSON.stringify(before) : null,
+      after ? JSON.stringify(after) : null,
+    ]
+  );
+}
+
+async function getExecutionTrackerState(viewer, dashboardIdValue, boardKeyValue) {
+  const dashboard = executionTrackerDashboard(dashboardIdValue);
+  await requireExecutionTrackerAccess(viewer, dashboard.id);
+  const boardKey = executionTrackerBoardKey(boardKeyValue);
+  const board = await ensureExecutionTrackerBoard(dashboard.id, boardKey, viewer.email);
+  const items = await getPool().query(
+    `
+      SELECT item_id, dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+        labels, links, created_by, updated_by, created_at, updated_at, archived_at, version
+      FROM execution_tracker_items
+      WHERE dashboard_id = $1 AND board_key = $2 AND archived_at IS NULL
+      ORDER BY status_key, position, created_at
+    `,
+    [dashboard.id, boardKey]
+  );
+  const access = viewer.auth_mode === "local-bypass" ? null : await resolveAccessControlForEmail(viewer.email);
+  return {
+    dashboardId: dashboard.id,
+    dashboardName: dashboard.name,
+    boardKey,
+    title: board.title,
+    statuses: executionTrackerStatusList(board.status_config),
+    items: items.rows.map(executionTrackerItem),
+    canEdit: viewer.auth_mode === "local-bypass" || hasAccessPermission(access, accessDashboardTrackPermission(dashboard.id)),
+    available: board.enabled === true,
+  };
+}
+
+async function createExecutionTrackerItem(viewer, body) {
+  const dashboard = executionTrackerDashboard(body.dashboard_id || body.dashboardId);
+  await requireExecutionTrackerAccess(viewer, dashboard.id, { edit: true });
+  const boardKey = executionTrackerBoardKey(body.board_key || body.boardKey);
+  const title = executionTrackerTitle(body.title);
+  const description = executionTrackerText(body.description, 4000);
+  const assignee = executionTrackerText(body.assignee, 120);
+  const dueDate = executionTrackerDate(body.due_date || body.dueDate);
+  const labels = executionTrackerLabels(body.labels);
+  const links = executionTrackerLinks(body.links);
+  const beforeItemId = executionTrackerText(body.before_item_id || body.beforeItemId, 80);
+  const afterItemId = executionTrackerText(body.after_item_id || body.afterItemId, 80);
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const board = await ensureExecutionTrackerBoard(dashboard.id, boardKey, viewer.email);
+    const statuses = executionTrackerStatusList(board.status_config);
+    const statusKey = assertExecutionTrackerStatus(statuses, body.status_key || body.statusKey || statuses[0].key);
+    const position = await executionTrackerPositionForMove(client, dashboard.id, boardKey, statusKey, beforeItemId, afterItemId, null);
+    const result = await client.query(
+      `
+        INSERT INTO execution_tracker_items(
+          dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+          labels, links, created_by, updated_by
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8::date, $9::jsonb, $10::jsonb, $11, $11)
+        RETURNING item_id, dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+          labels, links, created_by, updated_by, created_at, updated_at, archived_at, version
+      `,
+      [dashboard.id, boardKey, title, description, statusKey, position, assignee, dueDate, JSON.stringify(labels), JSON.stringify(links), viewer.email]
+    );
+    const item = executionTrackerItem(result.rows[0]);
+    await recordExecutionTrackerEvent(client, {
+      itemId: item.itemId,
+      dashboardId: dashboard.id,
+      boardKey,
+      actorEmail: viewer.email,
+      action: "created",
+      before: null,
+      after: executionTrackerSnapshot(item),
+    });
+    await client.query("COMMIT");
+    return item;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function updateExecutionTrackerItem(viewer, itemId, body) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const existingResult = await client.query(
+      `
+        SELECT item_id, dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+          labels, links, created_by, updated_by, created_at, updated_at, archived_at, version
+        FROM execution_tracker_items
+        WHERE item_id = $1
+        FOR UPDATE
+      `,
+      [itemId]
+    );
+    const existingRow = existingResult.rows[0];
+    if (!existingRow || existingRow.archived_at) throw createStatusError(404, "tracker item not found");
+    const existing = executionTrackerItem(existingRow);
+    const dashboard = executionTrackerDashboard(existing.dashboardId);
+    await requireExecutionTrackerAccess(viewer, dashboard.id, { edit: true });
+    const expectedVersion = Number(body.expected_version || body.expectedVersion || 0);
+    if (expectedVersion && expectedVersion !== existing.version) {
+      throw createStatusError(409, "tracker item was changed by someone else");
+    }
+    if ((body.dashboard_id || body.dashboardId) && executionTrackerDashboard(body.dashboard_id || body.dashboardId).id !== dashboard.id) {
+      throw createStatusError(400, "dashboard_id does not match item");
+    }
+    const boardKey = executionTrackerBoardKey(body.board_key || body.boardKey || existing.boardKey);
+    if (boardKey !== existing.boardKey) throw createStatusError(400, "board_key does not match item");
+
+    const board = await ensureExecutionTrackerBoard(dashboard.id, boardKey, viewer.email);
+    const statuses = executionTrackerStatusList(board.status_config);
+    const beforeItemId = executionTrackerText(body.before_item_id || body.beforeItemId, 80);
+    const afterItemId = executionTrackerText(body.after_item_id || body.afterItemId, 80);
+    const nextStatusKey = body.status_key || body.statusKey
+      ? assertExecutionTrackerStatus(statuses, body.status_key || body.statusKey)
+      : existing.statusKey;
+    const moveRequested = body.status_key !== undefined || body.statusKey !== undefined || beforeItemId || afterItemId;
+    const nextPosition = moveRequested
+      ? await executionTrackerPositionForMove(client, dashboard.id, boardKey, nextStatusKey, beforeItemId, afterItemId, itemId)
+      : existing.position;
+    const nextTitle = body.title !== undefined ? executionTrackerTitle(body.title) : existing.title;
+    const nextDescription = body.description !== undefined ? executionTrackerText(body.description, 4000) : existing.description;
+    const nextAssignee = body.assignee !== undefined ? executionTrackerText(body.assignee, 120) : existing.assignee;
+    const nextDueDate = body.due_date !== undefined || body.dueDate !== undefined ? executionTrackerDate(body.due_date || body.dueDate) : existing.dueDate;
+    const nextLabels = body.labels !== undefined ? executionTrackerLabels(body.labels) : existing.labels;
+    const nextLinks = body.links !== undefined ? executionTrackerLinks(body.links) : existing.links;
+
+    const result = await client.query(
+      `
+        UPDATE execution_tracker_items
+        SET title = $2,
+            description = $3,
+            status_key = $4,
+            position = $5,
+            assignee = $6,
+            due_date = $7::date,
+            labels = $8::jsonb,
+            links = $9::jsonb,
+            updated_by = $10,
+            version = version + 1
+        WHERE item_id = $1
+        RETURNING item_id, dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+          labels, links, created_by, updated_by, created_at, updated_at, archived_at, version
+      `,
+      [itemId, nextTitle, nextDescription, nextStatusKey, nextPosition, nextAssignee, nextDueDate, JSON.stringify(nextLabels), JSON.stringify(nextLinks), viewer.email]
+    );
+    const item = executionTrackerItem(result.rows[0]);
+    await recordExecutionTrackerEvent(client, {
+      itemId: item.itemId,
+      dashboardId: dashboard.id,
+      boardKey,
+      actorEmail: viewer.email,
+      action: existing.statusKey !== item.statusKey || existing.position !== item.position ? "moved" : "updated",
+      before: executionTrackerSnapshot(existing),
+      after: executionTrackerSnapshot(item),
+    });
+    await client.query("COMMIT");
+    return item;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function archiveExecutionTrackerItem(viewer, itemId) {
+  const client = await getPool().connect();
+  try {
+    await client.query("BEGIN");
+    const existingResult = await client.query(
+      `
+        SELECT item_id, dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+          labels, links, created_by, updated_by, created_at, updated_at, archived_at, version
+        FROM execution_tracker_items
+        WHERE item_id = $1
+        FOR UPDATE
+      `,
+      [itemId]
+    );
+    const existingRow = existingResult.rows[0];
+    if (!existingRow || existingRow.archived_at) throw createStatusError(404, "tracker item not found");
+    const existing = executionTrackerItem(existingRow);
+    const dashboard = executionTrackerDashboard(existing.dashboardId);
+    await requireExecutionTrackerAccess(viewer, dashboard.id, { edit: true });
+    const result = await client.query(
+      `
+        UPDATE execution_tracker_items
+        SET archived_at = now(),
+            updated_by = $2,
+            version = version + 1
+        WHERE item_id = $1
+        RETURNING item_id, dashboard_id, board_key, title, description, status_key, position, assignee, due_date,
+          labels, links, created_by, updated_by, created_at, updated_at, archived_at, version
+      `,
+      [itemId, viewer.email]
+    );
+    const item = executionTrackerItem(result.rows[0]);
+    await recordExecutionTrackerEvent(client, {
+      itemId: item.itemId,
+      dashboardId: dashboard.id,
+      boardKey: item.boardKey,
+      actorEmail: viewer.email,
+      action: "archived",
+      before: executionTrackerSnapshot(existing),
+      after: executionTrackerSnapshot(item),
+    });
+    await client.query("COMMIT");
+    return item;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function sendAccessInvitationEmail({ actorEmail, email, subject, bodyText }) {
   const delivery = await sendEmailDelivery({
     ownerEmail: actorEmail,
@@ -9173,6 +9620,96 @@ async function handleDashboardUpdateEventCreate(event) {
   }
 }
 
+async function handleExecutionTrackerGet(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const dashboardId = asString(event?.queryStringParameters?.dashboard_id || event?.queryStringParameters?.dashboardId);
+  if (!dashboardId) {
+    return jsonError("dashboard_id is required", 400);
+  }
+  try {
+    const state = await getExecutionTrackerState(
+      viewer.viewer,
+      dashboardId,
+      event?.queryStringParameters?.board_key || event?.queryStringParameters?.boardKey
+    );
+    return jsonOk(state);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to load execution tracker", statusCodeForError(error, 503));
+  }
+}
+
+async function handleExecutionTrackerItemCreate(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+  try {
+    const item = await createExecutionTrackerItem(viewer.viewer, parsedBody.body || {});
+    return jsonOk({ item }, 201);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to create execution tracker item", statusCodeForError(error, 503));
+  }
+}
+
+async function handleExecutionTrackerItemUpdate(event, path) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const match = path.match(/^\/v1\/execution-tracker\/items\/([^/]+)$/);
+  const itemId = match ? decodeURIComponent(match[1]) : "";
+  if (!itemId) {
+    return jsonError("itemId is required", 400);
+  }
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) {
+    return jsonError(parsedBody.error, 400);
+  }
+  try {
+    const item = await updateExecutionTrackerItem(viewer.viewer, itemId, parsedBody.body || {});
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to update execution tracker item", statusCodeForError(error, 503));
+  }
+}
+
+async function handleExecutionTrackerItemArchive(event, path) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+  const match = path.match(/^\/v1\/execution-tracker\/items\/([^/]+)$/);
+  const itemId = match ? decodeURIComponent(match[1]) : "";
+  if (!itemId) {
+    return jsonError("itemId is required", 400);
+  }
+  try {
+    const item = await archiveExecutionTrackerItem(viewer.viewer, itemId);
+    return jsonOk({ item });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to archive execution tracker item", statusCodeForError(error, 503));
+  }
+}
+
 async function handleAuthLoginEventCreate(event) {
   if (!hasDatabaseConfig()) {
     return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
@@ -11344,6 +11881,22 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/dashboard-updates/events") {
     return handleDashboardUpdateEventCreate(event);
+  }
+
+  if (method === "GET" && path === "/v1/execution-tracker") {
+    return handleExecutionTrackerGet(event);
+  }
+
+  if (method === "POST" && path === "/v1/execution-tracker/items") {
+    return handleExecutionTrackerItemCreate(event);
+  }
+
+  if (method === "PATCH" && /^\/v1\/execution-tracker\/items\/[^/]+$/.test(path)) {
+    return handleExecutionTrackerItemUpdate(event, path);
+  }
+
+  if (method === "DELETE" && /^\/v1\/execution-tracker\/items\/[^/]+$/.test(path)) {
+    return handleExecutionTrackerItemArchive(event, path);
   }
 
   if (method === "POST" && path === "/v1/auth/login-events") {

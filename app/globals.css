@@ -611,6 +611,295 @@ p {
   background: #ffffff;
 }
 
+.execution-tracker-launcher {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 7;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.46rem;
+  min-height: 2.8rem;
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent);
+  color: #ffffff;
+  padding: 0.5rem 0.72rem;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 14px 30px rgba(21, 19, 20, 0.22);
+}
+
+.execution-tracker-launcher:hover {
+  background: var(--accent-hover);
+}
+
+.execution-tracker-launcher > span:first-child,
+.execution-tracker-launcher strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.execution-tracker-panel {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.execution-tracker-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(21, 19, 20, 0.28);
+  pointer-events: auto;
+}
+
+.execution-tracker-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr);
+  gap: 0.9rem;
+  width: min(96vw, 76rem);
+  border-left: 1px solid var(--border);
+  background: #ffffff;
+  padding: 1rem;
+  pointer-events: auto;
+  box-shadow: -18px 0 42px rgba(21, 19, 20, 0.22);
+}
+
+.execution-tracker-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.82rem;
+}
+
+.execution-tracker-header p {
+  margin: 0 0 0.22rem;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.execution-tracker-header h2 {
+  margin: 0;
+  font-size: clamp(1.18rem, 2vw, 1.64rem);
+  line-height: 1.14;
+}
+
+.execution-tracker-header-actions,
+.execution-tracker-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.execution-tracker-error,
+.execution-tracker-loading {
+  margin: 0;
+  border: 1px solid var(--accent-line);
+  border-radius: 0.72rem;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  padding: 0.72rem 0.82rem;
+  font-size: 0.92rem;
+  font-weight: 720;
+}
+
+.execution-tracker-error {
+  border-color: #f1b8c5;
+  background: #fff1f4;
+  color: var(--danger);
+}
+
+.execution-tracker-create {
+  display: grid;
+  grid-template-columns: minmax(14rem, 1.5fr) minmax(11rem, 0.9fr) minmax(9rem, 0.7fr) minmax(9rem, 0.7fr) auto;
+  gap: 0.58rem;
+  align-items: end;
+  border: 1px solid var(--border);
+  border-radius: 0.8rem;
+  background: var(--surface-alt);
+  padding: 0.72rem;
+}
+
+.execution-tracker-create input,
+.execution-tracker-create select,
+.execution-tracker-card select,
+.execution-tracker-card input,
+.execution-tracker-card textarea {
+  width: 100%;
+  min-height: 2.42rem;
+  border: 1px solid var(--border);
+  border-radius: 0.62rem;
+  background: #ffffff;
+  color: var(--text-primary);
+  padding: 0.52rem 0.62rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.execution-tracker-card textarea {
+  min-height: 5rem;
+  resize: vertical;
+}
+
+.execution-tracker-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(17.5rem, 1fr);
+  gap: 0.78rem;
+  min-height: 0;
+  overflow-x: auto;
+  padding-bottom: 0.3rem;
+}
+
+.execution-tracker-column {
+  display: grid;
+  align-content: start;
+  gap: 0.64rem;
+  min-height: 100%;
+  border: 1px solid var(--border);
+  border-radius: 0.82rem;
+  background: #fbfafc;
+  padding: 0.72rem;
+}
+
+.execution-tracker-column h3 {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin: 0;
+  font-size: 0.94rem;
+  line-height: 1.2;
+}
+
+.execution-tracker-column h3 strong {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.65rem;
+  height: 1.65rem;
+  border-radius: 999px;
+  background: var(--surface-alt);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+}
+
+.execution-tracker-empty {
+  margin: 0;
+  border: 1px dashed var(--border);
+  border-radius: 0.7rem;
+  color: var(--text-secondary);
+  padding: 0.7rem;
+  text-align: center;
+  font-size: 0.88rem;
+  font-weight: 720;
+}
+
+.execution-tracker-card {
+  display: grid;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 0.78rem;
+  background: #ffffff;
+  padding: 0.78rem;
+  box-shadow: 0 10px 20px rgba(21, 19, 20, 0.07);
+}
+
+.execution-tracker-card[draggable="true"] {
+  cursor: grab;
+}
+
+.execution-tracker-card-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.execution-tracker-card-top strong {
+  font-size: 0.98rem;
+  line-height: 1.28;
+}
+
+.execution-tracker-drag {
+  color: var(--text-secondary);
+  font-weight: 900;
+  letter-spacing: 0.04em;
+}
+
+.execution-tracker-card p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.42;
+}
+
+.execution-tracker-meta {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 0.18rem 0.48rem;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.84rem;
+}
+
+.execution-tracker-meta dt {
+  font-weight: 820;
+}
+
+.execution-tracker-meta dd {
+  margin: 0;
+}
+
+.execution-tracker-labels {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.32rem;
+}
+
+.execution-tracker-labels span {
+  border: 1px solid var(--accent-line);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  padding: 0.22rem 0.48rem;
+  font-size: 0.76rem;
+  font-weight: 780;
+}
+
+.execution-tracker-card-actions select {
+  width: min(100%, 11rem);
+}
+
+.execution-tracker-edit {
+  display: grid;
+  gap: 0.58rem;
+}
+
+.execution-tracker-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
 @media (max-width: 1440px) {
   .private-dashboard-nav {
     align-items: start;
@@ -664,6 +953,32 @@ p {
     position: absolute;
     width: min(22rem, calc(100vw - 2rem));
     margin-top: 0;
+  }
+
+  .execution-tracker-drawer {
+    width: 100vw;
+    padding: 0.82rem;
+  }
+
+  .execution-tracker-header,
+  .execution-tracker-create {
+    grid-template-columns: 1fr;
+  }
+
+  .execution-tracker-header {
+    display: grid;
+  }
+
+  .execution-tracker-create {
+    display: grid;
+  }
+
+  .execution-tracker-board {
+    grid-auto-columns: minmax(16rem, 84vw);
+  }
+
+  .execution-tracker-card-grid {
+    grid-template-columns: 1fr;
   }
 }
 

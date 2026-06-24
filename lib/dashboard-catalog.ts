@@ -57,6 +57,7 @@ type DashboardBase = {
   workspaceOnly?: boolean;
   requiredPermission?: string;
   supportsUpdateNotifications?: boolean;
+  supportsExecutionTracker?: boolean;
   visible: boolean;
 };
 
@@ -119,6 +120,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("pgpz-roadmap"),
     supportsUpdateNotifications: true,
+    supportsExecutionTracker: true,
     visible: true,
     missingTitle: "PGPZ Roadmap unavailable",
     missingHeading: "PGPZ Roadmap content is not configured",
@@ -141,6 +143,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("arktouros"),
     supportsUpdateNotifications: true,
+    supportsExecutionTracker: true,
     visible: true,
     missingTitle: "Arktouros unavailable",
     missingHeading: "Arktouros content is not configured",
@@ -163,6 +166,7 @@ export const dashboardCatalog: DashboardCatalogItem[] = [
     workspaceOnly: true,
     requiredPermission: dashboardReadPermission("placehodlr"),
     supportsUpdateNotifications: true,
+    supportsExecutionTracker: true,
     visible: true,
     missingTitle: "Placehodlr unavailable",
     missingHeading: "Placehodlr content is not configured",
@@ -293,6 +297,17 @@ export function updateNotificationDashboards(): DashboardUpdateNotificationItem[
 
 export function findUpdateNotificationDashboard(id: string): DashboardUpdateNotificationItem | null {
   return updateNotificationDashboards().find((dashboard) => dashboard.id === id) || null;
+}
+
+export function executionTrackerDashboards(): DashboardUpdateNotificationItem[] {
+  return visibleDashboards().filter(
+    (dashboard): dashboard is DashboardUpdateNotificationItem =>
+      dashboard.kind !== "placeholder" && Boolean(dashboard.href) && dashboard.supportsExecutionTracker === true
+  );
+}
+
+export function findExecutionTrackerDashboard(id: string): DashboardUpdateNotificationItem | null {
+  return executionTrackerDashboards().find((dashboard) => dashboard.id === id) || null;
 }
 
 export function privateHtmlDashboards(): PrivateHtmlDashboard[] {
