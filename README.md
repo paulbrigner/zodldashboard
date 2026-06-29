@@ -60,6 +60,7 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 Operational runbooks:
 
 - [X Monitor Executive Graphics](docs/X_MONITOR_EXECUTIVE_GRAPHICS_RUNBOOK.md): regenerate the team traction and 90-day ZEC overlay PNGs
+- [Better Auth Migration Decisions](docs/BETTER_AUTH_MIGRATION_DECISIONS.md): locked decisions for preserving Zodl and guest Google OAuth during the Auth.js to Better Auth migration.
 - X Monitor access report: `scripts/aws/report_xmonitor_access.sh` reports successful `/x-monitor` page accesses from `xmonitor_access_events`.
 - [Arktouros Private Dashboard](docs/ARKTOUROS_PRIVATE_DASHBOARD.md): split-repository integration notes for `/arktouros`.
 - [Execution Tracker](docs/EXECUTION_TRACKER.md): shared collaborative tracker architecture for selected private dashboards.
