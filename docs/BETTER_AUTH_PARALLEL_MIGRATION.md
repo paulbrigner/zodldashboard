@@ -23,6 +23,10 @@ Configure these redirect URIs in the matching Google OAuth clients before smoke 
 
 For local smoke testing, use the same paths under `http://localhost:3000`.
 
+## Browser Test Page
+
+The unlinked `/better-auth-test` page starts the Better Auth workspace and guest Google flows without changing the production `/signin` page.
+
 ## Environment
 
 Set these alongside the existing NextAuth values:
