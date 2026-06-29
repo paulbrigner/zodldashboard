@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { signOut } from "next-auth/react";
 import { useEffect, useId, useRef, useState } from "react";
 import {
   DashboardUpdateSubscriptionToggle,
   type DashboardUpdateSubscriptionToggleProps,
 } from "./dashboard-update-subscription-toggle";
+import { SignOutButton } from "./sign-out-button";
+import type { AuthSessionProvider } from "@/lib/server-auth-session";
 
 export type PrivateDashboardGlobalNavItem = {
   href: string;
@@ -18,6 +19,7 @@ export type PrivateDashboardGlobalNavItem = {
 type PrivateDashboardGlobalNavProps = {
   items: PrivateDashboardGlobalNavItem[];
   canSignOut: boolean;
+  authProvider?: AuthSessionProvider;
   updateNotifications?: DashboardUpdateSubscriptionToggleProps;
 };
 
@@ -29,7 +31,7 @@ function menuLinkClassName(active?: boolean): string {
   return `private-dashboard-menu-link${active ? " private-dashboard-menu-link-active" : ""}`;
 }
 
-export function PrivateDashboardGlobalNav({ items, canSignOut, updateNotifications }: PrivateDashboardGlobalNavProps) {
+export function PrivateDashboardGlobalNav({ items, canSignOut, authProvider = "next-auth", updateNotifications }: PrivateDashboardGlobalNavProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
@@ -114,26 +116,14 @@ export function PrivateDashboardGlobalNav({ items, canSignOut, updateNotificatio
               <DashboardUpdateSubscriptionToggle {...updateNotifications} className="private-dashboard-menu-notify" />
             ) : null}
             {canSignOut ? (
-              <button
-                className="button button-secondary private-dashboard-menu-signout"
-                onClick={() => void signOut({ callbackUrl: "/signin" })}
-                type="button"
-              >
-                Sign out
-              </button>
+              <SignOutButton authProvider={authProvider} className="button button-secondary private-dashboard-menu-signout" />
             ) : null}
           </div>
         ) : null}
       </div>
 
       {canSignOut ? (
-        <button
-          className="button button-secondary private-dashboard-signout-desktop"
-          onClick={() => void signOut({ callbackUrl: "/signin" })}
-          type="button"
-        >
-          Sign out
-        </button>
+        <SignOutButton authProvider={authProvider} className="button button-secondary private-dashboard-signout-desktop" />
       ) : null}
     </div>
   );

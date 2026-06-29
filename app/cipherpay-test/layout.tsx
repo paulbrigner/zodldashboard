@@ -47,7 +47,7 @@ export default async function CipherPayTestLayout({
             <Link className="button button-secondary" href="/">
               All dashboards
             </Link>
-            {viewer.canSignOut ? <SignOutButton /> : null}
+            {viewer.canSignOut ? <SignOutButton authProvider={viewer.authProvider || "next-auth"} /> : null}
           </div>
         </header>
 

@@ -1,8 +1,7 @@
 import { headers } from "next/headers";
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
 import { localBypassEffectiveAccess, resolveEffectiveAccess } from "@/lib/access-control";
 import { evaluateLocalBypass } from "@/lib/local-bypass";
+import { resolveServerAuthSession, type AuthSessionProvider } from "@/lib/server-auth-session";
 import type { ViewerAccessLevel } from "@/lib/viewer-access";
 
 export type ApiRouteViewer = {
@@ -14,6 +13,7 @@ export type ApiRouteViewer = {
   roles: string[];
   permissions: string[];
   accessSource: "access-control" | "legacy-env" | "local-bypass";
+  authProvider: AuthSessionProvider | null;
 };
 
 const bypassDisplayEmail = process.env.LOCAL_BYPASS_DISPLAY_EMAIL || "local-network@zodldashboard.local";
@@ -23,9 +23,9 @@ function normalizeEmail(value: string): string {
 }
 
 export async function resolveApiRouteViewer(pathname: string): Promise<ApiRouteViewer | null> {
-  const session = await getServerSession(authOptions);
-  if (session?.user?.email) {
-    const email = normalizeEmail(session.user.email);
+  const authSession = await resolveServerAuthSession();
+  if (authSession) {
+    const email = authSession.email;
     const access = await resolveEffectiveAccess(email);
     if (access.status !== "active") return null;
     return {
@@ -37,6 +37,7 @@ export async function resolveApiRouteViewer(pathname: string): Promise<ApiRouteV
       roles: access.roles,
       permissions: access.permissions,
       accessSource: access.source,
+      authProvider: authSession.provider,
     };
   }
 
@@ -56,5 +57,6 @@ export async function resolveApiRouteViewer(pathname: string): Promise<ApiRouteV
     roles: access.roles,
     permissions: access.permissions,
     accessSource: access.source,
+    authProvider: null,
   };
 }

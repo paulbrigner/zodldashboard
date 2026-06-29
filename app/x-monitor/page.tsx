@@ -701,7 +701,7 @@ export default async function HomePage({ searchParams }: HomePageProps) {
               <Link className="button button-secondary" href="/">
                 All dashboards
               </Link>
-              {viewer.canSignOut ? <SignOutButton /> : null}
+              {viewer.canSignOut ? <SignOutButton authProvider={viewer.authProvider || "next-auth"} /> : null}
             </div>
             <div className="header-aux-row">
               <QueryReferencePopup />

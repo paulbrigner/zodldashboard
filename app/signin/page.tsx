@@ -1,7 +1,9 @@
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { resolveEffectiveAccess } from "@/lib/access-control";
 import { guestMagicLinkEnabled, parseBoolean } from "@/lib/auth-guest-email";
 import { evaluateLocalBypass } from "@/lib/local-bypass";
+import { resolveServerAuthSession } from "@/lib/server-auth-session";
 import SignInClient from "./signin-client";
 
 export const runtime = "nodejs";
@@ -17,6 +19,14 @@ function asString(value: string | string[] | undefined): string | null {
 }
 
 export default async function SignInPage({ searchParams }: SignInPageProps) {
+  const authSession = await resolveServerAuthSession();
+  if (authSession) {
+    const access = await resolveEffectiveAccess(authSession.email);
+    if (access.status === "active") {
+      redirect("/");
+    }
+  }
+
   const requestHeaders = await headers();
   const bypass = await evaluateLocalBypass(requestHeaders, "/signin");
   if (bypass.allowed) {

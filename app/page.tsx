@@ -28,7 +28,7 @@ export default async function HomePage() {
             <p className="subtle-text">{identityText}</p>
           </div>
           <div className="button-row">
-            {viewer.canSignOut ? <SignOutButton /> : null}
+            {viewer.canSignOut ? <SignOutButton authProvider={viewer.authProvider || "next-auth"} /> : null}
           </div>
         </header>
 

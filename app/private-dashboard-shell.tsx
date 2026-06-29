@@ -54,6 +54,7 @@ export async function PrivateDashboardShell({ dashboardId }: { dashboardId: stri
           <p className="private-dashboard-identity">{identityText(viewer)}</p>
         </div>
         <PrivateDashboardGlobalNav
+          authProvider={viewer.authProvider || "next-auth"}
           canSignOut={viewer.canSignOut}
           items={navItems}
           updateNotifications={{
