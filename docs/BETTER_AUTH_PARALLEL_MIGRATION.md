@@ -1,8 +1,8 @@
 # Better Auth Parallel Migration
 
-Status: phase 1 scaffold added on 2026-06-29.
+Status: parallel scaffold added on 2026-06-29; production `/signin` cut over to Better Auth on 2026-06-29.
 
-This phase adds Better Auth next to the existing NextAuth/Auth.js implementation. It does not switch `/signin`, remove `/api/auth/[...nextauth]`, or change the production session path.
+This migration adds Better Auth next to the existing NextAuth/Auth.js implementation, then switches new production sign-ins to Better Auth. It does not remove `/api/auth/[...nextauth]`; NextAuth remains mounted during the rollback window and existing session bridge period.
 
 ## Guardrails
 
@@ -25,7 +25,7 @@ For local smoke testing, use the same paths under `http://localhost:3000`.
 
 ## Browser Test Page
 
-The unlinked `/better-auth-test` page starts the Better Auth workspace and guest Google flows without changing the production `/signin` page.
+The unlinked `/better-auth-test` page remains available to start the Better Auth workspace and guest Google flows directly. The production `/signin` page now uses the same Better Auth paths.
 
 ## Environment
 
@@ -40,7 +40,7 @@ Keep `NEXTAUTH_URL` and `NEXTAUTH_SECRET` until all invite, email-link, and roll
 
 ## Cutover Gates
 
-Before moving `/signin` to Better Auth:
+Before removing the temporary parallel/rollback path:
 
 - Run `git diff --check`.
 - Run `npm run typecheck`.
