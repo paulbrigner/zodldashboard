@@ -1,5 +1,5 @@
 import { betterAuth, type BetterAuthOptions, type BetterAuthPlugin } from "better-auth";
-import { APIError, createAuthMiddleware } from "better-auth/api";
+import { APIError } from "better-auth/api";
 import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, magicLink } from "better-auth/plugins";
 import { canAuthenticateWithAccessControl, resolveEffectiveAccess } from "@/lib/access-control";
@@ -229,16 +229,25 @@ async function recordBetterAuthLogin(email: string, provider: string, authMode: 
   });
 }
 
-function providerFromPath(path: string | undefined): { provider: string; authMode: "oauth" | "email-link" } | null {
-  if (path?.endsWith("/callback/google")) {
-    return { provider: BETTER_AUTH_GOOGLE_PROVIDER_ID, authMode: "oauth" };
+function stringParam(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function providerFromAuthContext(
+  path: string | undefined,
+  params?: Record<string, unknown>
+): { provider: string; authMode: "oauth" | "email-link" } | null {
+  if (path?.startsWith("/callback/") || path?.endsWith("/callback/google")) {
+    const provider = stringParam(params?.id) || path.split("/").pop() || BETTER_AUTH_GOOGLE_PROVIDER_ID;
+    return { provider, authMode: "oauth" };
   }
 
-  if (path?.endsWith(`/oauth2/callback/${BETTER_AUTH_GUEST_GOOGLE_PROVIDER_ID}`)) {
-    return { provider: BETTER_AUTH_GUEST_GOOGLE_PROVIDER_ID, authMode: "oauth" };
+  if (path?.startsWith("/oauth2/callback/")) {
+    const provider = stringParam(params?.providerId) || path.split("/").pop() || "";
+    if (provider) return { provider, authMode: "oauth" };
   }
 
-  if (path?.endsWith("/magic-link/verify")) {
+  if (path?.startsWith("/magic-link/verify")) {
     return { provider: BETTER_AUTH_EMAIL_PROVIDER_ID, authMode: "email-link" };
   }
 
@@ -303,17 +312,19 @@ export const auth = betterAuth({
             return false;
           }
         },
+        after: async (session, context) => {
+          const provider = providerFromAuthContext(context?.path, context?.params as Record<string, unknown> | undefined);
+          if (!provider) return;
+
+          const userId = typeof session.userId === "string" ? session.userId : "";
+          const user = userId && context ? await context.context.internalAdapter.findUserById(userId) : null;
+          const email = normalizeEmail(user?.email);
+          if (!email) return;
+
+          await recordBetterAuthLogin(email, provider.provider, provider.authMode);
+        },
       },
     },
-  },
-  hooks: {
-    after: createAuthMiddleware(async (ctx) => {
-      const newSession = ctx.context.newSession;
-      const provider = providerFromPath(ctx.path);
-      if (!newSession || !provider) return;
-
-      await recordBetterAuthLogin(newSession.user.email, provider.provider, provider.authMode);
-    }),
   },
   onAPIError: {
     errorURL: "/signin",
