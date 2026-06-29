@@ -119,6 +119,38 @@ const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
 const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
 const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
 const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
+const BETTER_AUTH_ADAPTER_TABLE_FIELDS = {
+  better_auth_users: new Set(["id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt"]),
+  better_auth_sessions: new Set(["id", "expiresAt", "token", "createdAt", "updatedAt", "ipAddress", "userAgent", "userId"]),
+  better_auth_accounts: new Set([
+    "id",
+    "accountId",
+    "providerId",
+    "userId",
+    "accessToken",
+    "refreshToken",
+    "idToken",
+    "accessTokenExpiresAt",
+    "refreshTokenExpiresAt",
+    "scope",
+    "password",
+    "createdAt",
+    "updatedAt",
+  ]),
+  better_auth_verifications: new Set(["id", "identifier", "value", "expiresAt", "createdAt", "updatedAt"]),
+};
+const BETTER_AUTH_ADAPTER_OPERATIONS = new Set([
+  "create",
+  "findOne",
+  "findMany",
+  "count",
+  "update",
+  "updateMany",
+  "delete",
+  "deleteMany",
+  "consumeOne",
+  "incrementOne",
+]);
 const MODULE_DIR = dirname(fileURLToPath(import.meta.url));
 
 function readCanonicalJson(relativeCandidates) {
@@ -1491,6 +1523,299 @@ function requireProxySecret(event) {
   }
 
   return { ok: true };
+}
+
+function betterAuthAdapterRequestError(message, statusCode = 400) {
+  const error = new Error(message);
+  error.statusCode = statusCode;
+  return error;
+}
+
+function betterAuthAdapterTable(model) {
+  const table = asString(model);
+  if (!table || !Object.prototype.hasOwnProperty.call(BETTER_AUTH_ADAPTER_TABLE_FIELDS, table)) {
+    throw betterAuthAdapterRequestError("unsupported Better Auth adapter model");
+  }
+  return table;
+}
+
+function betterAuthAdapterField(table, field) {
+  const normalizedField = asString(field);
+  if (!normalizedField || !BETTER_AUTH_ADAPTER_TABLE_FIELDS[table].has(normalizedField)) {
+    throw betterAuthAdapterRequestError("unsupported Better Auth adapter field");
+  }
+  return normalizedField;
+}
+
+function betterAuthAdapterLimit(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 100;
+  return Math.min(parsed, 500);
+}
+
+function betterAuthAdapterOffset(value) {
+  const parsed = Number.parseInt(String(value ?? ""), 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return parsed;
+}
+
+function betterAuthAdapterSelectSql(table, select) {
+  if (!Array.isArray(select) || select.length === 0) return "*";
+  const fields = select.map((field) => quoteIdent(betterAuthAdapterField(table, field)));
+  return fields.join(", ");
+}
+
+function betterAuthAdapterMutationEntries(table, data) {
+  if (!isRecord(data)) {
+    throw betterAuthAdapterRequestError("Better Auth adapter data must be an object");
+  }
+
+  return Object.entries(data)
+    .filter(([, value]) => value !== undefined)
+    .map(([field, value]) => [betterAuthAdapterField(table, field), value]);
+}
+
+function pushSqlParam(params, value) {
+  params.push(value);
+  return `$${params.length}`;
+}
+
+function betterAuthAdapterLikeValue(operator, value) {
+  if (typeof value !== "string") {
+    throw betterAuthAdapterRequestError("Better Auth adapter pattern operators require string values");
+  }
+
+  if (operator === "contains") return `%${value}%`;
+  if (operator === "starts_with") return `${value}%`;
+  if (operator === "ends_with") return `%${value}`;
+  return value;
+}
+
+function betterAuthAdapterConditionSql(table, condition, params) {
+  if (!isRecord(condition)) {
+    throw betterAuthAdapterRequestError("Better Auth adapter where condition must be an object");
+  }
+
+  const field = betterAuthAdapterField(table, condition.field);
+  const operator = asString(condition.operator) || "eq";
+  const mode = asString(condition.mode) || "sensitive";
+  const column = quoteIdent(field);
+  const value = condition.value;
+  const insensitive = mode === "insensitive" && (typeof value === "string" || Array.isArray(value));
+  const comparableColumn = insensitive ? `LOWER(${column})` : column;
+
+  if (value === null && (operator === "eq" || operator === "ne")) {
+    return operator === "eq" ? `${column} IS NULL` : `${column} IS NOT NULL`;
+  }
+
+  if (operator === "eq" || operator === "ne" || operator === "lt" || operator === "lte" || operator === "gt" || operator === "gte") {
+    const sqlOperator = {
+      eq: "=",
+      ne: "<>",
+      lt: "<",
+      lte: "<=",
+      gt: ">",
+      gte: ">=",
+    }[operator];
+    const sqlValue = insensitive && typeof value === "string" ? value.toLowerCase() : value;
+    return `${comparableColumn} ${sqlOperator} ${pushSqlParam(params, sqlValue)}`;
+  }
+
+  if (operator === "in" || operator === "not_in") {
+    if (!Array.isArray(value)) {
+      throw betterAuthAdapterRequestError("Better Auth adapter in/not_in operators require array values");
+    }
+    if (value.length === 0) return operator === "in" ? "FALSE" : "TRUE";
+    const sqlValues = insensitive ? value.map((item) => (typeof item === "string" ? item.toLowerCase() : item)) : value;
+    const placeholders = sqlValues.map((item) => pushSqlParam(params, item)).join(", ");
+    return `${comparableColumn} ${operator === "in" ? "IN" : "NOT IN"} (${placeholders})`;
+  }
+
+  if (operator === "contains" || operator === "starts_with" || operator === "ends_with") {
+    const sqlOperator = mode === "insensitive" ? "ILIKE" : "LIKE";
+    return `${column} ${sqlOperator} ${pushSqlParam(params, betterAuthAdapterLikeValue(operator, value))}`;
+  }
+
+  throw betterAuthAdapterRequestError("unsupported Better Auth adapter where operator");
+}
+
+function betterAuthAdapterWhereSql(table, where, params, { required = false } = {}) {
+  if (!Array.isArray(where) || where.length === 0) {
+    if (required) {
+      throw betterAuthAdapterRequestError("Better Auth adapter operation requires a where clause");
+    }
+    return "";
+  }
+
+  const parts = [];
+  for (const condition of where) {
+    const connector = asString(condition?.connector) === "OR" ? "OR" : "AND";
+    const sql = betterAuthAdapterConditionSql(table, condition, params);
+    parts.push(`${parts.length === 0 ? "" : `${connector} `}(${sql})`);
+  }
+  return `WHERE ${parts.join(" ")}`;
+}
+
+function betterAuthAdapterSortSql(table, sortBy) {
+  if (!isRecord(sortBy)) return "";
+  const field = betterAuthAdapterField(table, sortBy.field);
+  const direction = asString(sortBy.direction) === "desc" ? "DESC" : "ASC";
+  return `ORDER BY ${quoteIdent(field)} ${direction}`;
+}
+
+async function runBetterAuthAdapterOperation(payload) {
+  if (!isRecord(payload)) {
+    throw betterAuthAdapterRequestError("Better Auth adapter body must be an object");
+  }
+
+  const operation = asString(payload.operation);
+  if (!operation || !BETTER_AUTH_ADAPTER_OPERATIONS.has(operation)) {
+    throw betterAuthAdapterRequestError("unsupported Better Auth adapter operation");
+  }
+
+  const table = betterAuthAdapterTable(payload.model);
+  const tableSql = quoteIdent(table);
+  const db = getPool();
+
+  if (operation === "create") {
+    const params = [];
+    const entries = betterAuthAdapterMutationEntries(table, payload.data);
+    if (entries.length === 0) throw betterAuthAdapterRequestError("Better Auth adapter create requires data");
+    const columns = entries.map(([field]) => quoteIdent(field)).join(", ");
+    const values = entries.map(([, value]) => pushSqlParam(params, value)).join(", ");
+    const result = await db.query(`INSERT INTO ${tableSql} (${columns}) VALUES (${values}) RETURNING *`, params);
+    return result.rows[0] || null;
+  }
+
+  if (operation === "findOne") {
+    const params = [];
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params, { required: true });
+    const selectSql = betterAuthAdapterSelectSql(table, payload.select);
+    const result = await db.query(`SELECT ${selectSql} FROM ${tableSql} ${whereSql} ORDER BY id LIMIT 1`, params);
+    return result.rows[0] || null;
+  }
+
+  if (operation === "findMany") {
+    const params = [];
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params);
+    const selectSql = betterAuthAdapterSelectSql(table, payload.select);
+    const sortSql = betterAuthAdapterSortSql(table, payload.sortBy);
+    const limit = betterAuthAdapterLimit(payload.limit);
+    const offset = betterAuthAdapterOffset(payload.offset);
+    params.push(limit, offset);
+    const result = await db.query(
+      `SELECT ${selectSql} FROM ${tableSql} ${whereSql} ${sortSql} LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+    return result.rows;
+  }
+
+  if (operation === "count") {
+    const params = [];
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params);
+    const result = await db.query(`SELECT COUNT(*)::int AS count FROM ${tableSql} ${whereSql}`, params);
+    return Number(result.rows[0]?.count || 0);
+  }
+
+  if (operation === "update" || operation === "updateMany") {
+    const params = [];
+    const entries = betterAuthAdapterMutationEntries(table, payload.update);
+    if (entries.length === 0) return operation === "update" ? null : 0;
+    const setSql = entries.map(([field, value]) => `${quoteIdent(field)} = ${pushSqlParam(params, value)}`).join(", ");
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params, { required: true });
+    if (operation === "update") {
+      const result = await db.query(
+        `WITH target AS (
+           SELECT id FROM ${tableSql} ${whereSql} ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+         )
+         UPDATE ${tableSql}
+            SET ${setSql}
+           FROM target
+          WHERE ${tableSql}.id = target.id
+          RETURNING ${tableSql}.*`,
+        params
+      );
+      return result.rows[0] || null;
+    }
+    const result = await db.query(`UPDATE ${tableSql} SET ${setSql} ${whereSql} RETURNING 1`, params);
+    return result.rowCount || 0;
+  }
+
+  if (operation === "delete" || operation === "consumeOne") {
+    const params = [];
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params, { required: true });
+    const result = await db.query(
+      `WITH target AS (
+         SELECT id FROM ${tableSql} ${whereSql} ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+       )
+       DELETE FROM ${tableSql}
+        USING target
+        WHERE ${tableSql}.id = target.id
+        RETURNING ${tableSql}.*`,
+      params
+    );
+    return operation === "consumeOne" ? result.rows[0] || null : null;
+  }
+
+  if (operation === "deleteMany") {
+    const params = [];
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params, { required: true });
+    const result = await db.query(`DELETE FROM ${tableSql} ${whereSql} RETURNING 1`, params);
+    return result.rowCount || 0;
+  }
+
+  if (operation === "incrementOne") {
+    const params = [];
+    const increment = isRecord(payload.increment) ? payload.increment : {};
+    const set = isRecord(payload.set) ? payload.set : {};
+    const setExpressions = [];
+    for (const [field, delta] of Object.entries(increment)) {
+      const safeField = betterAuthAdapterField(table, field);
+      if (typeof delta !== "number" || !Number.isFinite(delta)) {
+        throw betterAuthAdapterRequestError("Better Auth adapter increment values must be finite numbers");
+      }
+      setExpressions.push(`${quoteIdent(safeField)} = ${quoteIdent(safeField)} + ${pushSqlParam(params, delta)}`);
+    }
+    for (const [field, value] of Object.entries(set)) {
+      const safeField = betterAuthAdapterField(table, field);
+      setExpressions.push(`${quoteIdent(safeField)} = ${pushSqlParam(params, value)}`);
+    }
+    if (setExpressions.length === 0) return null;
+    const whereSql = betterAuthAdapterWhereSql(table, payload.where, params, { required: true });
+    const result = await db.query(
+      `WITH target AS (
+         SELECT id FROM ${tableSql} ${whereSql} ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED
+       )
+       UPDATE ${tableSql}
+          SET ${setExpressions.join(", ")}
+         FROM target
+        WHERE ${tableSql}.id = target.id
+        RETURNING ${tableSql}.*`,
+      params
+    );
+    return result.rows[0] || null;
+  }
+
+  throw betterAuthAdapterRequestError("unsupported Better Auth adapter operation");
+}
+
+async function handleBetterAuthAdapterOperation(event) {
+  const auth = requireProxySecret(event);
+  if (!auth.ok) return jsonError(auth.error, auth.status);
+
+  const parsed = readJsonBody(event);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+
+  try {
+    const result = await runBetterAuthAdapterOperation(parsed.body);
+    return jsonOk({ ok: true, result });
+  } catch (error) {
+    const statusCode = Number.isInteger(error?.statusCode) ? error.statusCode : 500;
+    if (statusCode >= 500) {
+      console.warn("[better-auth-adapter] operation failed", error);
+    }
+    return jsonError(errorMessage(error), statusCode);
+  }
 }
 
 function requireViewerContext(event, { oauthOnly = false } = {}) {
@@ -11901,6 +12226,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/auth/login-events") {
     return handleAuthLoginEventCreate(event);
+  }
+
+  if (method === "POST" && path === "/v1/auth/better-auth/adapter") {
+    return handleBetterAuthAdapterOperation(event);
   }
 
   if (method === "POST" && path === "/v1/roadmap/access-events") {

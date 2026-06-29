@@ -4,6 +4,7 @@ import { nextCookies } from "better-auth/next-js";
 import { genericOAuth, magicLink } from "better-auth/plugins";
 import { canAuthenticateWithAccessControl, resolveEffectiveAccess } from "@/lib/access-control";
 import { recordSuccessfulAuthLogin, type AuthLoginAccessLevel } from "@/lib/auth-login-events";
+import { betterAuthProxyAdapter, hasBetterAuthProxyAdapterConfig } from "@/lib/better-auth-adapter-proxy";
 import {
   allowedGuestEmails,
   guestMagicLinkEnabled,
@@ -245,6 +246,10 @@ function providerFromPath(path: string | undefined): { provider: string; authMod
 }
 
 function databaseConfig(): BetterAuthOptions["database"] | undefined {
+  if (hasBetterAuthProxyAdapterConfig()) {
+    return betterAuthProxyAdapter;
+  }
+
   if (!hasDatabaseConfig()) {
     console.warn("[better-auth] DATABASE_URL/PG* missing; Better Auth is running without the target database adapter.");
     return undefined;
