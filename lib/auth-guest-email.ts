@@ -179,7 +179,17 @@ async function sendViaBackend({
 export async function sendGuestMagicLinkVerificationRequest(
   params: SendVerificationRequestParams
 ): Promise<void> {
-  const identifier = normalizeEmail(params.identifier);
+  await sendGuestMagicLinkEmail({ identifier: params.identifier, url: params.url });
+}
+
+export async function sendGuestMagicLinkEmail({
+  identifier: rawIdentifier,
+  url,
+}: {
+  identifier: string;
+  url: string;
+}): Promise<void> {
+  const identifier = normalizeEmail(rawIdentifier);
   const enabled = guestMagicLinkEnabled();
   const allowed = enabled && (await canAuthenticateWithAccessControl(identifier));
 
@@ -192,10 +202,10 @@ export async function sendGuestMagicLinkVerificationRequest(
     return;
   }
 
-  const host = new URL(params.url).host;
+  const host = new URL(url).host;
   const subject = verificationEmailSubject(host);
-  const text = verificationEmailText({ url: params.url, host });
-  const html = verificationEmailHtml({ url: params.url, host });
+  const text = verificationEmailText({ url, host });
+  const html = verificationEmailHtml({ url, host });
 
   if (await sendViaBackend({ identifier, subject, text, html })) {
     console.info(`[auth] sent provider=${GUEST_EMAIL_PROVIDER_ID} email=${identifier} reason=guest_magic_link`);
@@ -203,7 +213,7 @@ export async function sendGuestMagicLinkVerificationRequest(
   }
 
   if (process.env.NODE_ENV !== "production") {
-    console.info(`[auth] dev_magic_link email=${identifier} url=${params.url}`);
+    console.info(`[auth] dev_magic_link email=${identifier} url=${url}`);
     return;
   }
 

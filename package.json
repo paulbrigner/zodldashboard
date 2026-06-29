@@ -20,6 +20,7 @@
     "eval:compose": "node scripts/eval/run_compose_eval.mjs"
   },
   "dependencies": {
+    "better-auth": "^1.6.22",
     "next": "^15.5.12",
     "next-auth": "^4.24.13",
     "pg": "^8.16.3",
