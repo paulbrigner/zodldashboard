@@ -124,6 +124,10 @@ frontend:
         - rm -f .env.production
         - env | grep -e NEXTAUTH_URL >> .env.production || true
         - env | grep -e NEXTAUTH_SECRET >> .env.production || true
+        - env | grep -e BETTER_AUTH_URL >> .env.production || true
+        - env | grep -e BETTER_AUTH_SECRET >> .env.production || true
+        - env | grep -e BETTER_AUTH_TRUSTED_ORIGINS >> .env.production || true
+        - env | grep -e BETTER_AUTH_GUEST_GOOGLE_REQUIRE_ISSUER_VALIDATION >> .env.production || true
         - env | grep -e GOOGLE_CLIENT_ID >> .env.production || true
         - env | grep -e GOOGLE_CLIENT_SECRET >> .env.production || true
         - env | grep -e ALLOWED_GOOGLE_DOMAIN >> .env.production || true
