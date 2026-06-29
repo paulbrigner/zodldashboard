@@ -283,8 +283,7 @@ export const auth = betterAuth({
   },
   rateLimit: {
     enabled: true,
-    storage: hasDatabaseConfig() ? "database" : "memory",
-    modelName: "better_auth_rate_limits",
+    storage: "memory",
   },
   databaseHooks: {
     session: {
