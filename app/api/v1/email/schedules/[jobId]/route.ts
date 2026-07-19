@@ -1,16 +1,9 @@
-import { getServerSession } from "next-auth";
-import { authOptions } from "@/lib/auth";
+import { resolveApiRouteViewer } from "@/lib/api-route-viewer";
 import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { jsonError } from "@/lib/xmonitor/http";
+import { buildViewerProxyHeaders } from "@/lib/xmonitor/viewer-proxy";
 
 export const runtime = "nodejs";
-
-function proxySecret(): string | null {
-  const value = process.env.XMONITOR_USER_PROXY_SECRET;
-  if (!value) return null;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
 
 async function proxyRequest(
   request: Request,
@@ -22,14 +15,13 @@ async function proxyRequest(
     return jsonError("email schedules require XMONITOR_BACKEND_API_BASE_URL to be configured", 503);
   }
 
-  const session = await getServerSession(authOptions);
-  const email = session?.user?.email?.trim().toLowerCase() || "";
-  if (!email) {
+  const viewer = await resolveApiRouteViewer(new URL(request.url).pathname);
+  if (!viewer) {
     return jsonError("authentication required", 401);
   }
 
-  const secret = proxySecret();
-  if (!secret) {
+  const viewerHeaders = buildViewerProxyHeaders(viewer);
+  if (!viewerHeaders) {
     return jsonError("XMONITOR_USER_PROXY_SECRET is not configured", 503);
   }
 
@@ -38,9 +30,7 @@ async function proxyRequest(
     cache: "no-store",
     headers: {
       accept: "application/json",
-      "x-xmonitor-viewer-email": email,
-      "x-xmonitor-viewer-auth-mode": "oauth",
-      "x-xmonitor-viewer-secret": secret,
+      ...viewerHeaders,
     },
   };
   if (method === "PATCH") {

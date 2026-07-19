@@ -8538,6 +8538,116 @@ async function listScheduledEmailJobs(viewer) {
   return result.rows.map(rowToScheduledEmailJob);
 }
 
+function scheduleInventoryCount(value) {
+  const count = Number(value);
+  return Number.isFinite(count) && count >= 0 ? Math.trunc(count) : 0;
+}
+
+function scheduleInventoryIsoExtrema(values, direction) {
+  let selected = null;
+  let selectedMs = direction === "min" ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+  for (const value of values) {
+    const iso = toIso(value);
+    if (!iso) continue;
+    const timestampMs = new Date(iso).getTime();
+    if ((direction === "min" && timestampMs < selectedMs) || (direction === "max" && timestampMs > selectedMs)) {
+      selected = iso;
+      selectedMs = timestampMs;
+    }
+  }
+  return selected;
+}
+
+export function scheduledEmailAdminInventoryFromRows(rows, generatedAt = nowIso()) {
+  const owners = (Array.isArray(rows) ? rows : []).map((row) => {
+    const personalEnabled = scheduleInventoryCount(row.personal_enabled_count);
+    const personalDisabled = scheduleInventoryCount(row.personal_disabled_count);
+    const sharedEnabled = scheduleInventoryCount(row.shared_enabled_count);
+    const sharedDisabled = scheduleInventoryCount(row.shared_disabled_count);
+    const personalTotal = personalEnabled + personalDisabled;
+    const sharedTotal = sharedEnabled + sharedDisabled;
+    const enabledTotal = personalEnabled + sharedEnabled;
+    const disabledTotal = personalDisabled + sharedDisabled;
+
+    return {
+      owner_email: String(row.owner_email || "").trim().toLowerCase(),
+      counts: {
+        total: personalTotal + sharedTotal,
+        enabled: enabledTotal,
+        disabled: disabledTotal,
+        personal: {
+          total: personalTotal,
+          enabled: personalEnabled,
+          disabled: personalDisabled,
+        },
+        shared: {
+          total: sharedTotal,
+          enabled: sharedEnabled,
+          disabled: sharedDisabled,
+        },
+      },
+      first_created_at: toIso(row.first_created_at),
+      latest_created_at: toIso(row.latest_created_at),
+      latest_last_run_at: toIso(row.latest_last_run_at),
+      earliest_next_run_at: toIso(row.earliest_next_run_at),
+    };
+  });
+
+  const summary = {
+    owner_count: owners.length,
+    owners_with_personal_schedules: owners.filter((owner) => owner.counts.personal.total > 0).length,
+    owners_with_shared_schedules: owners.filter((owner) => owner.counts.shared.total > 0).length,
+    counts: {
+      total: owners.reduce((sum, owner) => sum + owner.counts.total, 0),
+      enabled: owners.reduce((sum, owner) => sum + owner.counts.enabled, 0),
+      disabled: owners.reduce((sum, owner) => sum + owner.counts.disabled, 0),
+      personal: {
+        total: owners.reduce((sum, owner) => sum + owner.counts.personal.total, 0),
+        enabled: owners.reduce((sum, owner) => sum + owner.counts.personal.enabled, 0),
+        disabled: owners.reduce((sum, owner) => sum + owner.counts.personal.disabled, 0),
+      },
+      shared: {
+        total: owners.reduce((sum, owner) => sum + owner.counts.shared.total, 0),
+        enabled: owners.reduce((sum, owner) => sum + owner.counts.shared.enabled, 0),
+        disabled: owners.reduce((sum, owner) => sum + owner.counts.shared.disabled, 0),
+      },
+    },
+    first_created_at: scheduleInventoryIsoExtrema(owners.map((owner) => owner.first_created_at), "min"),
+    latest_created_at: scheduleInventoryIsoExtrema(owners.map((owner) => owner.latest_created_at), "max"),
+    latest_last_run_at: scheduleInventoryIsoExtrema(owners.map((owner) => owner.latest_last_run_at), "max"),
+    earliest_next_run_at: scheduleInventoryIsoExtrema(owners.map((owner) => owner.earliest_next_run_at), "min"),
+  };
+
+  return {
+    generated_at: toIso(generatedAt) || nowIso(),
+    summary,
+    owners,
+  };
+}
+
+async function listScheduledEmailAdminInventory(viewer) {
+  await requireAccessAdmin(viewer.email);
+  await ensureEmailSchema();
+
+  const result = await getPool().query(`
+    SELECT
+      lower(owner_email::text) AS owner_email,
+      (COUNT(*) FILTER (WHERE visibility = 'personal' AND enabled = TRUE))::int AS personal_enabled_count,
+      (COUNT(*) FILTER (WHERE visibility = 'personal' AND enabled = FALSE))::int AS personal_disabled_count,
+      (COUNT(*) FILTER (WHERE visibility = 'shared' AND enabled = TRUE))::int AS shared_enabled_count,
+      (COUNT(*) FILTER (WHERE visibility = 'shared' AND enabled = FALSE))::int AS shared_disabled_count,
+      MIN(created_at) AS first_created_at,
+      MAX(created_at) AS latest_created_at,
+      MAX(last_run_at) AS latest_last_run_at,
+      MIN(next_run_at) FILTER (WHERE enabled = TRUE) AS earliest_next_run_at
+    FROM scheduled_email_jobs
+    GROUP BY lower(owner_email::text)
+    ORDER BY lower(owner_email::text)
+  `);
+
+  return scheduledEmailAdminInventoryFromRows(result.rows);
+}
+
 async function createScheduledEmailJob(viewer, payload) {
   await ensureEmailSchema();
   ensureSharedSchedulePermission(viewer, payload.visibility);
@@ -10462,6 +10572,28 @@ async function handleAccessControlInvitationAccept(event) {
   }
 }
 
+async function handleAdminEmailSchedulesList(event) {
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+
+  const viewer = requireViewerContext(event);
+  if (!viewer.ok) {
+    return jsonError(viewer.error, viewer.status);
+  }
+
+  await ensureAccessControlSchema();
+  try {
+    const inventory = await listScheduledEmailAdminInventory(viewer.viewer);
+    return jsonOk({ inventory });
+  } catch (error) {
+    return jsonError(
+      errorMessage(error) || "failed to list scheduled email inventory",
+      statusCodeForError(error, 503)
+    );
+  }
+}
+
 async function handleEmailSchedulesList(event) {
   if (!emailEnabled() || !emailSchedulesEnabled()) {
     return jsonError("email schedules are disabled", 503);
@@ -12294,6 +12426,10 @@ export async function handler(event) {
 
   if (method === "POST" && path === "/v1/auth/access-control/invitations/accept") {
     return handleAccessControlInvitationAccept(event);
+  }
+
+  if (method === "GET" && path === "/v1/admin/email-schedules") {
+    return handleAdminEmailSchedulesList(event);
   }
 
   if (method === "GET" && path === "/v1/email/schedules") {

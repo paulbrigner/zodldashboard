@@ -398,6 +398,8 @@ export function ComposePanel(props: ComposePanelProps) {
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [schedules, setSchedules] = useState<ScheduledEmailJob[]>([]);
   const [scheduleStatusText, setScheduleStatusText] = useState<string | null>(null);
+  const [scheduleLoadErrorText, setScheduleLoadErrorText] = useState<string | null>(null);
+  const [hasLoadedSchedules, setHasLoadedSchedules] = useState(false);
   const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
   const [isSavingSchedule, setIsSavingSchedule] = useState(false);
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null);
@@ -457,6 +459,7 @@ export function ComposePanel(props: ComposePanelProps) {
     const load = async () => {
       setIsLoadingSchedules(true);
       setScheduleStatusText(null);
+      setScheduleLoadErrorText(null);
       try {
         const response = await fetch("/api/v1/email/schedules", {
           method: "GET",
@@ -474,9 +477,10 @@ export function ComposePanel(props: ComposePanelProps) {
         }
         if (!isMounted) return;
         setSchedules(body.items);
+        setHasLoadedSchedules(true);
       } catch (error) {
         if (!isMounted) return;
-        setScheduleStatusText(error instanceof Error ? error.message : "Failed to load schedules.");
+        setScheduleLoadErrorText(error instanceof Error ? error.message : "Failed to load schedules.");
       } finally {
         if (isMounted) {
           setIsLoadingSchedules(false);
@@ -530,6 +534,7 @@ export function ComposePanel(props: ComposePanelProps) {
   async function reloadSchedules() {
     if (!props.emailSchedulesEnabled) return;
     setIsLoadingSchedules(true);
+    setScheduleLoadErrorText(null);
     try {
       const response = await fetch("/api/v1/email/schedules", {
         method: "GET",
@@ -544,8 +549,20 @@ export function ComposePanel(props: ComposePanelProps) {
         throw new Error("Invalid scheduled email list response payload");
       }
       setSchedules(body.items);
+      setHasLoadedSchedules(true);
+    } catch (error) {
+      setScheduleLoadErrorText(error instanceof Error ? error.message : "Failed to load schedules.");
+      throw error;
     } finally {
       setIsLoadingSchedules(false);
+    }
+  }
+
+  async function handleRetryScheduleLoad() {
+    try {
+      await reloadSchedules();
+    } catch {
+      // reloadSchedules owns the dedicated load-error state.
     }
   }
 
@@ -1040,7 +1057,11 @@ export function ComposePanel(props: ComposePanelProps) {
                 </span>
               </span>
               <span className="summary-panel-state">
-                {isLoadingSchedules ? "Loading..." : `${personalSchedules.length + sharedSchedules.length} saved`}
+                {isLoadingSchedules
+                  ? "Loading..."
+                  : scheduleLoadErrorText && !hasLoadedSchedules
+                    ? "Load failed"
+                    : `${personalSchedules.length + sharedSchedules.length} saved`}
               </span>
             </summary>
 
@@ -1208,7 +1229,23 @@ export function ComposePanel(props: ComposePanelProps) {
               </div>
               {scheduleStatusText ? <p className="subtle-text">{scheduleStatusText}</p> : null}
 
-              <div className="scheduled-jobs-columns">
+              {scheduleLoadErrorText ? (
+                <div className="schedule-load-error" role="alert">
+                  <p className="error-text">
+                    {hasLoadedSchedules ? "Schedules could not be refreshed" : "Schedules could not be loaded"}: {scheduleLoadErrorText}
+                  </p>
+                  <button
+                    className="button button-secondary"
+                    disabled={isLoadingSchedules}
+                    onClick={handleRetryScheduleLoad}
+                    type="button"
+                  >
+                    {isLoadingSchedules ? "Retrying..." : "Retry"}
+                  </button>
+                </div>
+              ) : null}
+
+              <div className="scheduled-jobs-columns" hidden={!hasLoadedSchedules}>
                 <section className="scheduled-jobs-group">
                   <div className="compose-section-header">
                     <h4>My schedules</h4>

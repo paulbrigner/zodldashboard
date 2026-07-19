@@ -29,6 +29,9 @@ This document describes the X Monitor "Draft Format: Email" feature, immediate e
   - `x-xmonitor-viewer-auth-mode`
   - `x-xmonitor-viewer-secret`
 - Backend verifies `x-xmonitor-viewer-secret` against `XMONITOR_USER_PROXY_SECRET`.
+- `GET /v1/admin/email-schedules` additionally requires access-control admin
+  permission for the verified viewer. It does not rely on impersonating a
+  schedule owner.
 
 ## Data model
 
@@ -89,12 +92,27 @@ Time/day scheduling extension: `db/migrations/010_shared_and_time_based_email_sc
 - `PATCH /email/schedules/{jobId}`
 - `DELETE /email/schedules/{jobId}`
 - `POST /email/schedules/{jobId}/run-now`
+- `GET /admin/email-schedules` (access-control admins only)
 
 Shared schedule rules:
 
 - Shared schedules require a `zodl.com` workspace account.
 - Shared schedules are visible to all signed-in workspace users.
 - Only the schedule owner can edit, delete, enable/disable, or run-now a shared schedule.
+
+Admin schedule adoption inventory:
+
+- `GET /v1/admin/email-schedules` provides an aggregate inventory for assessing
+  schedule adoption across owners without impersonating them.
+- The response includes system-wide and per-owner counts split by personal or
+  shared visibility and enabled or disabled state, plus aggregate creation,
+  last-run, and next-run timestamps.
+- The response intentionally excludes schedule IDs, names, recipients,
+  compose requests or prompts, subject overrides, and generated or delivered
+  email content.
+- The Next.js proxy route is `GET /api/v1/admin/email-schedules`; both the proxy
+  and backend enforce admin authorization, and responses use private,
+  no-store caching.
 
 OpenAPI: `docs/openapi.v1.yaml`
 

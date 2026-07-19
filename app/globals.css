@@ -1840,6 +1840,21 @@ p {
   gap: 0.6rem;
 }
 
+.schedule-load-error {
+  border: 1px solid #e6a7a7;
+  border-radius: 0.62rem;
+  background: #fff7f7;
+  padding: 0.65rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.schedule-load-error .error-text {
+  margin: 0;
+}
+
 .scheduled-jobs-columns {
   display: grid;
   gap: 0.8rem;

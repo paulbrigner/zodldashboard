@@ -296,6 +296,36 @@ paths:
                   item:
                     $ref: '#/components/schemas/RoadmapAccessEvent'
 
+  /admin/email-schedules:
+    get:
+      summary: Get aggregate scheduled-email adoption inventory
+      description: >-
+        Returns system-wide and per-owner aggregate schedule counts and activity
+        timestamps for access-control administrators. Requires a verified viewer
+        proxy context with admin permission. The response intentionally excludes
+        schedule IDs, names, recipients, compose requests or prompts, subjects,
+        bodies, and delivered email content; no user impersonation is required.
+      operationId: getAdminEmailScheduleInventory
+      security:
+        - ViewerProxySecret: []
+      responses:
+        '200':
+          description: Privacy-minimal aggregate schedule inventory
+          headers:
+            Cache-Control:
+              description: Private, no-store caching policy
+              schema: { type: string }
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminEmailScheduleInventoryResponse'
+        '401':
+          description: Verified viewer context is missing or invalid
+        '403':
+          description: Access-control admin permission is required
+        '503':
+          description: Database or schedule inventory service is unavailable
+
   /email/schedules:
     get:
       summary: List scheduled email jobs for the authenticated user
@@ -772,6 +802,89 @@ components:
         method: { type: string }
         status_code: { type: integer }
         accessed_at: { type: string, format: date-time }
+
+    AdminEmailScheduleInventoryVisibilityCounts:
+      type: object
+      required: [total, enabled, disabled]
+      properties:
+        total: { type: integer, minimum: 0 }
+        enabled: { type: integer, minimum: 0 }
+        disabled: { type: integer, minimum: 0 }
+
+    AdminEmailScheduleInventoryCounts:
+      type: object
+      required: [total, enabled, disabled, personal, shared]
+      properties:
+        total: { type: integer, minimum: 0 }
+        enabled: { type: integer, minimum: 0 }
+        disabled: { type: integer, minimum: 0 }
+        personal:
+          $ref: '#/components/schemas/AdminEmailScheduleInventoryVisibilityCounts'
+        shared:
+          $ref: '#/components/schemas/AdminEmailScheduleInventoryVisibilityCounts'
+
+    AdminEmailScheduleInventorySummary:
+      type: object
+      required:
+        - owner_count
+        - owners_with_personal_schedules
+        - owners_with_shared_schedules
+        - counts
+        - first_created_at
+        - latest_created_at
+        - latest_last_run_at
+        - earliest_next_run_at
+      properties:
+        owner_count: { type: integer, minimum: 0 }
+        owners_with_personal_schedules: { type: integer, minimum: 0 }
+        owners_with_shared_schedules: { type: integer, minimum: 0 }
+        counts:
+          $ref: '#/components/schemas/AdminEmailScheduleInventoryCounts'
+        first_created_at: { type: string, format: date-time, nullable: true }
+        latest_created_at: { type: string, format: date-time, nullable: true }
+        latest_last_run_at: { type: string, format: date-time, nullable: true }
+        earliest_next_run_at: { type: string, format: date-time, nullable: true }
+
+    AdminEmailScheduleInventoryOwner:
+      type: object
+      description: Aggregate metadata for one normalized schedule-owner email.
+      required:
+        - owner_email
+        - counts
+        - first_created_at
+        - latest_created_at
+        - latest_last_run_at
+        - earliest_next_run_at
+      properties:
+        owner_email: { type: string, format: email }
+        counts:
+          $ref: '#/components/schemas/AdminEmailScheduleInventoryCounts'
+        first_created_at: { type: string, format: date-time, nullable: true }
+        latest_created_at: { type: string, format: date-time, nullable: true }
+        latest_last_run_at: { type: string, format: date-time, nullable: true }
+        earliest_next_run_at: { type: string, format: date-time, nullable: true }
+
+    AdminEmailScheduleInventory:
+      type: object
+      description: >-
+        Aggregate-only inventory. Schedule content, recipients, job identifiers,
+        and generated or delivered email content are never returned.
+      required: [generated_at, summary, owners]
+      properties:
+        generated_at: { type: string, format: date-time }
+        summary:
+          $ref: '#/components/schemas/AdminEmailScheduleInventorySummary'
+        owners:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminEmailScheduleInventoryOwner'
+
+    AdminEmailScheduleInventoryResponse:
+      type: object
+      required: [inventory]
+      properties:
+        inventory:
+          $ref: '#/components/schemas/AdminEmailScheduleInventory'
 
     ScheduledEmailJobCreateRequest:
       type: object
