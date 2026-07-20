@@ -209,10 +209,22 @@ aws_cli() {
 
 existing_lambda_env_value() {
   local variable_name="$1"
-  aws_cli lambda get-function-configuration \
-    --function-name "$LAMBDA_FUNCTION_NAME" \
-    --query "Environment.Variables.${variable_name}" \
-    --output text 2>/dev/null || true
+  local output
+  if output="$(
+    aws_cli lambda get-function-configuration \
+      --function-name "$LAMBDA_FUNCTION_NAME" \
+      --query "Environment.Variables.${variable_name}" \
+      --output text 2>&1
+  )"; then
+    printf '%s\n' "$output"
+    return 0
+  fi
+  if [[ "$output" == *"ResourceNotFoundException"* ]]; then
+    return 0
+  fi
+  echo "error: could not preserve ${variable_name} from ${LAMBDA_FUNCTION_NAME}" >&2
+  printf '%s\n' "$output" >&2
+  return 1
 }
 
 is_truthy() {
