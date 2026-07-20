@@ -247,6 +247,8 @@ test("semantic client queries have an independent kill switch, budgets, and metr
   );
   assert.match(provisionSource, /SEMANTIC_CLIENT_QUERY_ENABLED_EXPLICIT/);
   assert.match(provisionSource, /existing_lambda_env_value XMONITOR_SEMANTIC_CLIENT_QUERY_ENABLED/);
+  assert.match(provisionSource, /ResourceNotFoundException/);
+  assert.match(provisionSource, /could not preserve \$\{variable_name\}/);
 });
 
 test("dashboard host credentials are server-only, validated, and limited to read paths", async () => {
