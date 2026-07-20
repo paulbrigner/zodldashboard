@@ -4,6 +4,7 @@ import {
   ARTICLE_CLASSIFICATION_MODEL,
   ARTICLE_SIGNIFICANCE_REASON,
   ARTICLE_SIGNIFICANCE_VERSION,
+  DEFAULT_WATCHLIST_TIERS,
   buildPostRecord,
   buildQueryPlan,
   buildSearchUrl,
@@ -108,7 +109,7 @@ test("priority query plan includes a watchlist article lane", () => {
       excludeRetweets: true,
       excludeQuotes: false,
       replyCaptureEnabled: false,
-      baseTerms: "Zcash OR ZEC OR Zodl OR Zashi",
+      baseTerms: "Zcash OR ZEC OR Zodl",
     },
     {
       zodl_app: "teammate",
@@ -122,4 +123,62 @@ test("priority query plan includes a watchlist article lane", () => {
   assert.equal(articlePlan.sourceQuery, "priority_article");
   assert.match(articlePlan.query, /has:links/);
   assert.match(articlePlan.query, /from:k6nb4k/);
+});
+
+test("default watchlist retires active investor mappings", () => {
+  const formerInvestorHandles = [
+    "a16zcrypto",
+    "akshat_hk",
+    "balajis",
+    "cbventures",
+    "chapterone",
+    "cryptohayes",
+    "davidlee",
+    "friedberg",
+    "hosseeb",
+    "jmj",
+    "maelstromfund",
+    "paradigm",
+    "will_mcevoy",
+    "winklevosscap",
+  ];
+
+  assert.equal(DEFAULT_WATCHLIST_TIERS.cypherpunk, "ecosystem");
+  for (const handle of formerInvestorHandles) {
+    assert.equal(DEFAULT_WATCHLIST_TIERS[handle], "influencer");
+  }
+  assert.equal(Object.values(DEFAULT_WATCHLIST_TIERS).includes("investor"), false);
+  const tierCounts = Object.values(DEFAULT_WATCHLIST_TIERS).reduce((counts, tier) => {
+    counts[tier] = (counts[tier] || 0) + 1;
+    return counts;
+  }, {});
+  assert.deepEqual(tierCounts, {
+    teammate: 18,
+    influencer: 55,
+    ecosystem: 10,
+  });
+});
+
+test("former investor influencers are term-constrained while cypherpunk is direct capture", () => {
+  const plan = buildQueryPlan(
+    {
+      articleCaptureEnabled: false,
+      handleChunkSize: 10,
+      excludeRetweets: true,
+      excludeQuotes: false,
+      replyCaptureEnabled: false,
+      baseTerms: "Zcash OR ZEC OR Zodl",
+    },
+    {
+      a16zcrypto: DEFAULT_WATCHLIST_TIERS.a16zcrypto,
+      cypherpunk: DEFAULT_WATCHLIST_TIERS.cypherpunk,
+    },
+    "priority"
+  );
+
+  const directPlan = plan.find((entry) => entry.family === "priority_direct_watchlist");
+  const influencerPlan = plan.find((entry) => entry.family === "priority_influencer_term");
+  assert.deepEqual(directPlan?.handles, ["cypherpunk"]);
+  assert.deepEqual(influencerPlan?.handles, ["a16zcrypto"]);
+  assert.match(influencerPlan?.query || "", /\(Zcash OR ZEC OR Zodl\)/);
 });

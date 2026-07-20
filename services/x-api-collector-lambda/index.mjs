@@ -44,41 +44,37 @@ const DEFAULT_WATCHLIST_TIERS = {
   zodl_app: "teammate",
   zodl_support: "teammate",
   zcash_harry: "teammate",
-  a16zcrypto: "investor",
-  balajis: "investor",
-  cbventures: "investor",
-  chapterone: "investor",
-  cryptohayes: "investor",
-  cypherpunk: "investor",
-  davidlee: "investor",
-  friedberg: "investor",
-  hosseeb: "investor",
-  jmj: "investor",
-  akshat_hk: "investor",
-  maelstromfund: "investor",
-  paradigm: "investor",
-  will_mcevoy: "investor",
-  winklevosscap: "investor",
   _tomhoward: "influencer",
+  a16zcrypto: "influencer",
   agzt_111: "influencer",
+  akshat_hk: "influencer",
   anonymist: "influencer",
   aquietinvestor: "influencer",
   arjunkhemani: "influencer",
+  balajis: "influencer",
   banthys: "influencer",
   bitlarrain: "influencer",
   btcturtle: "influencer",
+  cbventures: "influencer",
+  chapterone: "influencer",
   cipherscan_app: "influencer",
   cipherpay_app: "influencer",
   colludingnode: "influencer",
   cq_elzz: "influencer",
+  cryptohayes: "influencer",
+  davidlee: "influencer",
   dignitycipher: "influencer",
   dismad8: "influencer",
   ebfull: "influencer",
+  friedberg: "influencer",
   hedging_reality: "influencer",
+  hosseeb: "influencer",
   inthepixels: "influencer",
   ivydngg: "influencer",
+  jmj: "influencer",
   k6nb4k: "influencer",
   lucidzk: "influencer",
+  maelstromfund: "influencer",
   maxdesalle: "influencer",
   mert: "influencer",
   mindsfiction: "influencer",
@@ -86,6 +82,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   nate_zec: "influencer",
   naval: "influencer",
   neuralunlock: "influencer",
+  paradigm: "influencer",
   rargulati: "influencer",
   roommatemusing: "influencer",
   sacha: "influencer",
@@ -94,12 +91,15 @@ const DEFAULT_WATCHLIST_TIERS = {
   thortorrens: "influencer",
   tipz_cash: "influencer",
   valkenburgh: "influencer",
+  will_mcevoy: "influencer",
+  winklevosscap: "influencer",
   zcash_ftw: "influencer",
   zcashme: "influencer",
   zecrimoni: "influencer",
   zerodartz: "influencer",
   zooko: "influencer",
   zpartanll7: "influencer",
+  cypherpunk: "ecosystem",
   genzcash: "ecosystem",
   shieldedlabs: "ecosystem",
   tachyonzcash: "ecosystem",
@@ -111,7 +111,7 @@ const DEFAULT_WATCHLIST_TIERS = {
   zechub: "ecosystem",
 };
 
-const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
+const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl";
 const DEFAULT_X_API_BASE_URL = "https://api.x.com/2";
 const DEFAULT_INGEST_API_BASE_URL = "https://www.zodldashboard.com/api/v1";
 const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
@@ -127,7 +127,7 @@ const ARTICLE_SIGNIFICANCE_REASON = "x_article";
 const ARTICLE_SIGNIFICANCE_VERSION = "article_v1";
 const ARTICLE_CLASSIFICATION_MODEL = "x_article_metadata";
 
-const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b)/i;
+const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b)/i;
 
 function asString(value) {
   if (typeof value !== "string") return "";
@@ -344,7 +344,7 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
   const handles = Object.keys(watchlistMap).sort();
   const queries = [];
 
-  // Teammate + investor + ecosystem captures should include all posts from those handles.
+  // Zodl Team and ecosystem captures include every post. Investor remains a legacy-compatible direct tier.
   const directCaptureHandles = handles.filter((handle) => {
     const tier = watchlistMap[handle];
     return tier === "teammate" || tier === "investor" || tier === "ecosystem";
@@ -410,7 +410,7 @@ function buildQueryPlan(config, watchlistMap, collectorMode) {
     replyHandles = replyHandlesByTier.filter((handle) => selected.has(handle));
   }
 
-  // Teammate/investor/ecosystem are already captured with direct watchlist queries (including replies).
+  // Direct-capture tiers are already covered by watchlist queries that include replies.
   // Excluding them from reply-specific lanes reduces duplicate reads without dropping coverage.
   replyHandles = replyHandles.filter((handle) => !directCaptureHandleSet.has(handle));
   if (replyHandles.length === 0) {

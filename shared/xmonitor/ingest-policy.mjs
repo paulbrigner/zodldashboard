@@ -1,4 +1,4 @@
-const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|\bzashi\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
+const DISCOVERY_BASE_TERM_REGEX = /(?:\bzcash\b|\bzodl\b|(?<![a-z0-9_])(?:[$#]?zec)\b)/i;
 
 export function normalizeHandle(value) {
   return String(value ?? "")

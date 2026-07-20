@@ -63,9 +63,17 @@ test("shouldOmitKeywordOriginMissingBaseTerm matches backend rules", () => {
     shouldOmitKeywordOriginMissingBaseTerm({
       source_query: "discovery",
       watch_tier: null,
-      body_text: "Zcash and Zashi shipped updates",
+      body_text: "Zcash shipped an update",
     }),
     false
+  );
+  assert.equal(
+    shouldOmitKeywordOriginMissingBaseTerm({
+      source_query: "discovery",
+      watch_tier: null,
+      body_text: "Zashi shipped an update",
+    }),
+    true
   );
   assert.equal(
     shouldOmitKeywordOriginMissingBaseTerm({
@@ -78,7 +86,8 @@ test("shouldOmitKeywordOriginMissingBaseTerm matches backend rules", () => {
 });
 
 test("compileBaseTermRegex handles configured base terms", () => {
-  const regex = compileBaseTermRegex("Zcash OR ZEC OR Zodl OR Zashi");
+  const regex = compileBaseTermRegex("Zcash OR ZEC OR Zodl");
   assert.equal(hasConfiguredBaseTerm("Watching $ZEC closely", regex), true);
+  assert.equal(hasConfiguredBaseTerm("Zashi shipped an update", regex), false);
   assert.equal(hasConfiguredBaseTerm("Unrelated forex chatter", regex), false);
 });

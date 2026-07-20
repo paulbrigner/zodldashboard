@@ -1,6 +1,6 @@
 # X Monitor — X Query + Watchlist Reference (AWS Collector)
 
-_Last updated: 2026-05-15 (ET)_
+_Last updated: 2026-07-20 (ET)_
 
 This document describes the query logic currently used by the AWS X API collectors.
 
@@ -15,7 +15,7 @@ This document describes the query logic currently used by the AWS X API collecto
 ## 1) Active collector modes
 
 - `priority` mode:
-  - teammate, investor, and ecosystem watchlist posts
+  - Zodl Team and ecosystem watchlist posts
   - influencer watchlist posts using base terms
   - watchlist Article capture
   - optional watchlist reply capture
@@ -33,18 +33,18 @@ Event schedules (default):
 Priority/reply base terms:
 
 ```text
-Zcash OR ZEC OR Zodl OR Zashi
+Zcash OR ZEC OR Zodl
 ```
 
 Discovery base terms:
 
 ```text
-Zcash OR Zodl OR Zashi
+Zcash OR Zodl
 ```
 
 ### Priority direct watchlist query family (`source_query=priority`)
 
-For teammate, investor, and ecosystem handle chunks:
+For Zodl Team (`teammate`) and ecosystem handle chunks:
 
 ```text
 (from:<handle1> OR from:<handle2> OR ... ) -is:retweet
@@ -77,7 +77,7 @@ The collector keeps only X Article posts from this lane, then stores the article
 Current priority-collector reply settings:
 - `XMON_X_API_REPLY_CAPTURE_ENABLED=true`
 - `XMON_X_API_REPLY_MODE=term_constrained`
-- `XMON_X_API_REPLY_TIERS=teammate,investor,influencer,ecosystem`
+- `XMON_X_API_REPLY_TIERS=teammate,influencer,ecosystem`
 
 Active reply query (`source_query=priority_reply_term`):
 
@@ -86,13 +86,13 @@ Active reply query (`source_query=priority_reply_term`):
 ```
 
 Note:
-- teammate/investor/ecosystem handles are excluded from reply-specific lanes because they are already captured by direct watchlist queries (including replies)
-- this reduces overlap without reducing teammate/investor/ecosystem reply coverage
+- Zodl Team and ecosystem handles are excluded from reply-specific lanes because they are already captured by direct watchlist queries (including replies)
+- this reduces overlap without reducing Zodl Team or ecosystem reply coverage
 
 ### Discovery query family (`source_query=discovery`)
 
 ```text
-(Zcash OR Zodl OR Zashi) -is:retweet
+(Zcash OR Zodl) -is:retweet
 ```
 
 (`-is:quote` is optional via env and defaults to off)
@@ -122,17 +122,18 @@ Applied in collector runtime before ingest:
 
 ## 4) Watchlist defaults in collector code
 
-Current tier buckets:
-- `teammate`
-- `investor`
+Current active tier buckets:
+- `teammate` (displayed as **Zodl Team**)
 - `influencer`
 - `ecosystem`
 
+The `investor` tier remains accepted by the database and API for legacy compatibility, but it has no active default
+watchlist mappings. Former investor accounts are now influencers, except `cypherpunk`, which is an ecosystem account.
+
 The handle lists change over time, so the source of truth is the collector code in
 `services/x-api-collector-lambda/index.mjs` and the mirrored in-app Query Reference.
-As of 2026-06-12, the teammate bucket includes `cozymaximalist`, `dwillems42`, `feministplt`,
-`str4d`, `thecodebuffet`, `zodl_support`, and `zcash_harry`.
-As of 2026-05-22, the ecosystem bucket includes `tachyonzcash` and `valargroup`.
+As of 2026-07-20, the Zodl Team bucket has 18 handles, the influencer bucket has 55 handles, and the ecosystem
+bucket has 10 handles. The ecosystem bucket includes `cypherpunk`, `tachyonzcash`, and `valargroup`.
 
 ## 5) Paging and request tuning
 

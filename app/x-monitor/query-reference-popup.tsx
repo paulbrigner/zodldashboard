@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-const PRIORITY_BASE_TERMS = "Zcash OR ZEC OR Zodl OR Zashi";
+const PRIORITY_BASE_TERMS = "Zcash OR ZEC OR Zodl";
 
 function discoveryBaseTerms(baseTerms: string): string {
   const terms = String(baseTerms || "")
@@ -45,44 +45,38 @@ const WATCHLIST_BY_TIER = {
     "zodl_support",
     "zcash_harry",
   ],
-  investor: [
-    "akshat_hk",
-    "a16zcrypto",
-    "balajis",
-    "cbventures",
-    "chapterone",
-    "cryptohayes",
-    "cypherpunk",
-    "davidlee",
-    "friedberg",
-    "hosseeb",
-    "jmj",
-    "maelstromfund",
-    "paradigm",
-    "will_mcevoy",
-    "winklevosscap",
-  ],
   influencer: [
     "_tomhoward",
+    "a16zcrypto",
     "agzt_111",
+    "akshat_hk",
     "anonymist",
     "aquietinvestor",
     "arjunkhemani",
+    "balajis",
     "banthys",
     "bitlarrain",
     "btcturtle",
+    "cbventures",
+    "chapterone",
     "cipherscan_app",
     "cipherpay_app",
     "colludingnode",
     "cq_elzz",
+    "cryptohayes",
+    "davidlee",
     "dignitycipher",
     "dismad8",
     "ebfull",
+    "friedberg",
     "hedging_reality",
+    "hosseeb",
     "inthepixels",
     "ivydngg",
+    "jmj",
     "k6nb4k",
     "lucidzk",
+    "maelstromfund",
     "maxdesalle",
     "mert",
     "mindsfiction",
@@ -90,6 +84,7 @@ const WATCHLIST_BY_TIER = {
     "nate_zec",
     "naval",
     "neuralunlock",
+    "paradigm",
     "rargulati",
     "roommatemusing",
     "sacha",
@@ -98,6 +93,8 @@ const WATCHLIST_BY_TIER = {
     "thortorrens",
     "tipz_cash",
     "valkenburgh",
+    "will_mcevoy",
+    "winklevosscap",
     "zcash_ftw",
     "zcashme",
     "zecrimoni",
@@ -106,7 +103,7 @@ const WATCHLIST_BY_TIER = {
     "zpartanll7",
   ],
   ecosystem: [
-    "zkav_club",
+    "cypherpunk",
     "genzcash",
     "shieldedlabs",
     "tachyonzcash",
@@ -115,12 +112,12 @@ const WATCHLIST_BY_TIER = {
     "zcashcommgrants",
     "zcashfoundation",
     "zechub",
+    "zkav_club",
   ],
 } as const;
 
 const WATCHLIST_TIER_LABELS: Record<keyof typeof WATCHLIST_BY_TIER, string> = {
-  teammate: "Teammate",
-  investor: "Investors",
+  teammate: "Zodl Team",
   influencer: "Influencer",
   ecosystem: "Ecosystem",
 };
@@ -171,10 +168,10 @@ export function QueryReferencePopup() {
             <p>
               <strong>Direct watchlist lane</strong>
             </p>
-            <pre className="query-code">(from:teammate1 OR from:investor1 OR from:ecosystem1 OR ...) -is:retweet</pre>
+            <pre className="query-code">(from:zodl_team1 OR from:ecosystem1 OR ...) -is:retweet</pre>
             <p className="subtle-text">
-              Teammate, investor, and ecosystem handles are captured directly. This lane includes replies and does not
-              require base terms.
+              Zodl Team and ecosystem handles are captured directly. This lane includes replies and does not require
+              base terms.
             </p>
             <p>
               <strong>Influencer top-level lane</strong>
@@ -191,8 +188,8 @@ export function QueryReferencePopup() {
             </p>
             <p className="subtle-text">
               Current watchlist size: {totalWatchlistHandles} handles (
-              {WATCHLIST_BY_TIER.teammate.length} teammate, {WATCHLIST_BY_TIER.investor.length} investors,{" "}
-              {WATCHLIST_BY_TIER.influencer.length} influencer, {WATCHLIST_BY_TIER.ecosystem.length} ecosystem).
+              {WATCHLIST_BY_TIER.teammate.length} Zodl Team, {WATCHLIST_BY_TIER.influencer.length} influencer,{" "}
+              {WATCHLIST_BY_TIER.ecosystem.length} ecosystem).
             </p>
           </section>
 

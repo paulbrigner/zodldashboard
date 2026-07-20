@@ -116,9 +116,8 @@ export function FilterPanel({
           <>
             <label>
               <span>Tiers</span>
-              <select multiple name="tier" defaultValue={initialTiers || []} size={5}>
-                <option value="teammate">Teammate</option>
-                <option value="investor">Investors</option>
+              <select multiple name="tier" defaultValue={initialTiers || []} size={4}>
+                <option value="teammate">Zodl Team</option>
                 <option value="influencer">Influencer</option>
                 <option value="ecosystem">Ecosystem</option>
                 <option value="other">Other</option>
