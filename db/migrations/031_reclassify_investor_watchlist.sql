@@ -1,3 +1,5 @@
+-- The active watchlist is owned by the collector configuration. The import-era
+-- watch_accounts table is deliberately restricted from the runtime app role.
 WITH reclassifications(handle, tier) AS (
   VALUES
     ('a16zcrypto', 'influencer'),
@@ -23,32 +25,6 @@ SET
 FROM reclassifications r
 WHERE lower(p.author_handle) = r.handle
   AND p.watch_tier IS DISTINCT FROM r.tier;
-
-WITH reclassifications(handle, tier) AS (
-  VALUES
-    ('a16zcrypto', 'influencer'),
-    ('akshat_hk', 'influencer'),
-    ('balajis', 'influencer'),
-    ('cbventures', 'influencer'),
-    ('chapterone', 'influencer'),
-    ('cryptohayes', 'influencer'),
-    ('cypherpunk', 'ecosystem'),
-    ('davidlee', 'influencer'),
-    ('friedberg', 'influencer'),
-    ('hosseeb', 'influencer'),
-    ('jmj', 'influencer'),
-    ('maelstromfund', 'influencer'),
-    ('paradigm', 'influencer'),
-    ('will_mcevoy', 'influencer'),
-    ('winklevosscap', 'influencer')
-)
-UPDATE watch_accounts wa
-SET
-  tier = r.tier,
-  updated_at = now()
-FROM reclassifications r
-WHERE lower(wa.handle) = r.handle
-  AND wa.tier IS DISTINCT FROM r.tier;
 
 WITH reclassifications(handle, tier) AS (
   VALUES
