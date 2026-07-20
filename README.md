@@ -4,9 +4,8 @@
 ZODL Dashboard is an authenticated web app and API for:
 
 - monitoring selected X posts,
-- generating grounded AI answers with citations,
-- tracking regulatory risk, and
-- managing app-store compliance and submission workflows.
+- generating grounded AI answers with citations, and
+- hosting access-controlled team dashboards and operational workflows.
 
 Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL as the system of record.
 
@@ -18,8 +17,6 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
   - Zodl Roadmap at `/zodl-roadmap`
   - PGPZ Roadmap at `/pgpz-roadmap`
   - Arktouros at `/arktouros`
-  - Regulatory Risk at `/regulatory-risk`
-  - App Stores workflows at `/app-stores`
   - CipherPay Test at `/cipherpay-test`
 - X Monitor features:
   - keyword search as the default mode,
@@ -223,8 +220,6 @@ See [.env.example](.env.example) for the full current env template.
 - `/arktouros`
 - `/cipherpay-test`
 - `/posts/{statusId}`
-- `/regulatory-risk`
-- `/app-stores`
 
 ### Public/read APIs
 

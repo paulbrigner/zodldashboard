@@ -215,13 +215,6 @@ export const accessControlDashboards: AccessControlDashboardResource[] = [
   { id: "placehodlr", name: "Placehodlr & EU Regulatory", permissionKey: dashboardReadPermission("placehodlr"), visible: true },
   { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: dashboardReadPermission("2026-zodl-summit"), visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: dashboardReadPermission("cipherpay-test"), visible: false },
-  { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: dashboardReadPermission("regulatory-risk"), visible: false },
-  {
-    id: "app-store-compliance",
-    name: "App Store Dashboard",
-    permissionKey: dashboardReadPermission("app-store-compliance"),
-    visible: false,
-  },
 ];
 
 const visibleAccessControlDashboards = accessControlDashboards.filter((dashboard) => dashboard.visible);
@@ -817,8 +810,6 @@ function dashboardIdForPath(path: string | null): string | null {
   if (pathname === "/placehodlr" || pathname.startsWith("/placehodlr/")) return "placehodlr";
   if (pathname === "/2026-zodl-summit" || pathname.startsWith("/2026-zodl-summit/")) return "2026-zodl-summit";
   if (pathname === "/cipherpay-test" || pathname.startsWith("/cipherpay-test/")) return "cipherpay-test";
-  if (pathname === "/regulatory-risk" || pathname.startsWith("/regulatory-risk/")) return "regulatory-risk";
-  if (pathname === "/app-stores" || pathname.startsWith("/app-stores/")) return "app-store-compliance";
   return null;
 }
 

@@ -29,8 +29,6 @@ const ACCESS_CONTROL_DASHBOARDS = [
   { id: "placehodlr", name: "Placehodlr & EU Regulatory", permissionKey: "dashboard:placehodlr:read", visible: true },
   { id: "2026-zodl-summit", name: "Zodl Summit", permissionKey: "dashboard:2026-zodl-summit:read", visible: true },
   { id: "cipherpay-test", name: "CipherPay Test", permissionKey: "dashboard:cipherpay-test:read", visible: false },
-  { id: "regulatory-risk", name: "Regulatory Risk by Geography", permissionKey: "dashboard:regulatory-risk:read", visible: false },
-  { id: "app-store-compliance", name: "App Store Dashboard", permissionKey: "dashboard:app-store-compliance:read", visible: false },
 ];
 const VISIBLE_ACCESS_CONTROL_DASHBOARDS = ACCESS_CONTROL_DASHBOARDS.filter((dashboard) => dashboard.visible);
 const VISIBLE_ACCESS_CONTROL_DASHBOARD_IDS = new Set(VISIBLE_ACCESS_CONTROL_DASHBOARDS.map((dashboard) => dashboard.id));
@@ -3085,8 +3083,6 @@ async function seedAccessControlDefaults() {
         ('dashboard:placehodlr:read', 'dashboard', 'placehodlr', 'read', 'Read Placehodlr', 'Open the Placehodlr private dashboard.', TRUE),
         ('dashboard:2026-zodl-summit:read', 'dashboard', '2026-zodl-summit', 'read', 'Read Zodl Summit', 'Open the 2026 Zodl Summit private dashboard.', TRUE),
         ('dashboard:cipherpay-test:read', 'dashboard', 'cipherpay-test', 'read', 'Read CipherPay Test', 'Open the CipherPay Test dashboard.', TRUE),
-        ('dashboard:regulatory-risk:read', 'dashboard', 'regulatory-risk', 'read', 'Read Regulatory Risk', 'Open the Regulatory Risk dashboard.', TRUE),
-        ('dashboard:app-store-compliance:read', 'dashboard', 'app-store-compliance', 'read', 'Read App Store Dashboard', 'Open the App Store Compliance dashboard.', TRUE),
         ('dashboard:pgpz-roadmap:track', 'dashboard', 'pgpz-roadmap', 'track', 'Edit PGPZ execution tracker', 'Create, update, move, and archive PGPZ roadmap tracker items.', TRUE),
         ('dashboard:arktouros:track', 'dashboard', 'arktouros', 'track', 'Edit Arktouros execution tracker', 'Create, update, move, and archive Arktouros tracker items.', TRUE),
         ('dashboard:placehodlr:track', 'dashboard', 'placehodlr', 'track', 'Edit Placehodlr execution tracker', 'Create, update, move, and archive Placehodlr tracker items.', TRUE),
@@ -3131,8 +3127,6 @@ async function seedAccessControlDefaults() {
         ('workspace-dashboard-viewer', 'dashboard:placehodlr:read'),
         ('workspace-dashboard-viewer', 'dashboard:2026-zodl-summit:read'),
         ('workspace-dashboard-viewer', 'dashboard:cipherpay-test:read'),
-        ('workspace-dashboard-viewer', 'dashboard:regulatory-risk:read'),
-        ('workspace-dashboard-viewer', 'dashboard:app-store-compliance:read'),
         ('zodl-roadmap-viewer', 'dashboard:zodl-roadmap:read'),
         ('accrediv-dashboard-viewer', 'dashboard:pgpz-roadmap:read'),
         ('arktouros-dashboard-viewer', 'dashboard:arktouros:read'),
@@ -6858,7 +6852,6 @@ async function requireDashboardUpdateAccess(viewer, dashboardId) {
 }
 
 function dashboardUpdateHref(dashboardId) {
-  if (dashboardId === "app-store-compliance") return "/app-stores";
   return `/${dashboardId}`;
 }
 

@@ -2,7 +2,7 @@
   "name": "zodldashboard",
   "version": "0.1.0",
   "private": true,
-  "description": "Authenticated dashboard for X monitoring, grounded AI answers, regulatory risk tracking, and app-store operations workflows.",
+  "description": "Authenticated modular dashboard for X monitoring, private workspaces, and operational workflows.",
   "license": "(Apache-2.0 OR MIT)",
   "engines": {
     "node": ">=22 <23"

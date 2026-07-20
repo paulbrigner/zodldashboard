@@ -3,7 +3,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "ZODL Team Dashboards",
-  description: "ZODL Team Dashboards for X monitoring, compliance operations, and risk workflows.",
+  description: "Access-controlled ZODL team dashboards for X monitoring and operational workflows.",
 };
 
 export default function RootLayout({
