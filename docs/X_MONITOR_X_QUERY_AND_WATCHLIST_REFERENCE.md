@@ -163,6 +163,7 @@ Summaries (discovery mode):
   - model: `openai-gpt-56-terra-pro`
   - max tokens: `900`
   - timeout: `180000 ms`
+- narrative inputs: representative posts, active voices, and theme signals; preset debate categories are excluded
 - fallback behavior: if narrative synthesis fails, collector emits stats-style summary text.
 
 ## 7) Quick verification commands

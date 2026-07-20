@@ -969,14 +969,6 @@ function renderThemeLine(topThemes) {
     .join(", ");
 }
 
-function renderDebateLine(debates) {
-  if (!Array.isArray(debates) || debates.length === 0) return "no clear split debates";
-  return debates
-    .slice(0, 4)
-    .map((item) => `${item.issue} (mentions=${coerceInt(item.mentions)}, pro=${coerceInt(item.pro)}, contra=${coerceInt(item.contra)})`)
-    .join("; ");
-}
-
 function renderAuthorLine(topAuthors) {
   if (!Array.isArray(topAuthors) || topAuthors.length === 0) return "no dominant voices";
   return topAuthors
@@ -992,7 +984,6 @@ function buildWindowSummaryPrompt({
   postCount,
   significantCount,
   topThemes,
-  debates,
   topAuthors,
   notablePosts,
 }) {
@@ -1008,13 +999,13 @@ function buildWindowSummaryPrompt({
     "Write a concise narrative summary for a dashboard reader.\n"
     + "Use plain English and 1-2 short paragraphs.\n"
     + "Do not use bullet points, section labels, or markdown.\n"
-    + "Focus on narrative momentum, notable voices, and where debate is intensifying or cooling.\n"
+    + "Focus on the most consequential developments, narrative momentum, notable voices, and emerging or recurring themes.\n"
+    + "Let the representative posts determine the narrative rather than forcing the discussion into a preset issue taxonomy.\n"
     + `Target length: about ${targetWords} words.\n`
     + `Window: ${windowType} from ${windowStartIso} to ${windowEndIso}\n`
     + `Posts observed: ${postCount}\n`
     + `Significant posts: ${significantCount}\n`
     + `Top themes: ${renderThemeLine(topThemes)}\n`
-    + `Debates: ${renderDebateLine(debates)}\n`
     + `Most active handles: ${renderAuthorLine(topAuthors)}\n`
     + "Notable post excerpts:\n"
     + (postLines.length > 0 ? postLines.join("\n") : "- none")
@@ -1193,7 +1184,6 @@ function buildFallbackSummaryText({
   postCount,
   significantCount,
   topThemes,
-  debates,
   topAuthors,
   notablePosts,
 }) {
@@ -1201,11 +1191,6 @@ function buildFallbackSummaryText({
   lines.push(`${windowType} summary (${windowStartIso} to ${windowEndIso}): ${postCount} posts, ${significantCount} significant.`);
   if (topThemes.length > 0) {
     lines.push(`Top themes: ${topThemes.slice(0, 4).map((item) => `${item.theme} (${item.count})`).join(", ")}.`);
-  }
-  if (debates.length > 0) {
-    lines.push(
-      `Debates: ${debates.slice(0, 3).map((item) => `${item.issue} (mentions=${item.mentions}, pro=${item.pro}, contra=${item.contra})`).join(", ")}.`
-    );
   }
   if (topAuthors.length > 0) {
     lines.push(`Most active handles: ${topAuthors.slice(0, 5).map((item) => `@${item.handle} (${item.count})`).join(", ")}.`);
@@ -1234,7 +1219,6 @@ async function buildWindowSummaryRecord(config, windowType, windowHours, topPost
     postCount: summary.postCount,
     significantCount: summary.significantCount,
     topThemes: summary.topThemes,
-    debates: summary.debates,
     topAuthors: summary.topAuthors,
     notablePosts: summary.notablePosts,
   });
@@ -1252,7 +1236,6 @@ async function buildWindowSummaryRecord(config, windowType, windowHours, topPost
       postCount: summary.postCount,
       significantCount: summary.significantCount,
       topThemes: summary.topThemes,
-      debates: summary.debates,
       topAuthors: summary.topAuthors,
       notablePosts: summary.notablePosts,
     });
@@ -2483,9 +2466,11 @@ export {
   DEFAULT_WATCHLIST_TIERS,
   TWEET_FIELDS,
   buildArticleBodyText,
+  buildFallbackSummaryText,
   buildPostRecord,
   buildQueryPlan,
   buildSearchUrl,
+  buildWindowSummaryPrompt,
   buildWatchlistTierMap,
   getArticleTitle,
   getArticleUrl,

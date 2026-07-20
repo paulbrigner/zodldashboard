@@ -5,9 +5,11 @@ import {
   ARTICLE_SIGNIFICANCE_REASON,
   ARTICLE_SIGNIFICANCE_VERSION,
   DEFAULT_WATCHLIST_TIERS,
+  buildFallbackSummaryText,
   buildPostRecord,
   buildQueryPlan,
   buildSearchUrl,
+  buildWindowSummaryPrompt,
   isArticleTweet,
   shouldKeepTweet,
 } from "../services/x-api-collector-lambda/index.mjs";
@@ -181,4 +183,27 @@ test("former investor influencers are term-constrained while cypherpunk is direc
   assert.deepEqual(directPlan?.handles, ["cypherpunk"]);
   assert.deepEqual(influencerPlan?.handles, ["a16zcrypto"]);
   assert.match(influencerPlan?.query || "", /\(Zcash OR ZEC OR Zodl\)/);
+});
+
+test("summary narratives use themes and representative posts without debate taxonomy cues", () => {
+  const input = {
+    windowType: "rolling_2h",
+    windowStartIso: "2026-07-20T10:00:00.000Z",
+    windowEndIso: "2026-07-20T12:00:00.000Z",
+    postCount: 12,
+    significantCount: 2,
+    topThemes: [{ theme: "Product / ecosystem", count: 7 }],
+    topAuthors: [{ handle: "zodl_app", count: 3 }],
+    notablePosts: [{ author_handle: "zodl_app", likes: 9, reposts: 2, text: "A new wallet release shipped." }],
+  };
+
+  const prompt = buildWindowSummaryPrompt(input);
+  assert.match(prompt, /Top themes: Product \/ ecosystem \(7\)/);
+  assert.match(prompt, /A new wallet release shipped/);
+  assert.doesNotMatch(prompt, /Debates?:/i);
+  assert.doesNotMatch(prompt, /intensifying or cooling/i);
+
+  const fallback = buildFallbackSummaryText(input);
+  assert.match(fallback, /Top themes: Product \/ ecosystem \(7\)/);
+  assert.doesNotMatch(fallback, /Debates?:/i);
 });

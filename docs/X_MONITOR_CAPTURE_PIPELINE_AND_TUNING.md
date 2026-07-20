@@ -117,7 +117,8 @@ is returned in the normal completion content rather than reasoning-only fields.
   - `rolling_2h`
   - `rolling_12h`
   - `rolling_7d_daily`
-- Narrative synthesis uses configured summary LLM settings.
+- Narrative synthesis uses configured summary LLM settings, representative posts, active voices, and theme signals.
+- Preset debate categories and stance counts are not included in the narrative prompt or fallback summary text.
 - If synthesis fails/timeouts/truncates after retries, collector falls back to stats-style summary text.
 
 Key summary tuning:
