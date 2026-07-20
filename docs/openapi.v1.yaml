@@ -303,6 +303,11 @@ paths:
     post:
       summary: Semantic retrieval over post embeddings
       operationId: querySemantic
+      description: Viewer-proxy callers remain supported. Read-client callers require the semantic:query capability.
+      security:
+        - ViewerProxySecret: []
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
       requestBody:
         required: true
         content:
@@ -316,6 +321,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SemanticQueryResponse'
+        '401':
+          description: Viewer-proxy or read-client credentials are missing or invalid
+        '403':
+          description: The authenticated read client lacks semantic:query
+        '429':
+          description: Backend-client semantic queries are disabled or the client burst/daily budget is exhausted
+        '503':
+          description: Semantic retrieval or its usage-budget store is unavailable
 
   /query/compose:
     post:
@@ -774,13 +787,16 @@ components:
       type: object
       required: [query_text]
       properties:
-        query_text: { type: string }
+        query_text: { type: string, maxLength: 500 }
         since: { type: string, format: date-time }
         until: { type: string, format: date-time }
         tier: { type: string, enum: [teammate, investor, influencer, ecosystem] }
+        themes:
+          type: array
+          items: { type: string }
         handle: { type: string }
         significant: { type: boolean }
-        limit: { type: integer, minimum: 1, maximum: 200 }
+        limit: { type: integer, minimum: 1, maximum: 100 }
 
     SemanticQueryResponse:
       type: object

@@ -25,8 +25,8 @@ used by both `/x-monitor` and `/posts/[statusId]`.
 - the `/x-monitor`, `/posts/[statusId]`, and `/api/v1/*` routes;
 - React UI, navigation, Zodl branding, and global styles;
 - direct PostgreSQL access and repository queries;
-- semantic search, Answer Mode, viewer identity forwarding, email, and
-  scheduled jobs;
+- semantic-search execution and embeddings, Answer Mode, viewer identity
+  forwarding, email, and scheduled jobs;
 - collectors, classifier, Lambda handlers, migrations, AWS provisioning,
   secrets, production data, and operations.
 
@@ -69,11 +69,18 @@ for frontend proxy. That proxy must:
   `x-xmonitor-client-secret` from server-only configuration;
 - return private, no-store responses.
 
-The first Community integration should be read-only. Do not share the current
-zodldashboard viewer proxy secret. Semantic search, Answer Mode, sending, and
-schedules require issuer/audience-aware identity, tenant-scoped ownership, and
-explicit capability claims before they can safely cross hosts. Community
-magic-link sessions must not be mislabeled as Zodl OAuth sessions.
+The first Community integration remains read-only. Do not share the current
+zodldashboard viewer proxy secret. Meaning-based retrieval may use a dedicated
+backend client only when its Secrets Manager entry explicitly grants both
+`read` and `semantic:query`; legacy secret arrays grant `read` only. The backend
+creates the embedding, bounds prompts and results, and rejects caller-supplied
+vectors for backend clients. Community deduplicates identical searches and
+enforces hashed per-member limits; the backend independently applies atomic
+per-client burst and daily budgets before calling the embedding provider.
+Answer Mode, sending, and schedules still require
+issuer/audience-aware identity, tenant-scoped ownership, and explicit user
+capability claims before they can safely cross hosts. Community magic-link
+sessions must not be mislabeled as Zodl OAuth sessions.
 
 This is an intentional Community-only feature candidate; it does not imply a
 Coalition implementation.
@@ -87,8 +94,9 @@ Coalition implementation.
 4. Extract the feed/trends presentation into scoped, host-configurable React
    components. Keep host navigation, identity text, and branding injected.
 5. Replace the static viewer-secret/email trust model with tenant-aware signed
-   identity and explicit capabilities before moving semantic, compose, email,
-   or schedules.
+   identity and explicit capabilities before moving compose, email, or
+   schedules. Semantic retrieval may remain client-scoped because it creates no
+   user-owned state and exposes no provider credential.
 6. Only then decide whether the X Monitor backend/collectors move to a separate
    service repository and whether the zodldashboard route remains, proxies, or
    is retired.

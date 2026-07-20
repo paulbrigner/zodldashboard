@@ -214,6 +214,13 @@ Direct backend read authentication:
 - Validate each client against the `read_clients` map in the backend-only Secrets Manager secret selected by `XMONITOR_READ_CLIENTS_SECRET_ID`.
   Each server-side host uses its own secret; up to three active
   secrets per client support rotation.
+- Legacy array entries grant `read` only. A client may call semantic retrieval
+  only when its entry is an object with `capabilities: ["read",
+  "semantic:query"]`; this does not grant Compose or any write operation.
+- Capability-bearing semantic clients are subject to atomic five-minute and
+  daily budgets in `xmonitor_client_usage_windows`. The
+  `XMONITOR_SEMANTIC_CLIENT_QUERY_ENABLED` switch can stop this client flow
+  without disabling the viewer-proxy semantic flow.
 - Do not expose the client secret to browser JavaScript. Browser requests use
   the dashboard `/api/v1` BFF, which verifies the viewer session and X Monitor
   permission before injecting its server-side credential.
