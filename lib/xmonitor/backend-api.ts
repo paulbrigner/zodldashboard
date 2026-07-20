@@ -1,3 +1,8 @@
+import {
+  buildXMonitorReadClientHeaders,
+  isXMonitorReadApiPath,
+} from "./read-client-auth.ts";
+
 const DEFAULT_PROXY_TIMEOUT_MS = 15000;
 const PROXY_REQUEST_HEADER_NAMES = [
   "content-type",
@@ -52,6 +57,15 @@ export async function maybeProxyApiRequest(request: Request): Promise<Response |
   for (const headerName of PROXY_REQUEST_HEADER_NAMES) {
     const headerValue = request.headers.get(headerName);
     if (headerValue) requestHeaders.set(headerName, headerValue);
+  }
+
+  if (isXMonitorReadApiPath(targetPath)) {
+    const readClientHeaders = buildXMonitorReadClientHeaders();
+    if (readClientHeaders) {
+      for (const [headerName, headerValue] of Object.entries(readClientHeaders)) {
+        requestHeaders.set(headerName, headerValue);
+      }
+    }
   }
 
   const method = request.method.toUpperCase();

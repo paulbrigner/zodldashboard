@@ -1,6 +1,7 @@
 import { ensureDatabaseConfigured } from "@/lib/xmonitor/db";
 import { maybeProxyApiRequest } from "@/lib/xmonitor/backend-api";
 import { jsonError, jsonOk } from "@/lib/xmonitor/http";
+import { requireXMonitorReadViewer } from "@/lib/xmonitor/read-api-access";
 import { getPostDetail } from "@/lib/xmonitor/repository";
 
 export const runtime = "nodejs";
@@ -9,6 +10,9 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ statusId: string }> }
 ) {
+  const accessError = await requireXMonitorReadViewer(request);
+  if (accessError) return accessError;
+
   const proxied = await maybeProxyApiRequest(request);
   if (proxied) {
     return proxied;

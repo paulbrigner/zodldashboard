@@ -23,7 +23,7 @@ Suggested target shape:
 Notes for a future implementation:
 
 - Treat this as a staged extraction, not a quick file move.
-- First modularize X Monitor boundaries in place. The headless public read
+- First modularize X Monitor boundaries in place. The headless read
   contracts/client and zodldashboard read adapter are now implemented.
 - Preserve the existing production route and access behavior during any migration.
 - Keep private AWS account details, production data, secrets, allowlists, and Zodl-specific operations out of any open-source distribution.

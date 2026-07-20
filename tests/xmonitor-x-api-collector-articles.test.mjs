@@ -10,7 +10,10 @@ import {
   buildQueryPlan,
   buildSearchUrl,
   buildWindowSummaryPrompt,
+  fetchWindowFeedPosts,
+  getConfig,
   isArticleTweet,
+  requireConfig,
   shouldKeepTweet,
 } from "../services/x-api-collector-lambda/index.mjs";
 
@@ -206,4 +209,92 @@ test("summary narratives use themes and representative posts without debate taxo
   const fallback = buildFallbackSummaryText(input);
   assert.match(fallback, /Top themes: Product \/ ecosystem \(7\)/);
   assert.doesNotMatch(fallback, /Debates?:/i);
+});
+
+test("summary feed reads use the dedicated API base and client credentials", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url: String(url), options });
+    return new Response(JSON.stringify({ items: [] }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const result = await fetchWindowFeedPosts(
+      {
+        readApiBaseUrl: "https://read.example/v1",
+        readClientId: "collector-priority",
+        readClientSecret: "collector-read-secret-with-at-least-32-characters",
+        summaryFeedPageLimit: 2,
+        summaryFeedMaxItemsPerWindow: 100,
+        ingestTimeoutMs: 1000,
+      },
+      "2026-07-20T10:00:00.000Z",
+      "2026-07-20T12:00:00.000Z"
+    );
+
+    assert.deepEqual(result, { items: [], pageCount: 1, truncated: false });
+    assert.equal(requests.length, 1);
+    assert.equal(new URL(requests[0].url).origin, "https://read.example");
+    assert.equal(new URL(requests[0].url).pathname, "/v1/feed");
+    assert.equal(requests[0].options.redirect, "manual");
+    assert.equal(
+      requests[0].options.headers["x-xmonitor-client-id"],
+      "collector-priority"
+    );
+    assert.equal(
+      requests[0].options.headers["x-xmonitor-client-secret"],
+      "collector-read-secret-with-at-least-32-characters"
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("collector config separates read and ingest APIs and summaries require both client credentials", () => {
+  const original = {
+    XMONITOR_API_BASE_URL: process.env.XMONITOR_API_BASE_URL,
+    XMONITOR_READ_API_BASE_URL: process.env.XMONITOR_READ_API_BASE_URL,
+    XMONITOR_READ_CLIENT_ID: process.env.XMONITOR_READ_CLIENT_ID,
+    XMONITOR_READ_CLIENT_SECRET: process.env.XMONITOR_READ_CLIENT_SECRET,
+  };
+
+  process.env.XMONITOR_API_BASE_URL = "https://write.example/v1/";
+  process.env.XMONITOR_READ_API_BASE_URL = "https://read.example/v1/";
+  process.env.XMONITOR_READ_CLIENT_ID = "collector-client";
+  process.env.XMONITOR_READ_CLIENT_SECRET = "collector-read-secret-with-at-least-32-characters";
+
+  try {
+    const config = getConfig();
+    assert.equal(config.ingestApiBaseUrl, "https://write.example/v1");
+    assert.equal(config.readApiBaseUrl, "https://read.example/v1");
+    assert.equal(config.readClientId, "collector-client");
+    assert.equal(config.readClientSecret, "collector-read-secret-with-at-least-32-characters");
+
+    assert.throws(
+      () => requireConfig({
+        ...config,
+        writeEnabled: false,
+        summaryEnabled: true,
+        readClientSecret: "",
+      }, { summaryOnly: true, collectorMode: "discovery" }),
+      /XMONITOR_READ_CLIENT_SECRET/
+    );
+    assert.doesNotThrow(() => requireConfig({
+      ...config,
+      writeEnabled: false,
+      summaryEnabled: true,
+      readClientId: "",
+      readClientSecret: "",
+    }, { summaryOnly: true, collectorMode: "priority" }));
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });

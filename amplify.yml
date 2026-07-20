@@ -172,6 +172,8 @@ frontend:
         - env | grep -e XMONITOR_INGEST_OMIT_HANDLES >> .env.production || true
         - env | grep -e XMONITOR_BACKEND_API_BASE_URL >> .env.production || true
         - env | grep -e XMONITOR_READ_API_BASE_URL >> .env.production || true
+        - env | grep -e XMONITOR_READ_CLIENT_ID >> .env.production || true
+        - env | grep -e XMONITOR_READ_CLIENT_SECRET >> .env.production || true
         - env | grep -e XMONITOR_USER_PROXY_SECRET >> .env.production || true
         - env | grep -e XMONITOR_SEMANTIC_ENABLED >> .env.production || true
         - env | grep -e XMONITOR_SEMANTIC_DEFAULT_LIMIT >> .env.production || true

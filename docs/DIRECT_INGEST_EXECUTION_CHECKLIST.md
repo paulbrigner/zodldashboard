@@ -3,6 +3,7 @@
 _Last updated: 2026-02-26 (ET)_
 
 > Status: Historical execution checklist from direct-ingest cutover. For current production operations, use `docs/AWS_MIGRATION_RUNBOOK.md`.
+> The verification examples below reflect the current read-client and viewer-auth boundaries.
 
 This checklist turns the transition strategy in `docs/DIRECT_INGEST_API_TRANSITION_PLAN.md` into an operator sequence with explicit stop/go gates.
 
@@ -32,20 +33,29 @@ aws --profile zodldashboard --region us-east-1 sts get-caller-identity
 - [ ] Hosted app/API basic health is green:
 
 ```bash
-curl -sS 'https://www.zodldashboard.com/api/v1/health'
-curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
+read_api_base="${XMONITOR_BACKEND_API_BASE_URL:?set the direct backend base URL}"
+app_base="${XMONITOR_APP_BASE_URL:?set the dashboard app base URL}"
+curl -sS "$read_api_base/health"
+curl -sS \
+  -H "x-xmonitor-client-id: ${XMONITOR_READ_CLIENT_ID:?set the read client ID}" \
+  -H "x-xmonitor-client-secret: ${XMONITOR_READ_CLIENT_SECRET:?set the read client secret}" \
+  "$read_api_base/feed?limit=3"
 ```
+
+`/health` is unsigned. Direct feed/detail reads require the server-only client
+credential; the dashboard `/api/v1` BFF instead requires an authenticated
+viewer session.
 
 - [ ] Ingest auth behavior is correct (unauthorized without key, authorized with key):
 
 ```bash
-curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+curl -i -X POST "$app_base/api/v1/ingest/runs" \
   -H 'content-type: application/json' \
   --data '{"run_at":"2026-02-26T00:00:00Z","mode":"manual"}'
 ```
 
 ```bash
-curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+curl -i -X POST "$app_base/api/v1/ingest/runs" \
   -H 'content-type: application/json' \
   -H "x-api-key: $XMONITOR_API_KEY" \
   --data '{"run_at":"2026-02-26T00:00:00Z","mode":"manual"}'
@@ -123,7 +133,7 @@ python3 scripts/migrate/validate_counts.py \
 
 - [ ] Manual spot checks (minimum 5 recent status IDs):
   - pick IDs from snapshot (`tweets.status_id`),
-  - verify each exists in hosted detail route (`/api/v1/posts/{statusId}`),
+  - verify each through the direct backend detail route (`/v1/posts/{statusId}`) with `x-xmonitor-client-id` and `x-xmonitor-client-secret`,
   - verify body text is expected (reply-prefix cleanup and language filters preserved).
 
 ## 7) Deploy direct-ingest runtime (Stream B)

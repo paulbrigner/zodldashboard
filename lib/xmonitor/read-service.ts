@@ -11,6 +11,7 @@ import type {
 } from "@xmonitor/core/contracts";
 import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { hasDatabaseConfig } from "@/lib/xmonitor/config";
+import { buildXMonitorReadClientHeaders } from "@/lib/xmonitor/read-client-auth";
 import {
   getAuthorLocationSuggestions,
   getFeed,
@@ -44,7 +45,10 @@ function unconfigured(): never {
 export function createXMonitorReadService(): XMonitorReadService {
   const apiBaseUrl = readApiBaseUrl();
   if (apiBaseUrl) {
-    const client = createXMonitorReadClient({ baseUrl: apiBaseUrl });
+    const client = createXMonitorReadClient({
+      baseUrl: apiBaseUrl,
+      headers: buildXMonitorReadClientHeaders() || undefined,
+    });
     return {
       mode: "api",
       apiBaseUrl,

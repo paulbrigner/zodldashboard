@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { SQSClient, SendMessageCommand } from "@aws-sdk/client-sqs";
 import { SESv2Client, SendEmailCommand } from "@aws-sdk/client-sesv2";
+import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 
 const WATCH_TIERS = new Set(["teammate", "investor", "influencer", "ecosystem"]);
 const WATCH_TIER_FILTERS = new Set(["teammate", "investor", "influencer", "ecosystem", "other"]);
@@ -117,6 +118,12 @@ const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl";
 const VIEWER_EMAIL_HEADER = "x-xmonitor-viewer-email";
 const VIEWER_MODE_HEADER = "x-xmonitor-viewer-auth-mode";
 const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
+const READ_CLIENT_ID_HEADER = "x-xmonitor-client-id";
+const READ_CLIENT_SECRET_HEADER = "x-xmonitor-client-secret";
+const READ_CLIENT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const MIN_READ_CLIENT_SECRET_LENGTH = 32;
+const READ_CLIENT_CONFIGURATION_CACHE_MS = 5 * 60 * 1000;
+const READ_CLIENT_CONFIGURATION_FAILURE_CACHE_MS = 15 * 1000;
 const BETTER_AUTH_ADAPTER_TABLE_FIELDS = {
   better_auth_users: new Set(["id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt"]),
   better_auth_sessions: new Set(["id", "expiresAt", "token", "createdAt", "updatedAt", "ipAddress", "userAgent", "userId"]),
@@ -226,6 +233,8 @@ let xmonitorAccessSchemaEnsured = false;
 let accessControlSchemaEnsured = false;
 let sqsClient;
 let sesClient;
+let secretsManagerClient;
+let readClientConfigurationCache;
 const zonedDateFormatterCache = new Map();
 
 function parsePositiveInt(value, fallback) {
@@ -598,6 +607,13 @@ function getSesClient() {
   return sesClient;
 }
 
+function getSecretsManagerClient() {
+  if (!secretsManagerClient) {
+    secretsManagerClient = new SecretsManagerClient({});
+  }
+  return secretsManagerClient;
+}
+
 function sha256Hex(input) {
   return createHash("sha256").update(String(input || ""), "utf8").digest("hex");
 }
@@ -628,6 +644,17 @@ function isOpsPath(path) {
     path === "/v1/ops/purge-handle" ||
     path === "/v1/ops/purge-handle-missing-base-terms" ||
     path === "/v1/email/schedules/dispatch-due"
+  );
+}
+
+function isReadClientPath(path) {
+  return (
+    path === "/v1/feed" ||
+    path === "/v1/author-locations" ||
+    path === "/v1/engagement" ||
+    path === "/v1/trends" ||
+    path === "/v1/window-summaries/latest" ||
+    /^\/v1\/posts\/[^/]+$/.test(path)
   );
 }
 
@@ -684,6 +711,144 @@ function validateIngestAuthorization(event) {
   }
 
   return { ok: true };
+}
+
+function parseReadClientMap(payload) {
+  if (!isRecord(payload)) {
+    return { ok: false, reason: "read client configuration must be an object" };
+  }
+
+  const clients = new Map();
+  for (const [clientId, configuredSecrets] of Object.entries(payload)) {
+    if (!READ_CLIENT_ID_PATTERN.test(clientId) || !Array.isArray(configuredSecrets)) {
+      return { ok: false, reason: "read client configuration has an invalid entry" };
+    }
+    const secrets = configuredSecrets.map(asString);
+    if (
+      secrets.length < 1 ||
+      secrets.length > 3 ||
+      secrets.some((secret) => !secret || secret.length < MIN_READ_CLIENT_SECRET_LENGTH)
+    ) {
+      return { ok: false, reason: "read client configuration has invalid secrets" };
+    }
+    clients.set(clientId, secrets);
+  }
+
+  if (clients.size === 0) {
+    return { ok: false, reason: "read client configuration has no clients" };
+  }
+  return { ok: true, clients };
+}
+
+function parseReadClientConfiguration(raw) {
+  let payload;
+  try {
+    payload = JSON.parse(raw);
+  } catch {
+    return { ok: false, reason: "read client configuration is not valid JSON" };
+  }
+
+  const configuredClients = isRecord(payload) && Object.hasOwn(payload, "read_clients")
+    ? payload.read_clients
+    : payload;
+  if (typeof configuredClients === "string") {
+    try {
+      return parseReadClientMap(JSON.parse(configuredClients));
+    } catch {
+      return { ok: false, reason: "read_clients is not valid JSON" };
+    }
+  }
+  return parseReadClientMap(configuredClients);
+}
+
+async function loadReadClientConfiguration() {
+  const inlineConfiguration = asString(process.env.XMONITOR_READ_CLIENTS_JSON);
+  if (inlineConfiguration) {
+    return parseReadClientConfiguration(inlineConfiguration);
+  }
+
+  const secretId = asString(process.env.XMONITOR_READ_CLIENTS_SECRET_ID);
+  if (!secretId) {
+    return { ok: false, reason: "XMONITOR_READ_CLIENTS_SECRET_ID is empty" };
+  }
+
+  const now = Date.now();
+  if (
+    readClientConfigurationCache &&
+    readClientConfigurationCache.secretId === secretId &&
+    readClientConfigurationCache.expiresAt > now
+  ) {
+    return readClientConfigurationCache.configuration;
+  }
+
+  let configuration;
+  try {
+    const response = await getSecretsManagerClient().send(
+      new GetSecretValueCommand({ SecretId: secretId })
+    );
+    const secretString = asString(response.SecretString);
+    configuration = secretString
+      ? parseReadClientConfiguration(secretString)
+      : { ok: false, reason: "read client secret has no SecretString" };
+  } catch (error) {
+    configuration = {
+      ok: false,
+      reason: `Secrets Manager read failed (${error instanceof Error ? error.name : "unknown"})`,
+    };
+  }
+
+  readClientConfigurationCache = {
+    secretId,
+    configuration,
+    expiresAt: now + (
+      configuration.ok
+        ? READ_CLIENT_CONFIGURATION_CACHE_MS
+        : READ_CLIENT_CONFIGURATION_FAILURE_CACHE_MS
+    ),
+  };
+  return configuration;
+}
+
+export async function validateReadClientAuthorization(event) {
+  const headers = event?.headers;
+  const clientId = asString(headerValue(headers, READ_CLIENT_ID_HEADER));
+  const presentedSecret = asString(headerValue(headers, READ_CLIENT_SECRET_HEADER));
+  if (!clientId || !presentedSecret) {
+    return {
+      ok: false,
+      status: 401,
+      error: "unauthorized",
+    };
+  }
+
+  const configuration = await loadReadClientConfiguration();
+  if (!configuration.ok) {
+    console.error(JSON.stringify({
+      event: "read_client_auth_configuration_invalid",
+      reason: configuration.reason,
+    }));
+    return {
+      ok: false,
+      status: 503,
+      error: "read client auth is not configured",
+    };
+  }
+
+  const expectedSecrets = configuration.clients.get(clientId);
+  if (
+    !expectedSecrets ||
+    !expectedSecrets.some((expectedSecret) =>
+      timingSafeMatch(sha256Hex(expectedSecret), sha256Hex(presentedSecret))
+    )
+  ) {
+    return {
+      ok: false,
+      status: 401,
+      error: "unauthorized",
+    };
+  }
+
+  return { ok: true, clientId };
 }
 
 function jsonResponse(statusCode, body) {
@@ -12274,6 +12439,13 @@ export async function handler(event) {
 
   if ((method === "GET" || method === "POST") && isOpsPath(path)) {
     const auth = validateIngestAuthorization(event);
+    if (!auth.ok) {
+      return jsonError(auth.error, auth.status);
+    }
+  }
+
+  if (method === "GET" && isReadClientPath(path)) {
+    const auth = await validateReadClientAuthorization(event);
     if (!auth.ok) {
       return jsonError(auth.error, auth.status);
     }

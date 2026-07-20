@@ -41,9 +41,10 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 
 1. Authenticated users access the Next.js app.
 2. The app reads from either:
-   - hosted API mode via `XMONITOR_READ_API_BASE_URL`, or
+   - hosted API mode via a direct backend `XMONITOR_READ_API_BASE_URL`, using a server-only client ID and secret, or
    - direct DB mode via `DATABASE_URL` / `PG*`.
-3. Local `/api/v1/*` routes can proxy to the hosted backend via `XMONITOR_BACKEND_API_BASE_URL`.
+3. Viewer-facing `/api/v1/*` read routes verify the dashboard session before proxying to the hosted backend via `XMONITOR_BACKEND_API_BASE_URL`.
+4. The hosted backend requires `x-xmonitor-client-id` and `x-xmonitor-client-secret` on feed, author-location, engagement, trend, latest-summary, and post-detail reads. Health remains unsigned.
 
 ### Main services
 
@@ -117,8 +118,10 @@ ACCESS_BOOTSTRAP_ADMIN_EMAILS=paul@zodl.com
 Hosted API mode:
 
 ```env
-XMONITOR_READ_API_BASE_URL=https://www.zodldashboard.com/api/v1
-XMONITOR_BACKEND_API_BASE_URL=
+XMONITOR_READ_API_BASE_URL=https://abc123.execute-api.us-east-1.amazonaws.com/prod/v1
+XMONITOR_BACKEND_API_BASE_URL=https://abc123.execute-api.us-east-1.amazonaws.com/prod/v1
+XMONITOR_READ_CLIENT_ID=zodldashboard
+XMONITOR_READ_CLIENT_SECRET=<server-only-read-secret>
 ```
 
 Direct DB mode:
@@ -162,6 +165,8 @@ Commonly used variables:
   - `XMONITOR_READ_API_BASE_URL`
   - `XMONITOR_BACKEND_API_BASE_URL`
   - `XMONITOR_API_PROXY_TIMEOUT_MS`
+  - `XMONITOR_READ_CLIENT_ID` and `XMONITOR_READ_CLIENT_SECRET` (server-only caller identity)
+  - `XMONITOR_READ_CLIENTS_SECRET_ID` (backend-only Secrets Manager source containing the per-client `read_clients` allowlist)
 - Database:
   - `DATABASE_URL` or `PGHOST` / `PGPORT` / `PGDATABASE` / `PGUSER` / `PGPASSWORD` / `PGSSLMODE`
 - Retrieval/answers:
@@ -223,14 +228,19 @@ See [.env.example](.env.example) for the full current env template.
 - `/cipherpay-test`
 - `/posts/{statusId}`
 
-### Public/read APIs
+### Public API
 
 - `GET /api/v1/health`
+- `POST /api/v1/cipherpay/webhook`
+
+### Viewer-authenticated read APIs
+
 - `GET /api/v1/feed`
+- `GET /api/v1/author-locations`
+- `GET /api/v1/engagement`
 - `GET /api/v1/posts/{statusId}`
 - `GET /api/v1/trends`
 - `GET /api/v1/window-summaries/latest`
-- `POST /api/v1/cipherpay/webhook`
 - `POST /api/v1/query/semantic`
 - `POST /api/v1/query/compose`
 - `POST /api/v1/query/compose/jobs`
@@ -280,6 +290,24 @@ AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 ./scripts/aws/provision_vpc_api_lambda.sh
 ```
 
+### Executive graphics read access
+
+The graphics script is a separate backend client named `xmonitor-graphics`. It
+reads that client's first active secret from the `read_clients` map in
+`xmonitor/rds/app` by default and sends the two read-client headers to `/feed`
+and `/trends`. Point it at the direct backend, not the viewer-authenticated
+dashboard BFF:
+
+```bash
+XMONITOR_BACKEND_API_BASE_URL=https://abc123.execute-api.us-east-1.amazonaws.com/prod/v1 \
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
+python3 scripts/ops/render_xmonitor_graphics.py --skip-live-metrics
+```
+
+Use `--read-client-id` to select another entry. For a one-time override, set
+`XMONITOR_READ_CLIENT_SECRET` (preferred) or pass `--read-client-secret`; the
+script never includes the secret in its JSON output.
+
 ### Collector Lambdas
 
 Priority collector:
@@ -302,8 +330,16 @@ X_API_BEARER_TOKEN='<x-api-bearer-token>' \
 
 ```bash
 curl -sS 'https://www.zodldashboard.com/api/v1/health'
-curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
-curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
+
+read_api_base="${XMONITOR_BACKEND_API_BASE_URL:?set the direct backend base URL}"
+curl -sS \
+  -H "x-xmonitor-client-id: ${XMONITOR_READ_CLIENT_ID:?set the read client ID}" \
+  -H "x-xmonitor-client-secret: ${XMONITOR_READ_CLIENT_SECRET:?set the read client secret}" \
+  "$read_api_base/feed?limit=3"
+curl -sS \
+  -H "x-xmonitor-client-id: $XMONITOR_READ_CLIENT_ID" \
+  -H "x-xmonitor-client-secret: $XMONITOR_READ_CLIENT_SECRET" \
+  "$read_api_base/window-summaries/latest"
 ```
 
 ### X Monitor Access Report
@@ -331,6 +367,8 @@ timestamp/email rows. Use `--json` for the full structured report.
 
 - Confirm either `XMONITOR_READ_API_BASE_URL` or direct DB config is set.
 - Confirm `XMONITOR_BACKEND_API_BASE_URL` is set when relying on local proxy routes.
+- In hosted mode, confirm the app has both `XMONITOR_READ_CLIENT_ID` and `XMONITOR_READ_CLIENT_SECRET`, and that the backend secret selected by `XMONITOR_READ_CLIENTS_SECRET_ID` has a matching `read_clients` entry.
+- Use the direct backend URL for server-to-server calls. The dashboard `/api/v1` BFF additionally requires an authenticated viewer session.
 
 ### Semantic/Answer issues
 
@@ -357,7 +395,8 @@ Current architecture and operations:
 ## Security Notes
 
 - Never commit live secrets.
-- Keep OAuth credentials, model API keys, and ingest secrets in secure runtime config.
+- Keep OAuth credentials, model API keys, ingest secrets, and X Monitor read-client secrets in secure runtime config.
+- Give each backend caller its own read-client credential. For rotation, add the new value alongside the old one, wait at least five minutes for backend caches, switch the caller, wait another five minutes, then remove the retired value.
 - Rotate secrets immediately if exposed.
 - Restrict DB network access to trusted AWS resources.
 - Keep local bypass disabled by default.

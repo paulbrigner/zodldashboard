@@ -98,7 +98,8 @@ Recommended schema additions:
 ## 4.3 API model
 - Add `POST /v1/query/semantic` for NL search.
 - Add `POST /v1/ingest/embeddings/batch` for ongoing embedding upserts.
-- Keep current `GET /v1/feed` unchanged for lexical/filter-only use.
+- Keep current `GET /v1/feed` query semantics unchanged for lexical/filter-only
+  use; direct calls still pass through the read-client authentication boundary.
 
 ## 4.4 Grounded composition model (RAG over X posts)
 

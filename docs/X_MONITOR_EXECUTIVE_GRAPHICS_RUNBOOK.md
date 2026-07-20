@@ -22,8 +22,9 @@ Required local tools:
 
 - Python 3.10+
 - Pillow for PNG rendering
-- AWS CLI configured with the `zodldashboard` profile if live X metrics should be refreshed from the X API token stored in Secrets Manager
-- Network access to `https://www.zodldashboard.com/api/v1` and Yahoo Finance price data
+- A direct backend URL in `XMONITOR_BACKEND_API_BASE_URL`; the viewer-authenticated dashboard `/api/v1` BFF is not a server-to-server endpoint
+- AWS CLI configured with the `zodldashboard` profile so the script can read the `xmonitor-graphics` credential and, when needed, the X API token from Secrets Manager
+- Network access to the direct X Monitor backend and Yahoo Finance price data
 
 If Pillow is missing:
 
@@ -36,6 +37,7 @@ python3 -m pip install pillow
 Generate both graphics with live X public metrics:
 
 ```bash
+XMONITOR_BACKEND_API_BASE_URL='https://<direct-backend-host>/v1' \
 AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 python3 scripts/ops/render_xmonitor_graphics.py
 ```
@@ -47,6 +49,8 @@ The script prints a JSON summary containing the output paths and basic counts.
 Generate both graphics without calling the X API:
 
 ```bash
+XMONITOR_BACKEND_API_BASE_URL='https://<direct-backend-host>/v1' \
+AWS_PROFILE=zodldashboard AWS_REGION=us-east-1 \
 python3 scripts/ops/render_xmonitor_graphics.py --skip-live-metrics
 ```
 
@@ -55,6 +59,15 @@ runs, layout checks, or quick internal refreshes. The tradeoff is that post
 engagement totals may lag current public X metrics.
 
 ## Single-Graphic Runs
+
+The remaining examples assume the direct backend and AWS profile have already
+been exported in the current shell:
+
+```bash
+export XMONITOR_BACKEND_API_BASE_URL='https://<direct-backend-host>/v1'
+export AWS_PROFILE=zodldashboard
+export AWS_REGION=us-east-1
+```
 
 Team traction only:
 
@@ -140,14 +153,19 @@ python3 scripts/ops/render_xmonitor_graphics.py --strict-live-metrics
 
 The team traction graphic uses:
 
-- X Monitor feed API: `GET /api/v1/feed`
+- Direct X Monitor backend feed API: `GET /v1/feed`
 - X API post lookup: `GET /2/tweets`, unless `--skip-live-metrics` is passed
-- X API bearer token from `XMON_X_API_BEARER_TOKEN`, `X_API_BEARER_TOKEN`, or AWS Secrets Manager secret `xmonitor/rds/app`
+- Read-client headers `x-xmonitor-client-id` and `x-xmonitor-client-secret`; by default the script resolves the `xmonitor-graphics` entry from `read_clients` in AWS Secrets Manager secret `xmonitor/rds/app`
+- X API bearer token from `XMON_X_API_BEARER_TOKEN`, `X_API_BEARER_TOKEN`, or the same Secrets Manager secret
 
 The 90-day trend graphic uses:
 
-- X Monitor trends API: `GET /api/v1/trends?trend_range=90d`
+- Direct X Monitor backend trends API: `GET /v1/trends?trend_range=90d`, with the same read-client headers
 - Yahoo Finance chart data for `ZEC-USD`
+
+For a one-time credential override, set both `XMONITOR_READ_CLIENT_ID` and
+`XMONITOR_READ_CLIENT_SECRET`. Keep the secret server-side and out of shell
+history when possible.
 
 ## X API Cost Estimate
 

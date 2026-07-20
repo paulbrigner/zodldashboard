@@ -123,6 +123,7 @@ test("read client uses injected fetch, no-store, and validates all public reads"
   assert.equal(requests.length, 5);
   for (const request of requests) {
     assert.equal(request.init.cache, "no-store");
+    assert.equal(request.init.redirect, "manual");
     assert.equal(new Headers(request.init.headers).get("x-client"), "test");
   }
 });

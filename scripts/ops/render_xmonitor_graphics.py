@@ -34,9 +34,14 @@ except ImportError as exc:  # pragma: no cover - environment guard.
     raise SystemExit("Pillow is required. Install it with: python3 -m pip install pillow") from exc
 
 
-DEFAULT_API_BASE = "https://www.zodldashboard.com/api/v1"
+DEFAULT_API_BASE = (
+    os.environ.get("XMONITOR_BACKEND_API_BASE_URL")
+    or os.environ.get("XMONITOR_READ_API_BASE_URL")
+    or ""
+)
 DEFAULT_X_API_BASE = "https://api.x.com/2"
 DEFAULT_SECRET_ID = "xmonitor/rds/app"
+DEFAULT_READ_CLIENT_ID = "xmonitor-graphics"
 DEFAULT_AWS_PROFILE = "zodldashboard"
 DEFAULT_AWS_REGION = "us-east-1"
 DEFAULT_TREND_RANGE = "90d"
@@ -147,7 +152,21 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--team-days", type=float, default=DEFAULT_TEAM_DAYS, help="Rolling team activity window.")
     parser.add_argument("--trend-range", default=DEFAULT_TREND_RANGE, help="X Monitor trend range key.")
     parser.add_argument("--team-handles", default=",".join(DEFAULT_TEAM_HANDLES), help="Comma or space separated team handles.")
-    parser.add_argument("--api-base", default=DEFAULT_API_BASE, help="X Monitor API base URL.")
+    parser.add_argument(
+        "--api-base",
+        default=DEFAULT_API_BASE,
+        help="Direct X Monitor backend API base URL (not the dashboard /api/v1 proxy).",
+    )
+    parser.add_argument(
+        "--read-client-id",
+        default=os.environ.get("XMONITOR_READ_CLIENT_ID", DEFAULT_READ_CLIENT_ID),
+        help="Read client ID used for X Monitor feed and trends requests.",
+    )
+    parser.add_argument(
+        "--read-client-secret",
+        default=os.environ.get("XMONITOR_READ_CLIENT_SECRET"),
+        help="Read client secret override. Prefer the environment or Secrets Manager to shell history.",
+    )
     parser.add_argument("--x-api-base", default=DEFAULT_X_API_BASE, help="X API v2 base URL.")
     parser.add_argument("--aws-profile", default=os.environ.get("AWS_PROFILE", DEFAULT_AWS_PROFILE), help="AWS profile for Secrets Manager fallback.")
     parser.add_argument("--aws-region", default=os.environ.get("AWS_REGION", DEFAULT_AWS_REGION), help="AWS region for Secrets Manager fallback.")
@@ -211,13 +230,33 @@ def iso_z(value: dt.datetime) -> str:
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-def fetch_json(url: str, headers: dict[str, str] | None = None, timeout: int = 40) -> dict[str, Any]:
-    req = urllib.request.Request(url, headers=headers or {"User-Agent": "zodl-xmonitor-visual/1.0"})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001, ANN201
+        return None
+
+
+NO_REDIRECT_OPENER = urllib.request.build_opener(NoRedirectHandler())
+
+
+def fetch_json(
+    url: str,
+    headers: dict[str, str] | None = None,
+    timeout: int = 40,
+    *,
+    allow_redirects: bool = True,
+) -> dict[str, Any]:
+    request_headers = {"User-Agent": "zodl-xmonitor-visual/1.0"}
+    request_headers.update(headers or {})
+    req = urllib.request.Request(url, headers=request_headers)
+    open_request = urllib.request.urlopen if allow_redirects else NO_REDIRECT_OPENER.open
+    with open_request(req, timeout=timeout) as resp:
         return json.load(resp)
 
 
 def read_secret_json(args: argparse.Namespace) -> dict[str, Any]:
+    cached = getattr(args, "_secret_json_cache", None)
+    if isinstance(cached, dict):
+        return cached
     output = subprocess.check_output(
         [
             "aws",
@@ -237,7 +276,64 @@ def read_secret_json(args: argparse.Namespace) -> dict[str, Any]:
         text=True,
         stderr=subprocess.STDOUT,
     ).strip()
-    return json.loads(output) if output else {}
+    payload = json.loads(output) if output else {}
+    if not isinstance(payload, dict):
+        raise ValueError(f"Secrets Manager secret {args.secret_id} must contain a JSON object")
+    setattr(args, "_secret_json_cache", payload)
+    return payload
+
+
+def validate_direct_api_base(value: str) -> str:
+    api_base = str(value or "").strip().rstrip("/")
+    if not api_base:
+        raise ValueError(
+            "a direct backend API base is required; set --api-base, "
+            "XMONITOR_BACKEND_API_BASE_URL, or XMONITOR_READ_API_BASE_URL"
+        )
+    parsed = urllib.parse.urlparse(api_base)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("X Monitor API base must be an absolute HTTP(S) URL")
+    if parsed.hostname in {"zodldashboard.com", "www.zodldashboard.com"} and parsed.path.rstrip("/") == "/api/v1":
+        raise ValueError(
+            "the dashboard /api/v1 route is viewer-protected; use the direct X Monitor backend API base"
+        )
+    return api_base
+
+
+def parse_read_clients(value: Any, secret_id: str) -> dict[str, Any]:
+    if isinstance(value, str):
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"read_clients in {secret_id} is not valid JSON") from exc
+    if not isinstance(value, dict):
+        raise RuntimeError(f"read_clients in {secret_id} must be a JSON object")
+    return value
+
+
+def load_read_client_headers(args: argparse.Namespace) -> dict[str, str]:
+    client_id = str(args.read_client_id or "").strip()
+    if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", client_id):
+        raise ValueError("X Monitor read client ID has an invalid format")
+
+    client_secret = str(args.read_client_secret or "").strip()
+    if not client_secret:
+        try:
+            secret = read_secret_json(args)
+        except (subprocess.CalledProcessError, OSError, json.JSONDecodeError, ValueError) as exc:
+            raise RuntimeError(f"could not read X Monitor client credentials from {args.secret_id}: {exc}") from exc
+        clients = parse_read_clients(secret.get("read_clients"), args.secret_id)
+        secrets = clients.get(client_id)
+        if not isinstance(secrets, list) or not secrets:
+            raise RuntimeError(f"read client {client_id!r} is not configured in {args.secret_id}")
+        client_secret = next((item.strip() for item in secrets if isinstance(item, str) and item.strip()), "")
+
+    if len(client_secret) < 32:
+        raise ValueError("X Monitor read client secret must be at least 32 characters")
+    return {
+        "x-xmonitor-client-id": client_id,
+        "x-xmonitor-client-secret": client_secret,
+    }
 
 
 def load_x_token(args: argparse.Namespace) -> str | None:
@@ -246,7 +342,7 @@ def load_x_token(args: argparse.Namespace) -> str | None:
         return token
     try:
         secret = read_secret_json(args)
-    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError) as exc:
+    except (subprocess.CalledProcessError, OSError, json.JSONDecodeError, ValueError) as exc:
         if args.strict_live_metrics:
             raise RuntimeError(f"could not read X API token from {args.secret_id}: {exc}") from exc
         print(f"warning: could not read X API token from {args.secret_id}; using X Monitor metrics only", file=sys.stderr)
@@ -431,6 +527,7 @@ def fetch_team_feed(
     handles: list[str],
     since: dt.datetime,
     until: dt.datetime,
+    read_headers: dict[str, str],
 ) -> list[dict[str, Any]]:
     items: list[dict[str, Any]] = []
     cursor = ""
@@ -443,8 +540,8 @@ def fetch_team_feed(
         }
         if cursor:
             params["cursor"] = cursor
-        url = f"{args.api_base.rstrip('/')}/feed?" + urllib.parse.urlencode(params)
-        payload = fetch_json(url)
+        url = f"{args.api_base}/feed?" + urllib.parse.urlencode(params)
+        payload = fetch_json(url, headers=read_headers, allow_redirects=False)
         items.extend(payload.get("items") or [])
         cursor = payload.get("next_cursor") or payload.get("nextCursor") or ""
         if not cursor:
@@ -763,14 +860,19 @@ def render_handle_panel(
     draw.line((chart_x, chart_y + chart_height, chart_x + chart_width, chart_y + chart_height), fill="#D6DEE9", width=2)
 
 
-def fetch_trends(args: argparse.Namespace, since: dt.datetime | None = None, until: dt.datetime | None = None) -> dict[str, Any]:
+def fetch_trends(
+    args: argparse.Namespace,
+    read_headers: dict[str, str],
+    since: dt.datetime | None = None,
+    until: dt.datetime | None = None,
+) -> dict[str, Any]:
     params = {"trend_range": args.trend_range}
     if since:
         params["since"] = iso_z(since)
     if until:
         params["until"] = iso_z(until)
-    url = f"{args.api_base.rstrip('/')}/trends?" + urllib.parse.urlencode(params)
-    return fetch_json(url)
+    url = f"{args.api_base}/trends?" + urllib.parse.urlencode(params)
+    return fetch_json(url, headers=read_headers, allow_redirects=False)
 
 
 def fetch_zec_prices(start: dt.datetime, end: dt.datetime) -> list[dict[str, Any]]:
@@ -982,6 +1084,8 @@ def render_trend_graphic(trends: dict[str, Any], prices: list[dict[str, Any]], o
 
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
+    args.api_base = validate_direct_api_base(args.api_base)
+    read_headers = load_read_client_headers(args)
     now = parse_datetime(args.now)
     out_dir = Path(args.out_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -993,7 +1097,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
     summary: dict[str, Any] = {}
     if not args.trend_only:
         team_since, team_until, custom_team_window = resolve_team_window(args, now)
-        posts = fetch_team_feed(args, handles, team_since, team_until)
+        posts = fetch_team_feed(args, handles, team_since, team_until, read_headers)
         metric_errors: list[dict[str, Any]] = []
         live_metrics_refreshed = False
         if not args.skip_live_metrics:
@@ -1034,7 +1138,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
 
     if not args.team_only:
         trend_since, trend_until, _custom_trend_window = resolve_trend_window(args)
-        trends = fetch_trends(args, trend_since, trend_until)
+        trends = fetch_trends(args, read_headers, trend_since, trend_until)
         start = parse_iso(trends["scope"]["since"])
         end = parse_iso(trends["scope"]["until"])
         prices = fetch_zec_prices(start, end)

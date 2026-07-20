@@ -1,5 +1,6 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
+import { canReadDashboard } from "@/lib/access-control";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { createXMonitorReadService } from "@/lib/xmonitor/read-service";
 import type { PostDetail } from "@xmonitor/core/contracts";
@@ -36,7 +37,10 @@ function describeAccountAge(iso: string | null | undefined): string {
 }
 
 export default async function PostPage({ params }: PostPageProps) {
-  await requireAuthenticatedViewer("/posts");
+  const viewer = await requireAuthenticatedViewer("/posts");
+  if (!canReadDashboard(viewer, "x-monitor")) {
+    redirect("/");
+  }
 
   const { statusId } = await params;
   if (!statusId) {

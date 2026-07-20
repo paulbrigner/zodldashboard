@@ -1,6 +1,6 @@
 # XMonitor v1 — Proposed Postgres Schema + API Contract (Codex Baseline)
 
-_Last updated: 2026-02-22 (ET)_
+_Last updated: 2026-07-20 (ET)_
 
 This document defines the canonical v1 data model and API contract used by the live system:
 - provision AWS database,
@@ -186,6 +186,7 @@ Base path proposal: `/v1`
 
 ### 5.1 Health
 - `GET /health`
+  - unsigned, for infrastructure health checks
   - response: `{ "ok": true, "service": "xmonitor-api", "version": "v1" }`
 
 ### 5.2 Ingest endpoints
@@ -205,6 +206,17 @@ Auth requirement (v1 hardening):
   - Upsert watchlist accounts by `handle`
 
 ### 5.3 Query endpoints (MVP dashboard)
+
+Direct backend read authentication:
+
+- Require `x-xmonitor-client-id` and `x-xmonitor-client-secret` on feed,
+  author-location, engagement, trend, latest-summary, and post-detail reads.
+- Validate each client against the `read_clients` map in the backend-only Secrets Manager secret selected by `XMONITOR_READ_CLIENTS_SECRET_ID`.
+  Each server-side host uses its own secret; up to three active
+  secrets per client support rotation.
+- Do not expose the client secret to browser JavaScript. Browser requests use
+  the dashboard `/api/v1` BFF, which verifies the viewer session and X Monitor
+  permission before injecting its server-side credential.
 
 - `GET /feed`
   - Query params:
@@ -229,125 +241,11 @@ Auth requirement (v1 hardening):
 
 ---
 
-## 6) OpenAPI YAML starter (copy into repo)
+## 6) OpenAPI contract
 
-Create file: `docs/openapi.v1.yaml`
-
-```yaml
-openapi: 3.0.3
-info:
-  title: XMonitor API
-  version: 1.0.0
-servers:
-  - url: /v1
-paths:
-  /health:
-    get:
-      summary: Health check
-      responses:
-        '200':
-          description: OK
-  /ingest/posts/batch:
-    post:
-      summary: Upsert posts by status_id
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                items:
-                  type: array
-                  items:
-                    $ref: '#/components/schemas/PostUpsert'
-      responses:
-        '200': { description: Upsert summary }
-  /ingest/runs:
-    post:
-      summary: Upsert pipeline run records
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PipelineRunUpsert'
-      responses:
-        '200': { description: Upsert summary }
-  /feed:
-    get:
-      summary: Query timeline feed
-      parameters:
-        - in: query
-          name: since
-          schema: { type: string, format: date-time }
-        - in: query
-          name: until
-          schema: { type: string, format: date-time }
-        - in: query
-          name: tier
-          schema: { type: string, enum: [teammate, investor, influencer, ecosystem] }
-        - in: query
-          name: handle
-          schema: { type: string }
-        - in: query
-          name: significant
-          schema: { type: boolean }
-        - in: query
-          name: q
-          schema: { type: string }
-        - in: query
-          name: limit
-          schema: { type: integer, default: 50, maximum: 200 }
-        - in: query
-          name: cursor
-          schema: { type: string }
-      responses:
-        '200':
-          description: Feed page
-  /posts/{statusId}:
-    get:
-      summary: Get post detail
-      parameters:
-        - in: path
-          name: statusId
-          required: true
-          schema: { type: string }
-      responses:
-        '200': { description: Post detail }
-        '404': { description: Not found }
-components:
-  schemas:
-    PostUpsert:
-      type: object
-      required: [status_id, url, author_handle, discovered_at, last_seen_at]
-      properties:
-        status_id: { type: string }
-        url: { type: string }
-        author_handle: { type: string }
-        author_display: { type: string }
-        body_text: { type: string }
-        source_query: { type: string }
-        watch_tier: { type: string, enum: [teammate, investor, influencer, ecosystem] }
-        is_significant: { type: boolean }
-        significance_reason: { type: string }
-        discovered_at: { type: string, format: date-time }
-        last_seen_at: { type: string, format: date-time }
-        likes: { type: integer }
-        reposts: { type: integer }
-        replies: { type: integer }
-        views: { type: integer }
-    PipelineRunUpsert:
-      type: object
-      required: [run_at, mode]
-      properties:
-        run_at: { type: string, format: date-time }
-        mode: { type: string, enum: [priority, discovery, both, manual] }
-        fetched_count: { type: integer }
-        significant_count: { type: integer }
-        note: { type: string }
-        source: { type: string }
-```
+`docs/openapi.v1.yaml` is the canonical machine-readable contract. Keep auth
+requirements and route changes there instead of maintaining a second embedded
+YAML copy in this overview.
 
 ---
 
@@ -360,6 +258,8 @@ components:
 - [x] Idempotent upsert behavior implemented across ingest routes.
 - [x] Amplify-hosted feed and post-detail pages deployed.
 - [x] Ingest shared-secret auth enforced on all write routes.
+- [x] Per-client authentication enforced on direct backend read routes.
+- [x] Viewer authentication and X Monitor authorization enforced at the browser BFF.
 
 ---
 

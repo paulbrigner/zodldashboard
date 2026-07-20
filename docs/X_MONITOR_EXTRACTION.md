@@ -9,9 +9,9 @@ Phase 1 is implemented in place. Production ownership and behavior remain in
 
 `packages/x-monitor-core` owns:
 
-- public feed, summary, activity-trend, author-location, and post-detail
+- feed, summary, activity-trend, author-location, and post-detail
   contracts;
-- stable query-string serialization for the public read endpoints;
+- stable query-string serialization for the protected read endpoints;
 - an injected, framework-agnostic HTTP client with `no-store` reads, response
   validation, upstream error handling, and post-detail `404` handling.
 
@@ -65,7 +65,8 @@ for frontend proxy. That proxy must:
 - enforce the protected-content membership capability server-side;
 - allowlist X Monitor read paths and methods;
 - strip inbound identity and proxy-secret headers;
-- inject a Community-specific backend credential;
+- inject a Community-specific `x-xmonitor-client-id` and
+  `x-xmonitor-client-secret` from server-only configuration;
 - return private, no-store responses.
 
 The first Community integration should be read-only. Do not share the current
@@ -79,7 +80,7 @@ Coalition implementation.
 
 ## Next phases
 
-1. Characterize API/direct-database parity and finish public contract coverage.
+1. Characterize API/direct-database parity and finish read contract coverage.
 2. Choose the package's independent versioning and distribution mechanism.
 3. Add the authenticated, read-only Community proxy and consume the package in
    `pgpz-sites/apps/community` behind a disabled-by-default feature flag.

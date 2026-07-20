@@ -17,6 +17,9 @@ set -euo pipefail
 #   DB_SECRET_ID=xmonitor/rds/app
 #   INGEST_API_BASE_URL=https://www.zodldashboard.com/api/v1
 #   INGEST_API_KEY=...                         # fallback from DB secret ingest_shared_secret
+#   READ_API_BASE_URL=https://abc123.execute-api.us-east-1.amazonaws.com/v1  # fallback from DB secret read_api_base_url
+#   READ_CLIENT_ID=collector-priority           # defaults to collector-<COLLECTOR_MODE>
+#   READ_CLIENT_SECRET=...                     # fallback from DB secret read_clients[READ_CLIENT_ID][0]
 #   X_API_BASE_URL=https://api.x.com/2
 #   X_API_CONSUMER_KEY=...
 #   X_API_CONSUMER_SECRET=...
@@ -84,6 +87,9 @@ DB_SECRET_ID="${DB_SECRET_ID:-xmonitor/rds/app}"
 
 INGEST_API_BASE_URL="${INGEST_API_BASE_URL:-https://www.zodldashboard.com/api/v1}"
 INGEST_API_KEY="${INGEST_API_KEY:-}"
+READ_API_BASE_URL="${READ_API_BASE_URL:-}"
+READ_CLIENT_ID="${READ_CLIENT_ID:-}"
+READ_CLIENT_SECRET="${READ_CLIENT_SECRET:-}"
 X_API_BEARER_TOKEN="${X_API_BEARER_TOKEN:-}"
 X_API_BASE_URL="${X_API_BASE_URL:-https://api.x.com/2}"
 X_API_CONSUMER_KEY="${X_API_CONSUMER_KEY:-}"
@@ -171,7 +177,6 @@ if [[ "$COLLECTOR_MODE" != "priority" && "$COLLECTOR_MODE" != "discovery" ]]; th
   echo "error: COLLECTOR_MODE must be one of: priority, discovery" >&2
   exit 1
 fi
-
 aws_cli() {
   AWS_REGION="$AWS_REGION" aws "$@"
 }
@@ -185,24 +190,42 @@ is_truthy() {
   esac
 }
 
+READ_CLIENT_AUTH_REQUIRED="false"
+if [[ "$COLLECTOR_MODE" == "discovery" ]] && is_truthy "$SUMMARY_ENABLED"; then
+  READ_CLIENT_AUTH_REQUIRED="true"
+  READ_CLIENT_ID="${READ_CLIENT_ID:-collector-discovery}"
+fi
+
 echo "==> Resolving AWS account"
 ACCOUNT_ID="$(aws_cli sts get-caller-identity --query 'Account' --output text)"
 
-if [[ -z "$INGEST_API_KEY" || -z "$X_API_BEARER_TOKEN" ]]; then
+if [[ -z "$INGEST_API_KEY" || -z "$X_API_BEARER_TOKEN" || ( "$READ_CLIENT_AUTH_REQUIRED" == "true" && ( -z "$READ_API_BASE_URL" || -z "$READ_CLIENT_SECRET" ) ) ]]; then
   echo "==> Reading fallback values from secret: $DB_SECRET_ID"
   DB_SECRET_JSON="$(aws_cli secretsmanager get-secret-value --secret-id "$DB_SECRET_ID" --query 'SecretString' --output text 2>/dev/null || true)"
   if [[ -n "$DB_SECRET_JSON" && "$DB_SECRET_JSON" != "None" ]]; then
-    FIELDS="$(DB_SECRET_JSON="$DB_SECRET_JSON" python3 - <<'PY'
+    FIELDS="$(DB_SECRET_JSON="$DB_SECRET_JSON" READ_CLIENT_ID="$READ_CLIENT_ID" python3 - <<'PY'
 import json, os
 payload = json.loads(os.environ['DB_SECRET_JSON'])
 print(payload.get('ingest_shared_secret', payload.get('api_key', '')))
 print(payload.get('x_api_bearer_token', payload.get('x_bearer_token', '')))
 print(payload.get('embedding_api_key', payload.get('venice_api_key', '')))
+print(payload.get('read_api_base_url', ''))
+read_clients = payload.get('read_clients', {})
+if isinstance(read_clients, str):
+    try:
+        read_clients = json.loads(read_clients)
+    except json.JSONDecodeError:
+        read_clients = {}
+secrets = read_clients.get(os.environ['READ_CLIENT_ID'], []) if isinstance(read_clients, dict) else []
+first_secret = secrets[0].strip() if secrets and isinstance(secrets[0], str) else ''
+print(first_secret)
 PY
 )"
     SECRET_INGEST_KEY="$(printf '%s\n' "$FIELDS" | sed -n '1p')"
     SECRET_X_BEARER="$(printf '%s\n' "$FIELDS" | sed -n '2p')"
     SECRET_EMBEDDING_KEY="$(printf '%s\n' "$FIELDS" | sed -n '3p')"
+    SECRET_READ_API_BASE_URL="$(printf '%s\n' "$FIELDS" | sed -n '4p')"
+    SECRET_READ_CLIENT_SECRET="$(printf '%s\n' "$FIELDS" | sed -n '5p')"
     if [[ -z "$INGEST_API_KEY" ]]; then
       INGEST_API_KEY="$SECRET_INGEST_KEY"
     fi
@@ -211,6 +234,12 @@ PY
     fi
     if [[ -z "$EMBEDDING_API_KEY" ]]; then
       EMBEDDING_API_KEY="$SECRET_EMBEDDING_KEY"
+    fi
+    if [[ -z "$READ_CLIENT_SECRET" ]]; then
+      READ_CLIENT_SECRET="$SECRET_READ_CLIENT_SECRET"
+    fi
+    if [[ -z "$READ_API_BASE_URL" ]]; then
+      READ_API_BASE_URL="$SECRET_READ_API_BASE_URL"
     fi
   fi
 fi
@@ -255,6 +284,26 @@ fi
 if [[ -z "$X_API_BEARER_TOKEN" ]]; then
   echo "error: X_API_BEARER_TOKEN is required (or set x_api_bearer_token in $DB_SECRET_ID)" >&2
   exit 1
+fi
+if [[ "$READ_CLIENT_AUTH_REQUIRED" == "true" ]]; then
+  if [[ -z "$READ_API_BASE_URL" ]]; then
+    echo "error: READ_API_BASE_URL is required when SUMMARY_ENABLED=true" >&2
+    exit 1
+  fi
+  if [[ -z "$READ_CLIENT_ID" || -z "$READ_CLIENT_SECRET" ]]; then
+    echo "error: READ_CLIENT_ID and READ_CLIENT_SECRET are required when SUMMARY_ENABLED=true (or add read_clients[$READ_CLIENT_ID] to $DB_SECRET_ID)" >&2
+    exit 1
+  fi
+  READ_CLIENT_ID="$READ_CLIENT_ID" READ_CLIENT_SECRET="$READ_CLIENT_SECRET" python3 - <<'PY'
+import os, re
+
+client_id = os.environ['READ_CLIENT_ID']
+client_secret = os.environ['READ_CLIENT_SECRET'].strip()
+if not re.fullmatch(r'[a-z0-9][a-z0-9._-]{0,63}', client_id):
+    raise SystemExit('error: READ_CLIENT_ID has an invalid format')
+if len(client_secret) < 32:
+    raise SystemExit('error: READ_CLIENT_SECRET must contain at least 32 characters')
+PY
 fi
 
 echo "==> Ensuring IAM role: $LAMBDA_ROLE_NAME"
@@ -317,6 +366,9 @@ popd >/dev/null
 ENV_JSON="$(
   INGEST_API_BASE_URL="$INGEST_API_BASE_URL" \
   INGEST_API_KEY="$INGEST_API_KEY" \
+  READ_API_BASE_URL="$READ_API_BASE_URL" \
+  READ_CLIENT_ID="$READ_CLIENT_ID" \
+  READ_CLIENT_SECRET="$READ_CLIENT_SECRET" \
   X_API_BEARER_TOKEN="$X_API_BEARER_TOKEN" \
   X_API_BASE_URL="$X_API_BASE_URL" \
   X_API_MAX_RESULTS_PER_QUERY="$X_API_MAX_RESULTS_PER_QUERY" \
@@ -377,6 +429,9 @@ print(json.dumps({
   "Variables": {
     "XMONITOR_API_BASE_URL": os.environ["INGEST_API_BASE_URL"],
     "XMONITOR_API_KEY": os.environ["INGEST_API_KEY"],
+    "XMONITOR_READ_API_BASE_URL": os.environ["READ_API_BASE_URL"],
+    "XMONITOR_READ_CLIENT_ID": os.environ["READ_CLIENT_ID"],
+    "XMONITOR_READ_CLIENT_SECRET": os.environ["READ_CLIENT_SECRET"],
     "XMON_X_API_BEARER_TOKEN": os.environ["X_API_BEARER_TOKEN"],
     "XMON_X_API_BASE_URL": os.environ["X_API_BASE_URL"],
     "XMON_X_API_MAX_RESULTS_PER_QUERY": os.environ["X_API_MAX_RESULTS_PER_QUERY"],

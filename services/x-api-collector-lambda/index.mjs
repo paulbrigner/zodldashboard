@@ -114,6 +114,8 @@ const DEFAULT_WATCHLIST_TIERS = {
 const DEFAULT_BASE_TERMS = "Zcash OR ZEC OR Zodl";
 const DEFAULT_X_API_BASE_URL = "https://api.x.com/2";
 const DEFAULT_INGEST_API_BASE_URL = "https://www.zodldashboard.com/api/v1";
+const READ_CLIENT_ID_HEADER = "x-xmonitor-client-id";
+const READ_CLIENT_SECRET_HEADER = "x-xmonitor-client-secret";
 const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
@@ -456,6 +458,7 @@ function getConfig() {
   const normalizedReplyMode = QUERY_REPLY_MODES.has(replyMode) ? replyMode : "term_constrained";
   const collectorMode = normalizeCollectorMode(process.env.XMON_COLLECTOR_MODE, "priority");
   const baseTerms = asString(process.env.XMON_X_API_BASE_TERMS) || DEFAULT_BASE_TERMS;
+  const ingestApiBaseUrl = (asString(process.env.XMONITOR_API_BASE_URL) || DEFAULT_INGEST_API_BASE_URL).replace(/\/+$/, "");
 
   return {
     collectorEnabled: asBool(process.env.XMON_COLLECTOR_ENABLED, true),
@@ -464,8 +467,11 @@ function getConfig() {
     collectorMode,
     xApiBearerToken: asString(process.env.XMON_X_API_BEARER_TOKEN),
     xApiBaseUrl: (asString(process.env.XMON_X_API_BASE_URL) || DEFAULT_X_API_BASE_URL).replace(/\/+$/, ""),
-    ingestApiBaseUrl: (asString(process.env.XMONITOR_API_BASE_URL) || DEFAULT_INGEST_API_BASE_URL).replace(/\/+$/, ""),
+    ingestApiBaseUrl,
     ingestApiKey: asString(process.env.XMONITOR_API_KEY),
+    readApiBaseUrl: (asString(process.env.XMONITOR_READ_API_BASE_URL) || ingestApiBaseUrl).replace(/\/+$/, ""),
+    readClientId: asString(process.env.XMONITOR_READ_CLIENT_ID),
+    readClientSecret: asString(process.env.XMONITOR_READ_CLIENT_SECRET),
     keywordOmitHandles: new Set(parseHandleList(process.env.XMONITOR_INGEST_OMIT_HANDLES || "")),
     baseTerms,
     baseTermRegex: compileBaseTermRegex(baseTerms),
@@ -518,10 +524,16 @@ function getConfig() {
 
 function requireConfig(config, options = {}) {
   const summaryOnly = Boolean(options.summaryOnly);
+  const collectorMode = normalizeCollectorMode(options.collectorMode, config.collectorMode);
   const missing = [];
   if (!config.ingestApiKey && config.writeEnabled) missing.push("XMONITOR_API_KEY");
   if (!config.ingestApiBaseUrl && config.writeEnabled) missing.push("XMONITOR_API_BASE_URL");
   if (!summaryOnly && !config.xApiBearerToken) missing.push("XMON_X_API_BEARER_TOKEN");
+  if (config.summaryEnabled && collectorMode === "discovery") {
+    if (!config.readApiBaseUrl) missing.push("XMONITOR_READ_API_BASE_URL");
+    if (!config.readClientId) missing.push("XMONITOR_READ_CLIENT_ID");
+    if (!config.readClientSecret) missing.push("XMONITOR_READ_CLIENT_SECRET");
+  }
   if (!summaryOnly && config.embeddingEnabled && config.writeEnabled) {
     if (!config.embeddingApiKey) missing.push("XMONITOR_EMBEDDING_API_KEY");
     if (!config.embeddingModel) missing.push("XMONITOR_EMBEDDING_MODEL");
@@ -793,7 +805,7 @@ async function fetchWindowFeedPosts(config, windowStartIso, windowEndIso) {
   let truncated = false;
 
   while (pageCount < config.summaryFeedPageLimit) {
-    const url = new URL(`${config.ingestApiBaseUrl}/feed`);
+    const url = new URL(`${config.readApiBaseUrl}/feed`);
     url.searchParams.set("since", windowStartIso);
     url.searchParams.set("until", windowEndIso);
     url.searchParams.set("limit", "200");
@@ -805,9 +817,12 @@ async function fetchWindowFeedPosts(config, windowStartIso, windowEndIso) {
       url.toString(),
       {
         method: "GET",
+        redirect: "manual",
         headers: {
           accept: "application/json",
           "user-agent": "xmonitor-xapi-collector/1.0",
+          [READ_CLIENT_ID_HEADER]: config.readClientId,
+          [READ_CLIENT_SECRET_HEADER]: config.readClientSecret,
         },
       },
       config.ingestTimeoutMs
@@ -2175,7 +2190,7 @@ export async function handler(event = {}) {
     return skipped;
   }
 
-  requireConfig(config, { summaryOnly });
+  requireConfig(config, { summaryOnly, collectorMode });
 
   if (summaryOnly) {
     let summaryResult = { skipped: true, reason: "not_attempted", windows: [] };
@@ -2472,9 +2487,11 @@ export {
   buildSearchUrl,
   buildWindowSummaryPrompt,
   buildWatchlistTierMap,
+  fetchWindowFeedPosts,
   getArticleTitle,
   getArticleUrl,
   getConfig,
   isArticleTweet,
+  requireConfig,
   shouldKeepTweet,
 };

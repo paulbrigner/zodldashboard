@@ -1,6 +1,6 @@
 # XMonitor AWS Operations Runbook
 
-_Last updated: 2026-03-14 (ET)_
+_Last updated: 2026-07-20 (ET)_
 
 This runbook describes the active production architecture and operational controls.
 
@@ -19,9 +19,10 @@ Primary write path (AWS-only):
 8. Email scheduler Lambda dispatches due scheduled-email jobs to SQS; compose worker executes runs and sends via SES.
 
 Read path:
-1. Browser requests Amplify-hosted Next.js app.
-2. App reads via `/api/v1/*` (or direct backend base URL when configured).
-3. Backend API reads RDS and returns feed/detail/summary/query responses.
+1. An authenticated viewer requests the Amplify-hosted Next.js app.
+2. Browser reads use the same-origin `/api/v1/*` BFF, which verifies the viewer session and X Monitor permission.
+3. The BFF and server-rendered pages call the direct backend with a server-only read-client ID and secret.
+4. The backend validates the client credential, reads RDS, and returns feed/detail/summary responses. Direct database mode remains a local-development fallback.
 
 ## 2) Canonical AWS resources
 
@@ -47,6 +48,7 @@ Region: `us-east-1`
 
 Backend/API:
 - `XMONITOR_INGEST_SHARED_SECRET`
+- `XMONITOR_READ_CLIENTS_SECRET_ID` (backend-only Secrets Manager source whose `read_clients` map holds one or more active secrets per client ID)
 - `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE=require`
 - Compose env (`XMONITOR_COMPOSE_*`) and embedding env (`XMONITOR_EMBEDDING_*`) as needed
 - Email env when enabled:
@@ -63,11 +65,18 @@ Backend/API:
 Collectors:
 - `XMON_X_API_BEARER_TOKEN`
 - `XMONITOR_API_KEY` (collector -> ingest auth)
-- `XMONITOR_API_BASE_URL` (default `https://www.zodldashboard.com/api/v1`)
+- `XMONITOR_API_BASE_URL` (collector ingest base; normally the dashboard app's `/api/v1` path)
 - `XMON_COLLECTOR_MODE` (`priority` or `discovery`)
 - `XMONITOR_INGEST_OMIT_HANDLES`
 
-## 4) Ingest auth contract
+Amplify-hosted app:
+- `XMONITOR_READ_API_BASE_URL` and `XMONITOR_BACKEND_API_BASE_URL` (direct backend base URL)
+- `XMONITOR_READ_CLIENT_ID`
+- `XMONITOR_READ_CLIENT_SECRET` (server-only; never expose it through a `NEXT_PUBLIC_*` variable)
+
+## 4) API auth contracts
+
+### 4.1 Ingest and operations
 
 Protected routes accept one of:
 - `x-api-key: <shared-secret>`
@@ -76,6 +85,24 @@ Protected routes accept one of:
 Protected route groups:
 - `/v1/ingest/*`
 - `/v1/ops/*`
+
+### 4.2 X Monitor reads
+
+Direct backend reads require both:
+
+- `x-xmonitor-client-id: <client-id>`
+- `x-xmonitor-client-secret: <client-secret>`
+
+The backend validates them against the `read_clients` map in the secret selected by `XMONITOR_READ_CLIENTS_SECRET_ID`. Use a distinct
+client ID and secret per server-side consumer so one host can be rotated or
+revoked independently. The protected set is `/v1/feed`,
+`/v1/author-locations`, `/v1/engagement`, `/v1/trends`,
+`/v1/window-summaries/latest`, and `/v1/posts/{statusId}`. `/v1/health` remains
+unsigned.
+
+Browser clients do not receive this credential. They use the dashboard
+`/api/v1` BFF, which requires an authenticated viewer session before injecting
+the server-side credential.
 
 ## 5) Standard deployment workflow
 
@@ -160,19 +187,35 @@ aws --profile zodldashboard --region us-east-1 lambda invoke \
 ## 7) Post-deploy verification
 
 ```bash
-curl -sS 'https://www.zodldashboard.com/api/v1/health'
-curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=3'
-curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
+read_api_base="${XMONITOR_BACKEND_API_BASE_URL:?set the direct backend base URL}"
+app_base="${XMONITOR_APP_BASE_URL:?set the dashboard app base URL}"
+
+# Health is intentionally unsigned.
+curl -sS "$read_api_base/health"
+
+# Direct reads fail without client authentication, then succeed with it.
+curl -i "$read_api_base/feed?limit=1"
+curl -sS \
+  -H "x-xmonitor-client-id: ${XMONITOR_READ_CLIENT_ID:?set the read client ID}" \
+  -H "x-xmonitor-client-secret: ${XMONITOR_READ_CLIENT_SECRET:?set the read client secret}" \
+  "$read_api_base/feed?limit=3"
+curl -sS \
+  -H "x-xmonitor-client-id: $XMONITOR_READ_CLIENT_ID" \
+  -H "x-xmonitor-client-secret: $XMONITOR_READ_CLIENT_SECRET" \
+  "$read_api_base/window-summaries/latest"
+
+# The browser BFF also rejects a request with no viewer session.
+curl -i "$app_base/api/v1/feed?limit=1"
 ```
 
 Ingest auth negative/positive check:
 
 ```bash
-curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+curl -i -X POST "$app_base/api/v1/ingest/runs" \
   -H 'content-type: application/json' \
   --data '{"run_at":"2026-03-02T00:00:00Z","mode":"manual"}'
 
-curl -i -X POST 'https://www.zodldashboard.com/api/v1/ingest/runs' \
+curl -i -X POST "$app_base/api/v1/ingest/runs" \
   -H 'content-type: application/json' \
   -H "x-api-key: $XMONITOR_API_KEY" \
   --data '{"run_at":"2026-03-02T00:00:00Z","mode":"manual"}'
@@ -245,6 +288,12 @@ openssl rand -hex 32
 3. Reprovision backend and collectors so env is refreshed.
 4. Update any operational shell/env values that send ingest writes (`XMONITOR_API_KEY`).
 5. Trigger Amplify release if web runtime env changed.
+
+For a read-client rotation, add the new value beside the old one in that
+client's `read_clients` array. Wait at least five minutes for backend caches,
+switch and redeploy only that caller, wait another five minutes, then remove
+the old value. Do not reuse or rotate the viewer-proxy or ingest secret as part
+of a read-client change.
 
 ## 11) System status
 

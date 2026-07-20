@@ -177,9 +177,19 @@ aws --profile zodldashboard --region us-east-1 lambda invoke \
   /tmp/xmon-priority.json && cat /tmp/xmon-priority.json
 ```
 
-Check latest run records via API:
+Check latest records through the direct backend. These read routes require the
+server-only client credential; `/health` remains unsigned. The dashboard
+`/api/v1` BFF is for browsers with an authenticated viewer session.
 
 ```bash
-curl -sS 'https://www.zodldashboard.com/api/v1/feed?limit=5'
-curl -sS 'https://www.zodldashboard.com/api/v1/window-summaries/latest'
+read_api_base="${XMONITOR_BACKEND_API_BASE_URL:?set the direct backend base URL}"
+curl -sS "$read_api_base/health"
+curl -sS \
+  -H "x-xmonitor-client-id: ${XMONITOR_READ_CLIENT_ID:?set the read client ID}" \
+  -H "x-xmonitor-client-secret: ${XMONITOR_READ_CLIENT_SECRET:?set the read client secret}" \
+  "$read_api_base/feed?limit=5"
+curl -sS \
+  -H "x-xmonitor-client-id: $XMONITOR_READ_CLIENT_ID" \
+  -H "x-xmonitor-client-secret: $XMONITOR_READ_CLIENT_SECRET" \
+  "$read_api_base/window-summaries/latest"
 ```

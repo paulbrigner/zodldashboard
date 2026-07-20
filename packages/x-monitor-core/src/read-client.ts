@@ -140,6 +140,7 @@ export function createXMonitorReadClient(options: XMonitorReadClientOptions): XM
     return fetchImpl(url, {
       cache: "no-store",
       headers: mergeHeaders(options.headers),
+      redirect: "manual",
     });
   }
 

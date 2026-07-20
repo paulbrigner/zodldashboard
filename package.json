@@ -18,7 +18,8 @@
     "migrate:import": "python3 scripts/migrate/import_sqlite_jsonl_to_postgres.py",
     "migrate:validate": "python3 scripts/migrate/validate_counts.py",
     "eval:compose": "node scripts/eval/run_compose_eval.mjs",
-    "test:xmonitor-core": "node --test tests/xmonitor-read-client.test.mjs"
+    "test:xmonitor-core": "node --test tests/xmonitor-read-client.test.mjs",
+    "test:xmonitor-read-auth": "node --test tests/xmonitor-read-auth.test.mjs"
   },
   "dependencies": {
     "better-auth": "^1.6.22",

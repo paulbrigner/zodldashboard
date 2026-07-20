@@ -11,6 +11,7 @@ set -euo pipefail
 #   RDS_SG_ID=sg-...
 #   DB_SECRET_ID=xmonitor/rds/app
 #   INGEST_SHARED_SECRET=...
+#   READ_CLIENTS_SECRET_ID=xmonitor/rds/app       # secret JSON contains read_clients map
 #   LAMBDA_FUNCTION_NAME=xmonitor-vpc-api
 #   LAMBDA_ROLE_NAME=xmonitor-vpc-api-lambda-role
 #   LAMBDA_SG_NAME=xmonitor-api-lambda-sg
@@ -188,6 +189,7 @@ EMAIL_SCHEMA_BOOTSTRAP="${EMAIL_SCHEMA_BOOTSTRAP:-false}"
 DB_MIGRATIONS_BOOTSTRAP="${DB_MIGRATIONS_BOOTSTRAP:-false}"
 DB_MIGRATIONS_FROM_FILE="${DB_MIGRATIONS_FROM_FILE:-}"
 USER_PROXY_SECRET="${USER_PROXY_SECRET:-}"
+READ_CLIENTS_SECRET_ID="${READ_CLIENTS_SECRET_ID:-$DB_SECRET_ID}"
 SUMMARY_SCHEMA_BOOTSTRAP="${SUMMARY_SCHEMA_BOOTSTRAP:-}"
 SUMMARY_SCHEMA_GRANT_ROLE="${SUMMARY_SCHEMA_GRANT_ROLE:-xmonitor_app}"
 QUERY_STATE_SCHEMA_BOOTSTRAP="${QUERY_STATE_SCHEMA_BOOTSTRAP:-false}"
@@ -397,6 +399,12 @@ aws_cli sqs set-queue-attributes \
   --attributes "VisibilityTimeout=$VISIBILITY_TIMEOUT" >/dev/null
 
 echo "==> Ensuring IAM SQS permissions on role: $LAMBDA_ROLE_NAME"
+READ_CLIENTS_SECRET_ARN="$(
+  aws_cli secretsmanager describe-secret \
+    --secret-id "$READ_CLIENTS_SECRET_ID" \
+    --query 'ARN' \
+    --output text
+)"
 SQS_POLICY_FILE="$(mktemp)"
 cat >"$SQS_POLICY_FILE" <<JSON
 {
@@ -424,6 +432,11 @@ cat >"$SQS_POLICY_FILE" <<JSON
         "ses:SendRawEmail"
       ],
       "Resource": "*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "secretsmanager:GetSecretValue",
+      "Resource": "$READ_CLIENTS_SECRET_ARN"
     }
   ]
 }
@@ -549,6 +562,41 @@ if [[ -z "$INGEST_SHARED_SECRET" ]]; then
   echo "error: ingest shared secret is required (set INGEST_SHARED_SECRET or include ingest_shared_secret in $DB_SECRET_ID)" >&2
   exit 1
 fi
+
+if [[ -z "$READ_CLIENTS_SECRET_ID" ]]; then
+  echo "error: READ_CLIENTS_SECRET_ID is required" >&2
+  exit 1
+fi
+
+if [[ "$READ_CLIENTS_SECRET_ID" == "$DB_SECRET_ID" ]]; then
+  READ_CLIENTS_SECRET_JSON="$DB_SECRET_JSON"
+else
+  READ_CLIENTS_SECRET_JSON="$(
+    aws_cli secretsmanager get-secret-value \
+      --secret-id "$READ_CLIENTS_SECRET_ID" \
+      --query 'SecretString' \
+      --output text
+  )"
+fi
+
+READ_CLIENTS_SECRET_JSON="$READ_CLIENTS_SECRET_JSON" python3 - <<'PY'
+import json, os, re
+
+payload = json.loads(os.environ["READ_CLIENTS_SECRET_JSON"])
+if isinstance(payload, dict) and "read_clients" in payload:
+    payload = payload["read_clients"]
+if isinstance(payload, str):
+    payload = json.loads(payload)
+if not isinstance(payload, dict) or not payload:
+    raise SystemExit("error: read client configuration must be a non-empty object")
+for client_id, secrets in payload.items():
+    if not isinstance(client_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", client_id):
+        raise SystemExit("error: read client configuration contains an invalid client id")
+    if not isinstance(secrets, list):
+        raise SystemExit("error: each read client must map to a secrets array")
+    if not 1 <= len(secrets) <= 3 or any(not isinstance(secret, str) or len(secret.strip()) < 32 for secret in secrets):
+        raise SystemExit("error: each read client must define one to three secrets of at least 32 characters")
+PY
 
 echo "==> Packaging Lambda code"
 BUILD_DIR="$(mktemp -d)"
@@ -714,6 +762,18 @@ print(json.dumps({
 PY
 )"
 
+API_ENV_JSON="$(
+  BASE_ENV_JSON="$ENV_JSON" \
+  READ_CLIENTS_SECRET_ID="$READ_CLIENTS_SECRET_ID" \
+  python3 - <<'PY'
+import json, os
+
+payload = json.loads(os.environ["BASE_ENV_JSON"])
+payload["Variables"]["XMONITOR_READ_CLIENTS_SECRET_ID"] = os.environ["READ_CLIENTS_SECRET_ID"]
+print(json.dumps(payload))
+PY
+)"
+
 echo "==> Creating/updating Lambda function: $LAMBDA_FUNCTION_NAME"
 LAMBDA_ARN="$(aws_cli lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" --query 'Configuration.FunctionArn' --output text 2>/dev/null || true)"
 if [[ -z "$LAMBDA_ARN" || "$LAMBDA_ARN" == "None" ]]; then
@@ -726,15 +786,9 @@ if [[ -z "$LAMBDA_ARN" || "$LAMBDA_ARN" == "None" ]]; then
     --timeout 30 \
     --memory-size 512 \
     --vpc-config "SubnetIds=$SUBNET_CSV,SecurityGroupIds=$LAMBDA_SG_ID" \
-    --environment "$ENV_JSON" \
+    --environment "$API_ENV_JSON" \
     --query 'FunctionArn' --output text)"
 else
-  aws_cli lambda update-function-code \
-    --function-name "$LAMBDA_FUNCTION_NAME" \
-    --zip-file "fileb://$LAMBDA_DIR/function.zip" >/dev/null
-
-  aws_cli lambda wait function-updated --function-name "$LAMBDA_FUNCTION_NAME"
-
   aws_cli lambda update-function-configuration \
     --function-name "$LAMBDA_FUNCTION_NAME" \
     --runtime nodejs22.x \
@@ -743,7 +797,15 @@ else
     --timeout 30 \
     --memory-size 512 \
     --vpc-config "SubnetIds=$SUBNET_CSV,SecurityGroupIds=$LAMBDA_SG_ID" \
-    --environment "$ENV_JSON" >/dev/null
+    --environment "$API_ENV_JSON" >/dev/null
+
+  aws_cli lambda wait function-updated --function-name "$LAMBDA_FUNCTION_NAME"
+
+  aws_cli lambda update-function-code \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --zip-file "fileb://$LAMBDA_DIR/function.zip" >/dev/null
+
+  aws_cli lambda wait function-updated --function-name "$LAMBDA_FUNCTION_NAME"
 fi
 
 aws_cli lambda wait function-active-v2 --function-name "$LAMBDA_FUNCTION_NAME"

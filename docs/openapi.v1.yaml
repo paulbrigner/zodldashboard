@@ -8,6 +8,8 @@ paths:
   /health:
     get:
       summary: Health check
+      description: Unsigned liveness endpoint. No read-client credential is required.
+      security: []
       responses:
         '200':
           description: OK
@@ -148,6 +150,9 @@ paths:
     get:
       summary: Query timeline feed
       operationId: getFeed
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
       parameters:
         - in: query
           name: since
@@ -180,6 +185,119 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/FeedResponse'
+        '401':
+          description: Read-client credentials are missing or invalid
+        '503':
+          description: Backend read-client authentication is not configured
+
+  /author-locations:
+    get:
+      summary: List author-location suggestions
+      operationId: getAuthorLocations
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 50, default: 8 }
+      responses:
+        '200':
+          description: Location suggestions
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { type: string }
+        '401':
+          description: Read-client credentials are missing or invalid
+        '503':
+          description: Backend read-client authentication is not configured
+
+  /engagement:
+    get:
+      summary: Query engagement metrics
+      operationId: getEngagement
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: query
+          name: engagement_range
+          schema: { type: string, enum: [24h, 7d, 30d, 90d], default: 7d }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Engagement totals, buckets, tier and handle breakdowns, and top posts
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401':
+          description: Read-client credentials are missing or invalid
+        '503':
+          description: Backend read-client authentication is not configured
+
+  /trends:
+    get:
+      summary: Query X Monitor activity trends
+      operationId: getTrends
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: query
+          name: trend_range
+          schema: { type: string, enum: [24h, 7d, 30d, 90d], default: 7d }
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+        - in: query
+          name: until
+          schema: { type: string, format: date-time }
+      responses:
+        '200':
+          description: Activity trend scope, totals, buckets, and summary trends
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '401':
+          description: Read-client credentials are missing or invalid
+        '503':
+          description: Backend read-client authentication is not configured
+
+  /window-summaries/latest:
+    get:
+      summary: Get the latest rolling window summaries
+      operationId: getLatestWindowSummaries
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      responses:
+        '200':
+          description: Latest summaries
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/WindowSummary'
+        '401':
+          description: Read-client credentials are missing or invalid
+        '503':
+          description: Backend read-client authentication is not configured
 
   /query/semantic:
     post:
@@ -411,6 +529,9 @@ paths:
     get:
       summary: Get post detail
       operationId: getPost
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
       parameters:
         - in: path
           name: statusId
@@ -425,6 +546,10 @@ paths:
                 $ref: '#/components/schemas/PostDetail'
         '404':
           description: Not found
+        '401':
+          description: Read-client credentials are missing or invalid
+        '503':
+          description: Backend read-client authentication is not configured
 
 components:
   securitySchemes:
@@ -436,6 +561,16 @@ components:
       type: apiKey
       in: header
       name: x-xmonitor-viewer-secret
+    XMonitorReadClientId:
+      type: apiKey
+      in: header
+      name: x-xmonitor-client-id
+      description: Server-side caller ID. Must be supplied together with XMonitorReadClientSecret.
+    XMonitorReadClientSecret:
+      type: apiKey
+      in: header
+      name: x-xmonitor-client-secret
+      description: Server-side caller secret. Must be supplied together with XMonitorReadClientId.
   schemas:
     BatchUpsertResult:
       type: object
@@ -530,6 +665,19 @@ components:
           items: { type: number }
         created_at: { type: string, format: date-time, nullable: true }
         updated_at: { type: string, format: date-time, nullable: true }
+
+    WindowSummary:
+      type: object
+      required: [summary_key, window_type, window_start, window_end, generated_at, post_count, significant_count, summary_text]
+      properties:
+        summary_key: { type: string }
+        window_type: { type: string }
+        window_start: { type: string, format: date-time }
+        window_end: { type: string, format: date-time }
+        generated_at: { type: string, format: date-time }
+        post_count: { type: integer }
+        significant_count: { type: integer }
+        summary_text: { type: string }
 
     NarrativeShiftUpsert:
       type: object
