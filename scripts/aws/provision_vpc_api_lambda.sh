@@ -26,6 +26,9 @@ set -euo pipefail
 #   SEMANTIC_MAX_LIMIT=100
 #   SEMANTIC_MIN_SCORE=0
 #   SEMANTIC_RETRIEVAL_FACTOR=4
+#   SEMANTIC_CLIENT_QUERY_ENABLED=true
+#   SEMANTIC_CLIENT_BURST_LIMIT=120
+#   SEMANTIC_CLIENT_DAILY_LIMIT=1000
 #   EMBEDDING_BASE_URL=https://api.venice.ai/api/v1
 #   EMBEDDING_MODEL=text-embedding-bge-m3
 #   EMBEDDING_DIMS=1024
@@ -147,6 +150,12 @@ SEMANTIC_DEFAULT_LIMIT="${SEMANTIC_DEFAULT_LIMIT:-25}"
 SEMANTIC_MAX_LIMIT="${SEMANTIC_MAX_LIMIT:-100}"
 SEMANTIC_MIN_SCORE="${SEMANTIC_MIN_SCORE:-0}"
 SEMANTIC_RETRIEVAL_FACTOR="${SEMANTIC_RETRIEVAL_FACTOR:-4}"
+SEMANTIC_CLIENT_QUERY_ENABLED_EXPLICIT="${SEMANTIC_CLIENT_QUERY_ENABLED+x}"
+SEMANTIC_CLIENT_BURST_LIMIT_EXPLICIT="${SEMANTIC_CLIENT_BURST_LIMIT+x}"
+SEMANTIC_CLIENT_DAILY_LIMIT_EXPLICIT="${SEMANTIC_CLIENT_DAILY_LIMIT+x}"
+SEMANTIC_CLIENT_QUERY_ENABLED="${SEMANTIC_CLIENT_QUERY_ENABLED:-true}"
+SEMANTIC_CLIENT_BURST_LIMIT="${SEMANTIC_CLIENT_BURST_LIMIT:-120}"
+SEMANTIC_CLIENT_DAILY_LIMIT="${SEMANTIC_CLIENT_DAILY_LIMIT:-1000}"
 EMBEDDING_BASE_URL="${EMBEDDING_BASE_URL:-https://api.venice.ai/api/v1}"
 EMBEDDING_MODEL="${EMBEDDING_MODEL:-text-embedding-bge-m3}"
 EMBEDDING_DIMS="${EMBEDDING_DIMS:-1024}"
@@ -198,6 +207,14 @@ aws_cli() {
   AWS_REGION="$AWS_REGION" aws "$@"
 }
 
+existing_lambda_env_value() {
+  local variable_name="$1"
+  aws_cli lambda get-function-configuration \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --query "Environment.Variables.${variable_name}" \
+    --output text 2>/dev/null || true
+}
+
 is_truthy() {
   local normalized
   normalized="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"
@@ -222,6 +239,25 @@ first_matching_subnet() {
 
 echo "==> Resolving account and network context"
 ACCOUNT_ID="$(aws_cli sts get-caller-identity --query 'Account' --output text)"
+
+if [[ -z "$SEMANTIC_CLIENT_QUERY_ENABLED_EXPLICIT" ]]; then
+  EXISTING_VALUE="$(existing_lambda_env_value XMONITOR_SEMANTIC_CLIENT_QUERY_ENABLED)"
+  if [[ -n "$EXISTING_VALUE" && "$EXISTING_VALUE" != "None" ]]; then
+    SEMANTIC_CLIENT_QUERY_ENABLED="$EXISTING_VALUE"
+  fi
+fi
+if [[ -z "$SEMANTIC_CLIENT_BURST_LIMIT_EXPLICIT" ]]; then
+  EXISTING_VALUE="$(existing_lambda_env_value XMONITOR_SEMANTIC_CLIENT_BURST_LIMIT)"
+  if [[ -n "$EXISTING_VALUE" && "$EXISTING_VALUE" != "None" ]]; then
+    SEMANTIC_CLIENT_BURST_LIMIT="$EXISTING_VALUE"
+  fi
+fi
+if [[ -z "$SEMANTIC_CLIENT_DAILY_LIMIT_EXPLICIT" ]]; then
+  EXISTING_VALUE="$(existing_lambda_env_value XMONITOR_SEMANTIC_CLIENT_DAILY_LIMIT)"
+  if [[ -n "$EXISTING_VALUE" && "$EXISTING_VALUE" != "None" ]]; then
+    SEMANTIC_CLIENT_DAILY_LIMIT="$EXISTING_VALUE"
+  fi
+fi
 SUBNETS_TEXT="$(
   aws_cli ec2 describe-subnets \
     --filters "Name=vpc-id,Values=$VPC_ID" "Name=state,Values=available" \
@@ -589,13 +625,26 @@ if isinstance(payload, str):
     payload = json.loads(payload)
 if not isinstance(payload, dict) or not payload:
     raise SystemExit("error: read client configuration must be a non-empty object")
-for client_id, secrets in payload.items():
+allowed_capabilities = {"read", "semantic:query"}
+for client_id, configured_client in payload.items():
     if not isinstance(client_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", client_id):
         raise SystemExit("error: read client configuration contains an invalid client id")
+    if isinstance(configured_client, list):
+        secrets = configured_client
+        capabilities = ["read"]
+    elif isinstance(configured_client, dict):
+        secrets = configured_client.get("secrets")
+        capabilities = configured_client.get("capabilities")
+    else:
+        raise SystemExit("error: each read client must map to a secrets array or capability object")
     if not isinstance(secrets, list):
-        raise SystemExit("error: each read client must map to a secrets array")
+        raise SystemExit("error: each read client must define a secrets array")
     if not 1 <= len(secrets) <= 3 or any(not isinstance(secret, str) or len(secret.strip()) < 32 for secret in secrets):
         raise SystemExit("error: each read client must define one to three secrets of at least 32 characters")
+    if not isinstance(capabilities, list) or not capabilities or any(capability not in allowed_capabilities for capability in capabilities):
+        raise SystemExit("error: each read client must define supported capabilities")
+    if "semantic:query" in capabilities and "read" not in capabilities:
+        raise SystemExit("error: semantic:query clients must also define read")
 PY
 
 echo "==> Packaging Lambda code"
@@ -642,6 +691,9 @@ ENV_JSON="$(
   SEMANTIC_MAX_LIMIT="$SEMANTIC_MAX_LIMIT" \
   SEMANTIC_MIN_SCORE="$SEMANTIC_MIN_SCORE" \
   SEMANTIC_RETRIEVAL_FACTOR="$SEMANTIC_RETRIEVAL_FACTOR" \
+  SEMANTIC_CLIENT_QUERY_ENABLED="$SEMANTIC_CLIENT_QUERY_ENABLED" \
+  SEMANTIC_CLIENT_BURST_LIMIT="$SEMANTIC_CLIENT_BURST_LIMIT" \
+  SEMANTIC_CLIENT_DAILY_LIMIT="$SEMANTIC_CLIENT_DAILY_LIMIT" \
   EMBEDDING_BASE_URL="$EMBEDDING_BASE_URL" \
   EMBEDDING_MODEL="$EMBEDDING_MODEL" \
   EMBEDDING_DIMS="$EMBEDDING_DIMS" \
@@ -710,6 +762,9 @@ print(json.dumps({
     "XMONITOR_SEMANTIC_MAX_LIMIT": os.environ.get("SEMANTIC_MAX_LIMIT", ""),
     "XMONITOR_SEMANTIC_MIN_SCORE": os.environ.get("SEMANTIC_MIN_SCORE", ""),
     "XMONITOR_SEMANTIC_RETRIEVAL_FACTOR": os.environ.get("SEMANTIC_RETRIEVAL_FACTOR", ""),
+    "XMONITOR_SEMANTIC_CLIENT_QUERY_ENABLED": os.environ.get("SEMANTIC_CLIENT_QUERY_ENABLED", ""),
+    "XMONITOR_SEMANTIC_CLIENT_BURST_LIMIT": os.environ.get("SEMANTIC_CLIENT_BURST_LIMIT", ""),
+    "XMONITOR_SEMANTIC_CLIENT_DAILY_LIMIT": os.environ.get("SEMANTIC_CLIENT_DAILY_LIMIT", ""),
     "XMONITOR_EMBEDDING_BASE_URL": os.environ.get("EMBEDDING_BASE_URL", ""),
     "XMONITOR_EMBEDDING_MODEL": os.environ.get("EMBEDDING_MODEL", ""),
     "XMONITOR_EMBEDDING_DIMS": os.environ.get("EMBEDDING_DIMS", ""),

@@ -79,6 +79,10 @@ const DEFAULT_SEMANTIC_DEFAULT_LIMIT = 25;
 const DEFAULT_SEMANTIC_MAX_LIMIT = 100;
 const DEFAULT_SEMANTIC_MIN_SCORE = 0;
 const DEFAULT_SEMANTIC_RETRIEVAL_FACTOR = 4;
+const DEFAULT_SEMANTIC_CLIENT_BURST_LIMIT = 120;
+const DEFAULT_SEMANTIC_CLIENT_DAILY_LIMIT = 1000;
+const SEMANTIC_CLIENT_BURST_WINDOW_MS = 5 * 60 * 1000;
+const SEMANTIC_CLIENT_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_EMBEDDING_BASE_URL = "https://api.venice.ai/api/v1";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
@@ -121,6 +125,7 @@ const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const READ_CLIENT_ID_HEADER = "x-xmonitor-client-id";
 const READ_CLIENT_SECRET_HEADER = "x-xmonitor-client-secret";
 const READ_CLIENT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const READ_CLIENT_CAPABILITIES = new Set(["read", "semantic:query"]);
 const MIN_READ_CLIENT_SECRET_LENGTH = 32;
 const READ_CLIENT_CONFIGURATION_CACHE_MS = 5 * 60 * 1000;
 const READ_CLIENT_CONFIGURATION_FAILURE_CACHE_MS = 15 * 1000;
@@ -289,6 +294,22 @@ function semanticMinScore() {
 
 function semanticRetrievalFactor() {
   return parsePositiveInt(process.env.XMONITOR_SEMANTIC_RETRIEVAL_FACTOR, DEFAULT_SEMANTIC_RETRIEVAL_FACTOR);
+}
+
+export function semanticClientBudgetSettings(environment = process.env) {
+  const enabledValue = asString(environment.XMONITOR_SEMANTIC_CLIENT_QUERY_ENABLED);
+  const normalized = enabledValue?.toLowerCase();
+  return {
+    enabled: normalized === undefined || ["1", "true", "yes"].includes(normalized),
+    burstLimit: parsePositiveInt(
+      environment.XMONITOR_SEMANTIC_CLIENT_BURST_LIMIT,
+      DEFAULT_SEMANTIC_CLIENT_BURST_LIMIT
+    ),
+    dailyLimit: parsePositiveInt(
+      environment.XMONITOR_SEMANTIC_CLIENT_DAILY_LIMIT,
+      DEFAULT_SEMANTIC_CLIENT_DAILY_LIMIT
+    ),
+  };
 }
 
 function composeEnabled() {
@@ -719,19 +740,35 @@ function parseReadClientMap(payload) {
   }
 
   const clients = new Map();
-  for (const [clientId, configuredSecrets] of Object.entries(payload)) {
-    if (!READ_CLIENT_ID_PATTERN.test(clientId) || !Array.isArray(configuredSecrets)) {
+  for (const [clientId, configuredClient] of Object.entries(payload)) {
+    if (!READ_CLIENT_ID_PATTERN.test(clientId)) {
+      return { ok: false, reason: "read client configuration has an invalid entry" };
+    }
+    const configuredSecrets = Array.isArray(configuredClient)
+      ? configuredClient
+      : configuredClient?.secrets;
+    const configuredCapabilities = Array.isArray(configuredClient)
+      ? ["read"]
+      : configuredClient?.capabilities;
+    if (!Array.isArray(configuredSecrets) || !Array.isArray(configuredCapabilities)) {
       return { ok: false, reason: "read client configuration has an invalid entry" };
     }
     const secrets = configuredSecrets.map(asString);
+    const capabilities = configuredCapabilities.map(asString);
     if (
       secrets.length < 1 ||
       secrets.length > 3 ||
-      secrets.some((secret) => !secret || secret.length < MIN_READ_CLIENT_SECRET_LENGTH)
+      secrets.some((secret) => !secret || secret.length < MIN_READ_CLIENT_SECRET_LENGTH) ||
+      capabilities.length < 1 ||
+      capabilities.some((capability) => !capability || !READ_CLIENT_CAPABILITIES.has(capability)) ||
+      (capabilities.includes("semantic:query") && !capabilities.includes("read"))
     ) {
-      return { ok: false, reason: "read client configuration has invalid secrets" };
+      return { ok: false, reason: "read client configuration has invalid secrets or capabilities" };
     }
-    clients.set(clientId, secrets);
+    clients.set(clientId, {
+      secrets,
+      capabilities: new Set(capabilities),
+    });
   }
 
   if (clients.size === 0) {
@@ -809,7 +846,10 @@ async function loadReadClientConfiguration() {
   return configuration;
 }
 
-export async function validateReadClientAuthorization(event) {
+export async function validateReadClientAuthorization(
+  event,
+  { requiredCapability = "read" } = {}
+) {
   const headers = event?.headers;
   const clientId = asString(headerValue(headers, READ_CLIENT_ID_HEADER));
   const presentedSecret = asString(headerValue(headers, READ_CLIENT_SECRET_HEADER));
@@ -834,10 +874,10 @@ export async function validateReadClientAuthorization(event) {
     };
   }
 
-  const expectedSecrets = configuration.clients.get(clientId);
+  const configuredClient = configuration.clients.get(clientId);
   if (
-    !expectedSecrets ||
-    !expectedSecrets.some((expectedSecret) =>
+    !configuredClient ||
+    !configuredClient.secrets.some((expectedSecret) =>
       timingSafeMatch(sha256Hex(expectedSecret), sha256Hex(presentedSecret))
     )
   ) {
@@ -845,6 +885,14 @@ export async function validateReadClientAuthorization(event) {
       ok: false,
       status: 401,
       error: "unauthorized",
+    };
+  }
+
+  if (!configuredClient.capabilities.has(requiredCapability)) {
+    return {
+      ok: false,
+      status: 403,
+      error: "forbidden",
     };
   }
 
@@ -2597,7 +2645,7 @@ function collectorLaneCase() {
   `;
 }
 
-function parseSemanticQueryBody(value) {
+export function parseSemanticQueryBody(value) {
   if (!isRecord(value)) return { ok: false, error: "body must be an object" };
 
   const queryText = asString(value.query_text);
@@ -2613,6 +2661,8 @@ function parseSemanticQueryBody(value) {
   const since = asIsoTimestamp(value.since);
   const until = asIsoTimestamp(value.until);
   const tiers = tierValues(value.tiers ?? value.tier);
+  const themes = normalizeSummaryThemeFilters(value.themes ?? value.theme);
+  const debateIssues = normalizeSummaryDebateFilters(value.debate_issues ?? value.debate_issue);
   const significant = asBoolean(value.significant);
   const minFollowers = positiveInteger(value.min_followers);
   const maxFollowers = positiveInteger(value.max_followers);
@@ -2635,6 +2685,8 @@ function parseSemanticQueryBody(value) {
       since,
       until,
       tiers,
+      themes: themes.length > 0 ? themes : undefined,
+      debate_issues: debateIssues.length > 0 ? debateIssues : undefined,
       handle: normalizedHandle || undefined,
       significant,
       min_followers: minFollowers,
@@ -4567,6 +4619,8 @@ async function querySemanticFeed(query, embeddingVector) {
   }
 
   appendAuthorMetadataFilters(query, params, where, "p");
+  appendSummaryMatcherFilter(where, params, buildSummaryThemeMatcherGroups(query.themes), "p");
+  appendSummaryMatcherFilter(where, params, buildSummaryDebateMatcherGroups(query.debate_issues), "p");
 
   const requestedLimit = query.limit || semanticDefaultLimit();
   const finalLimit = Math.min(Math.max(requestedLimit, 1), semanticMaxLimit());
@@ -9966,10 +10020,114 @@ async function handleTrends(event) {
   }
 }
 
-async function handleSemanticQuery(event) {
+class SemanticClientRateLimitError extends Error {
+  constructor() {
+    super("semantic client query limit reached");
+    this.name = "SemanticClientRateLimitError";
+  }
+}
+
+function semanticUsageWindow(now, windowMs) {
+  const windowStartMs = Math.floor(now / windowMs) * windowMs;
+  return {
+    windowStart: new Date(windowStartMs).toISOString(),
+    expiresAt: new Date(windowStartMs + windowMs + 60 * 60 * 1000).toISOString(),
+  };
+}
+
+async function incrementSemanticClientUsageWindow(db, {
+  clientId,
+  windowKind,
+  windowStart,
+  expiresAt,
+  limit,
+}) {
+  const result = await db.query(
+    `
+      INSERT INTO xmonitor_client_usage_windows (
+        client_id,
+        capability,
+        window_kind,
+        window_start,
+        request_count,
+        expires_at
+      )
+      VALUES ($1, 'semantic:query', $2, $3::timestamptz, 1, $4::timestamptz)
+      ON CONFLICT (client_id, capability, window_kind, window_start) DO UPDATE
+      SET
+        request_count = xmonitor_client_usage_windows.request_count + 1,
+        expires_at = GREATEST(xmonitor_client_usage_windows.expires_at, EXCLUDED.expires_at)
+      WHERE xmonitor_client_usage_windows.request_count < $5
+      RETURNING request_count
+    `,
+    [clientId, windowKind, windowStart, expiresAt, limit]
+  );
+  if (result.rowCount === 0) throw new SemanticClientRateLimitError();
+}
+
+export async function consumeSemanticClientBudget(clientId, databasePool = getPool()) {
+  const settings = semanticClientBudgetSettings();
+  const now = Date.now();
+  const burst = semanticUsageWindow(now, SEMANTIC_CLIENT_BURST_WINDOW_MS);
+  const daily = semanticUsageWindow(now, SEMANTIC_CLIENT_DAILY_WINDOW_MS);
+  const db = await databasePool.connect();
+
+  try {
+    await db.query("BEGIN");
+    await db.query("DELETE FROM xmonitor_client_usage_windows WHERE expires_at < now()");
+    await incrementSemanticClientUsageWindow(db, {
+      clientId,
+      windowKind: "burst",
+      ...burst,
+      limit: settings.burstLimit,
+    });
+    await incrementSemanticClientUsageWindow(db, {
+      clientId,
+      windowKind: "daily",
+      ...daily,
+      limit: settings.dailyLimit,
+    });
+    await db.query("COMMIT");
+  } catch (error) {
+    await db.query("ROLLBACK").catch(() => {});
+    throw error;
+  } finally {
+    db.release();
+  }
+}
+
+function emitSemanticClientMetric(clientId, metricName, value = 1, unit = "Count") {
+  console.info(JSON.stringify({
+    _aws: {
+      Timestamp: Date.now(),
+      CloudWatchMetrics: [{
+        Namespace: "XMonitor/API",
+        Dimensions: [["ClientId"]],
+        Metrics: [{ Name: metricName, Unit: unit }],
+      }],
+    },
+    ClientId: clientId,
+    [metricName]: value,
+  }));
+}
+
+export async function authorizeSemanticQueryRequest(event) {
   const viewer = requireViewerContext(event);
-  if (!viewer.ok) {
-    return jsonError(viewer.error, viewer.status);
+  if (viewer.ok) {
+    return { ok: true, mode: "viewer", viewer: viewer.viewer };
+  }
+
+  const readClient = await validateReadClientAuthorization(event, {
+    requiredCapability: "semantic:query",
+  });
+  if (!readClient.ok) return readClient;
+  return { ok: true, mode: "read-client", clientId: readClient.clientId };
+}
+
+async function handleSemanticQuery(event) {
+  const authorization = await authorizeSemanticQueryRequest(event);
+  if (!authorization.ok) {
+    return jsonError(authorization.error, authorization.status);
   }
 
   if (!semanticEnabled()) {
@@ -9989,12 +10147,55 @@ async function handleSemanticQuery(event) {
   if (!parsedQuery.ok) {
     return jsonError(parsedQuery.error, 400);
   }
+  if (authorization.mode === "read-client") {
+    if (parsedQuery.data.query_vector) {
+      return jsonError("read clients must provide query_text rather than query_vector", 400);
+    }
+    if (!parsedQuery.data.query_text || parsedQuery.data.query_text.length > 500) {
+      return jsonError("query_text must contain between 1 and 500 characters", 400);
+    }
+    parsedQuery.data.limit = Math.min(parsedQuery.data.limit, 24);
 
+    const budgetSettings = semanticClientBudgetSettings();
+    if (!budgetSettings.enabled) {
+      emitSemanticClientMetric(authorization.clientId, "SemanticQueryThrottled");
+      return jsonError("semantic client queries are temporarily unavailable", 429);
+    }
+    try {
+      await consumeSemanticClientBudget(authorization.clientId);
+      emitSemanticClientMetric(authorization.clientId, "SemanticQueryAccepted");
+    } catch (error) {
+      if (error instanceof SemanticClientRateLimitError) {
+        emitSemanticClientMetric(authorization.clientId, "SemanticQueryThrottled");
+        return jsonError("semantic client query limit reached", 429);
+      }
+      emitSemanticClientMetric(authorization.clientId, "SemanticQueryFailed");
+      return jsonError("semantic client query budget is unavailable", 503);
+    }
+  }
+
+  const startedAt = Date.now();
   try {
     const queryEmbedding = parsedQuery.data.query_vector || await createQueryEmbedding(parsedQuery.data.query_text);
     const payload = await querySemanticFeed(parsedQuery.data, queryEmbedding);
+    if (authorization.mode === "read-client") {
+      emitSemanticClientMetric(
+        authorization.clientId,
+        "SemanticQueryDuration",
+        Date.now() - startedAt,
+        "Milliseconds"
+      );
+      emitSemanticClientMetric(
+        authorization.clientId,
+        "SemanticQueryResultCount",
+        Array.isArray(payload?.items) ? payload.items.length : 0
+      );
+    }
     return jsonOk(payload);
   } catch (error) {
+    if (authorization.mode === "read-client") {
+      emitSemanticClientMetric(authorization.clientId, "SemanticQueryFailed");
+    }
     return jsonError(errorMessage(error) || "failed to execute semantic query", 503);
   }
 }

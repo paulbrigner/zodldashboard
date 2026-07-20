@@ -49,6 +49,8 @@ Region: `us-east-1`
 Backend/API:
 - `XMONITOR_INGEST_SHARED_SECRET`
 - `XMONITOR_READ_CLIENTS_SECRET_ID` (backend-only Secrets Manager source whose `read_clients` map holds one or more active secrets per client ID)
+- `XMONITOR_SEMANTIC_CLIENT_QUERY_ENABLED` (set `false` to stop backend-client semantic queries without disabling the existing viewer-proxy flow)
+- `XMONITOR_SEMANTIC_CLIENT_BURST_LIMIT` and `XMONITOR_SEMANTIC_CLIENT_DAILY_LIMIT` (atomic per-client limits backed by `xmonitor_client_usage_windows`)
 - `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`, `PGSSLMODE=require`
 - Compose env (`XMONITOR_COMPOSE_*`) and embedding env (`XMONITOR_EMBEDDING_*`) as needed
 - Email env when enabled:
@@ -99,6 +101,19 @@ revoked independently. The protected set is `/v1/feed`,
 `/v1/author-locations`, `/v1/engagement`, `/v1/trends`,
 `/v1/window-summaries/latest`, and `/v1/posts/{statusId}`. `/v1/health` remains
 unsigned.
+
+Array-valued client entries grant only `read`. To grant a server-side host
+semantic retrieval without the viewer-proxy or Venice secrets, use a capability
+object with `secrets` and `capabilities: ["read", "semantic:query"]`. That
+capability applies only to `POST /v1/query/semantic` and does not authorize
+Compose, email, schedules, ingest, operations, or access control.
+
+Backend-client semantic requests are counted before the embedding provider is
+called. The API emits CloudWatch Embedded Metric Format events under
+`XMonitor/API` for accepted, throttled, failed, duration, and result-count
+events; prompt text is never included. Apply migration
+`033_xmonitor_semantic_client_usage.sql` before granting the first
+`semantic:query` capability.
 
 Browser clients do not receive this credential. They use the dashboard
 `/api/v1` BFF, which requires an authenticated viewer session before injecting
@@ -290,10 +305,11 @@ openssl rand -hex 32
 5. Trigger Amplify release if web runtime env changed.
 
 For a read-client rotation, add the new value beside the old one in that
-client's `read_clients` array. Wait at least five minutes for backend caches,
-switch and redeploy only that caller, wait another five minutes, then remove
-the old value. Do not reuse or rotate the viewer-proxy or ingest secret as part
-of a read-client change.
+client's legacy array or capability object's `secrets` array. Preserve its
+capabilities. Wait at least five minutes for backend caches, switch and redeploy
+only that caller, wait another five minutes, then remove the old value. Do not
+reuse or rotate the viewer-proxy or ingest secret as part of a read-client
+change.
 
 ## 11) System status
 
