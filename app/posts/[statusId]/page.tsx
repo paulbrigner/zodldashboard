@@ -1,10 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
-import { readApiBaseUrl } from "@/lib/xmonitor/backend-api";
-import { hasDatabaseConfig } from "@/lib/xmonitor/config";
-import { getPostDetail } from "@/lib/xmonitor/repository";
-import type { PostDetail } from "@/lib/xmonitor/types";
+import { createXMonitorReadService } from "@/lib/xmonitor/read-service";
+import type { PostDetail } from "@xmonitor/core/contracts";
 import { LocalDateTime } from "@/app/components/local-date-time";
 
 export const runtime = "nodejs";
@@ -37,45 +35,6 @@ function describeAccountAge(iso: string | null | undefined): string {
   return `${totalYears} year${totalYears === 1 ? "" : "s"} old`;
 }
 
-function buildPostApiUrl(baseUrl: string, statusId: string): string {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
-  const url = new URL(`${normalizedBase}/posts/${encodeURIComponent(statusId)}`);
-  return url.toString();
-}
-
-async function readApiError(response: Response): Promise<string> {
-  try {
-    const payload = (await response.json()) as { error?: unknown };
-    if (typeof payload.error === "string" && payload.error.trim()) {
-      return payload.error;
-    }
-  } catch {
-    // fall through
-  }
-  return `API request failed (${response.status})`;
-}
-
-async function fetchPostDetailViaApi(baseUrl: string, statusId: string): Promise<PostDetail | null> {
-  const response = await fetch(buildPostApiUrl(baseUrl, statusId), {
-    cache: "no-store",
-  });
-
-  if (response.status === 404) {
-    return null;
-  }
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  const payload = (await response.json()) as PostDetail;
-  if (!payload || !payload.post) {
-    throw new Error("Invalid post detail response payload");
-  }
-
-  return payload;
-}
-
 export default async function PostPage({ params }: PostPageProps) {
   await requireAuthenticatedViewer("/posts");
 
@@ -87,16 +46,10 @@ export default async function PostPage({ params }: PostPageProps) {
   let detail: PostDetail | null = null;
   let detailError: string | null = null;
 
-  const apiBaseUrl = readApiBaseUrl();
-  if (apiBaseUrl) {
+  const readService = createXMonitorReadService();
+  if (readService.mode !== "unconfigured") {
     try {
-      detail = await fetchPostDetailViaApi(apiBaseUrl, statusId);
-    } catch (error) {
-      detailError = error instanceof Error ? error.message : "Failed to load post detail";
-    }
-  } else if (hasDatabaseConfig()) {
-    try {
-      detail = await getPostDetail(statusId);
+      detail = await readService.postDetail(statusId);
     } catch (error) {
       detailError = error instanceof Error ? error.message : "Failed to load post detail";
     }

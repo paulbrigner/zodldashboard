@@ -1,13 +1,45 @@
-export const WATCH_TIERS = ["teammate", "investor", "influencer", "ecosystem"] as const;
-export type WatchTier = (typeof WATCH_TIERS)[number];
-export const WATCH_TIER_FILTERS = [...WATCH_TIERS, "other"] as const;
-export type WatchTierFilter = (typeof WATCH_TIER_FILTERS)[number];
+import {
+  CLASSIFICATION_STATUSES,
+  WATCH_TIERS,
+  WATCH_TIER_FILTERS,
+} from "@xmonitor/core/contracts";
+import type {
+  ActivityTrendBucket,
+  ActivityTrendTotals,
+  ActivityTrendsResponse,
+  AuthorLocationSuggestionResponse,
+  ClassificationStatus,
+  FeedItem,
+  FeedQuery,
+  FeedResponse,
+  PostDetail,
+  TrendScope,
+  WatchTier,
+  WatchTierFilter,
+  WindowSummariesLatestResponse,
+  WindowSummary,
+} from "@xmonitor/core/contracts";
+
+export { CLASSIFICATION_STATUSES, WATCH_TIERS, WATCH_TIER_FILTERS };
+export type {
+  ActivityTrendBucket,
+  ActivityTrendTotals,
+  ActivityTrendsResponse,
+  AuthorLocationSuggestionResponse,
+  ClassificationStatus,
+  FeedItem,
+  FeedQuery,
+  FeedResponse,
+  PostDetail,
+  TrendScope,
+  WatchTier,
+  WatchTierFilter,
+  WindowSummariesLatestResponse,
+  WindowSummary,
+};
 
 export const RUN_MODES = ["priority", "discovery", "both", "manual"] as const;
 export type RunMode = (typeof RUN_MODES)[number];
-
-export const CLASSIFICATION_STATUSES = ["pending", "processing", "classified", "failed"] as const;
-export type ClassificationStatus = (typeof CLASSIFICATION_STATUSES)[number];
 
 export const COMPOSE_ANSWER_STYLES = ["brief", "balanced", "detailed"] as const;
 export type ComposeAnswerStyle = (typeof COMPOSE_ANSWER_STYLES)[number];
@@ -169,21 +201,6 @@ export type WindowSummaryUpsert = {
   updated_at?: string | null;
 };
 
-export type WindowSummary = {
-  summary_key: string;
-  window_type: string;
-  window_start: string;
-  window_end: string;
-  generated_at: string;
-  post_count: number;
-  significant_count: number;
-  summary_text: string;
-};
-
-export type WindowSummariesLatestResponse = {
-  items: WindowSummary[];
-};
-
 export type ReconcileCounts = {
   since: string;
   generated_at: string;
@@ -230,68 +247,6 @@ export type EmbeddingUpsert = {
   text_hash: string;
   created_at: string;
   updated_at: string;
-};
-
-export type FeedItem = {
-  status_id: string;
-  discovered_at: string;
-  author_handle: string;
-  watch_tier: string | null;
-  followers_count?: number | null;
-  account_created_at?: string | null;
-  author_location?: string | null;
-  body_text: string | null;
-  url: string;
-  is_significant: boolean;
-  significance_reason: string | null;
-  classification_status: ClassificationStatus;
-  classified_at?: string | null;
-  classification_model?: string | null;
-  classification_confidence?: number | null;
-  likes: number;
-  reposts: number;
-  replies: number;
-  views: number;
-  score?: number | null;
-};
-
-export type FeedResponse = {
-  items: FeedItem[];
-  next_cursor: string | null;
-};
-
-export type AuthorLocationSuggestionResponse = {
-  items: string[];
-};
-
-export type TrendScope = {
-  since: string;
-  until: string;
-  bucket_hours: number;
-  range_key: "24h" | "7d" | "30d" | "90d" | "custom";
-  text_filter_applied: boolean;
-};
-
-export type ActivityTrendTotals = {
-  post_count: number;
-  significant_count: number;
-  watchlist_count: number;
-  priority_count: number;
-  discovery_count: number;
-  other_count: number;
-  unique_handle_count: number;
-};
-
-export type ActivityTrendBucket = {
-  bucket_start: string;
-  bucket_end: string;
-  post_count: number;
-  significant_count: number;
-  watchlist_count: number;
-  priority_count: number;
-  discovery_count: number;
-  other_count: number;
-  unique_handle_count: number;
 };
 
 export type SummaryMixTrendBucket = {
@@ -417,28 +372,6 @@ export type EngagementResponse = {
   by_tier: EngagementTierBreakdown[];
   top_handles: EngagementHandleBreakdown[];
   top_posts: EngagementTopPost[];
-};
-
-export type PostDetail = {
-  post: FeedItem;
-};
-
-export type FeedQuery = {
-  since?: string;
-  until?: string;
-  tiers?: WatchTierFilter[];
-  themes?: string[];
-  debate_issues?: string[];
-  handle?: string;
-  significant?: boolean;
-  min_followers?: number;
-  max_followers?: number;
-  min_account_age_days?: number;
-  max_account_age_days?: number;
-  location?: string;
-  q?: string;
-  limit?: number;
-  cursor?: string;
 };
 
 export type SemanticQueryRequest = {

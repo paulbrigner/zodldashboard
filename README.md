@@ -49,6 +49,7 @@ Production ingestion runs on AWS with scheduled X API collectors and PostgreSQL 
 
 - [app](app): Next.js pages and API routes
 - [lib](lib): auth, DB access, query/repository logic, helpers
+- [packages/x-monitor-core](packages/x-monitor-core): headless public read contracts and injected HTTP client
 - [services/vpc-api-lambda](services/vpc-api-lambda): hosted `/v1/*` backend
 - [services/x-api-collector-lambda](services/x-api-collector-lambda): scheduled X API collectors
 - [db/migrations](db/migrations): Postgres schema migrations
@@ -62,7 +63,8 @@ Operational runbooks:
 - X Monitor access report: `scripts/aws/report_xmonitor_access.sh` reports successful `/x-monitor` page accesses from `xmonitor_access_events`.
 - [Arktouros Private Dashboard](docs/ARKTOUROS_PRIVATE_DASHBOARD.md): split-repository integration notes for `/arktouros`.
 - [Execution Tracker](docs/EXECUTION_TRACKER.md): shared collaborative tracker architecture for selected private dashboards.
-- [Future Work](docs/FUTURE_WORK.md): potential unscheduled follow-up ideas, including evaluating an X Monitor repository extraction.
+- [Future Work](docs/FUTURE_WORK.md): remaining follow-up ideas and later X Monitor extraction phases.
+- [X Monitor Targeted Extraction](docs/X_MONITOR_EXTRACTION.md): staged ownership boundary and Community integration path.
 
 ## Core Data
 

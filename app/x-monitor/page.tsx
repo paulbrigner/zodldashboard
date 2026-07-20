@@ -5,19 +5,18 @@ import type { ReactNode } from "react";
 import { canReadDashboard } from "@/lib/access-control";
 import { requireAuthenticatedViewer } from "@/lib/viewer-auth";
 import { recordXMonitorAccess } from "@/lib/xmonitor-access-events";
-import { backendApiBaseUrl, readApiBaseUrl } from "@/lib/xmonitor/backend-api";
+import { backendApiBaseUrl } from "@/lib/xmonitor/backend-api";
 import { composeEnabled } from "@/lib/xmonitor/compose";
-import { hasDatabaseConfig } from "@/lib/xmonitor/config";
-import { getAuthorLocationSuggestions, getFeed, getLatestWindowSummaries, getTrends } from "@/lib/xmonitor/repository";
+import { createXMonitorReadService } from "@/lib/xmonitor/read-service";
 import { createQueryEmbedding, semanticEnabled } from "@/lib/xmonitor/semantic";
+import type { SemanticQueryResponse } from "@/lib/xmonitor/types";
 import type {
-  AuthorLocationSuggestionResponse,
+  ActivityTrendsResponse,
   FeedResponse,
-  SemanticQueryResponse,
-  TrendsResponse,
-  WindowSummariesLatestResponse,
   WindowSummary,
-} from "@/lib/xmonitor/types";
+  XMonitorSearchMode,
+  XMonitorTrendRangeKey,
+} from "@xmonitor/core/contracts";
 import { parseFeedQuery } from "@/lib/xmonitor/validators";
 import { buildViewerProxyHeaders } from "@/lib/xmonitor/viewer-proxy";
 import { ComposePanel } from "./compose-panel";
@@ -35,8 +34,8 @@ type HomePageProps = {
 };
 
 const SUMMARY_WINDOW_TYPES = ["rolling_2h", "rolling_12h", "rolling_7d_daily"] as const;
-type SearchMode = "keyword" | "semantic";
-type TrendRangeKey = "24h" | "7d" | "30d" | "90d";
+type SearchMode = XMonitorSearchMode;
+type TrendRangeKey = XMonitorTrendRangeKey;
 type SignificantFilterMode = "default_true" | "any" | "true" | "false";
 const MULTI_VALUE_FILTER_KEYS = new Set(["tier", "theme", "debate_issue"]);
 
@@ -274,74 +273,6 @@ function buildPollUrl(
   return `/api/v1/feed?${params.toString()}`;
 }
 
-function buildFeedApiUrl(
-  baseUrl: string,
-  query: ReturnType<typeof parseFeedQuery>,
-  significantMode: SignificantFilterMode
-): string {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
-  const url = new URL(`${normalizedBase}/feed`);
-
-  if (query.since) url.searchParams.set("since", query.since);
-  if (query.until) url.searchParams.set("until", query.until);
-  query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
-  query.themes?.forEach((theme) => url.searchParams.append("theme", theme));
-  query.debate_issues?.forEach((issue) => url.searchParams.append("debate_issue", issue));
-  if (query.handle) url.searchParams.set("handle", query.handle);
-  if (query.min_followers !== undefined) url.searchParams.set("min_followers", String(query.min_followers));
-  if (query.max_followers !== undefined) url.searchParams.set("max_followers", String(query.max_followers));
-  if (query.min_account_age_days !== undefined) url.searchParams.set("min_account_age_days", String(query.min_account_age_days));
-  if (query.max_account_age_days !== undefined) url.searchParams.set("max_account_age_days", String(query.max_account_age_days));
-  if (query.location) url.searchParams.set("location", query.location);
-  appendSignificantParam(url.searchParams, significantMode);
-  if (query.q) url.searchParams.set("q", query.q);
-  if (query.limit) url.searchParams.set("limit", String(query.limit));
-  if (query.cursor) url.searchParams.set("cursor", query.cursor);
-
-  return url.toString();
-}
-
-function buildWindowSummariesApiUrl(baseUrl: string): string {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
-  return `${normalizedBase}/window-summaries/latest`;
-}
-
-function buildAuthorLocationsApiUrl(baseUrl: string, limit = 8): string {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
-  const url = new URL(`${normalizedBase}/author-locations`);
-  url.searchParams.set("limit", String(limit));
-  return url.toString();
-}
-
-function buildTrendsApiUrl(
-  baseUrl: string,
-  query: ReturnType<typeof parseFeedQuery>,
-  searchMode: SearchMode,
-  trendRange: TrendRangeKey,
-  significantMode: SignificantFilterMode
-): string {
-  const normalizedBase = baseUrl.replace(/\/+$/, "");
-  const url = new URL(`${normalizedBase}/trends`);
-
-  if (query.since) url.searchParams.set("since", query.since);
-  if (query.until) url.searchParams.set("until", query.until);
-  query.tiers?.forEach((tier) => url.searchParams.append("tier", tier));
-  query.themes?.forEach((theme) => url.searchParams.append("theme", theme));
-  query.debate_issues?.forEach((issue) => url.searchParams.append("debate_issue", issue));
-  if (query.handle) url.searchParams.set("handle", query.handle);
-  if (query.min_followers !== undefined) url.searchParams.set("min_followers", String(query.min_followers));
-  if (query.max_followers !== undefined) url.searchParams.set("max_followers", String(query.max_followers));
-  if (query.min_account_age_days !== undefined) url.searchParams.set("min_account_age_days", String(query.min_account_age_days));
-  if (query.max_account_age_days !== undefined) url.searchParams.set("max_account_age_days", String(query.max_account_age_days));
-  if (query.location) url.searchParams.set("location", query.location);
-  appendSignificantParam(url.searchParams, significantMode);
-  if (query.q) url.searchParams.set("q", query.q);
-  if (searchMode === "semantic") url.searchParams.set("search_mode", "semantic");
-  url.searchParams.set("trend_range", trendRange);
-
-  return url.toString();
-}
-
 function buildTrendRangeUrl(
   params: Record<string, string | string[] | undefined>,
   targetRange: TrendRangeKey,
@@ -403,30 +334,6 @@ async function readApiError(response: Response): Promise<string> {
   return `API request failed (${response.status})`;
 }
 
-async function fetchFeedViaApi(
-  baseUrl: string,
-  query: ReturnType<typeof parseFeedQuery>,
-  significantMode: SignificantFilterMode
-): Promise<FeedResponse> {
-  const response = await fetch(buildFeedApiUrl(baseUrl, query, significantMode), {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  const payload = (await response.json()) as FeedResponse;
-  if (!payload || !Array.isArray(payload.items)) {
-    throw new Error("Invalid feed response payload");
-  }
-
-  return {
-    items: payload.items,
-    next_cursor: payload.next_cursor || null,
-  };
-}
-
 async function fetchSemanticViaApi(
   baseUrl: string,
   query: ReturnType<typeof parseFeedQuery>,
@@ -485,63 +392,6 @@ async function fetchSemanticViaApi(
   };
 }
 
-async function fetchWindowSummariesViaApi(baseUrl: string): Promise<WindowSummary[]> {
-  const response = await fetch(buildWindowSummariesApiUrl(baseUrl), {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  const payload = (await response.json()) as WindowSummariesLatestResponse;
-  if (!payload || !Array.isArray(payload.items)) {
-    throw new Error("Invalid window summary response payload");
-  }
-
-  return payload.items;
-}
-
-async function fetchAuthorLocationsViaApi(baseUrl: string): Promise<string[]> {
-  const response = await fetch(buildAuthorLocationsApiUrl(baseUrl), {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  const payload = (await response.json()) as AuthorLocationSuggestionResponse;
-  if (!payload || !Array.isArray(payload.items)) {
-    throw new Error("Invalid author location response payload");
-  }
-
-  return payload.items.filter((item): item is string => typeof item === "string" && item.trim().length > 0);
-}
-
-async function fetchTrendsViaApi(
-  baseUrl: string,
-  query: ReturnType<typeof parseFeedQuery>,
-  searchMode: SearchMode,
-  trendRange: TrendRangeKey,
-  significantMode: SignificantFilterMode
-): Promise<TrendsResponse> {
-  const response = await fetch(buildTrendsApiUrl(baseUrl, query, searchMode, trendRange, significantMode), {
-    cache: "no-store",
-  });
-
-  if (!response.ok) {
-    throw new Error(await readApiError(response));
-  }
-
-  const payload = (await response.json()) as TrendsResponse;
-  if (!payload || !payload.activity?.totals || !Array.isArray(payload.activity?.buckets)) {
-    throw new Error("Invalid trends response payload");
-  }
-
-  return payload;
-}
-
 export default async function HomePage({ searchParams }: HomePageProps) {
   const viewer = await requireAuthenticatedViewer("/x-monitor");
   if (!canReadDashboard(viewer, "x-monitor")) {
@@ -576,7 +426,8 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   const searchMode = parseSearchMode(params.search_mode);
   const trendRange = parseTrendRange(params.trend_range ?? params.engagement_range);
   const useSemanticRetrieval = searchMode === "semantic" && Boolean(query.q);
-  const apiBaseUrl = readApiBaseUrl();
+  const readService = createXMonitorReadService();
+  const apiBaseUrl = readService.apiBaseUrl;
   const refreshUrl = buildRefreshUrl(query, searchMode, significantMode);
   const significantToggleUrl = buildSignificantToggleUrl(query, searchMode, significantMode);
   const pollUrl = buildPollUrl(query, useSemanticRetrieval, significantMode);
@@ -585,70 +436,41 @@ export default async function HomePage({ searchParams }: HomePageProps) {
   let feedError: string | null = null;
   let summaries: WindowSummary[] = [];
   let summariesError: string | null = null;
-  let trends: TrendsResponse | null = null;
+  let trends: ActivityTrendsResponse | null = null;
   let trendsError: string | null = null;
   let locationSuggestions: string[] = [];
 
-  if (apiBaseUrl) {
+  if (readService.mode !== "unconfigured") {
     try {
       if (useSemanticRetrieval) {
-        if (!semanticAvailable) {
+        if (readService.mode !== "api" || !apiBaseUrl) {
+          feedError = "Semantic mode requires XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL.";
+        } else if (!semanticAvailable) {
           feedError = "Semantic mode is disabled.";
         } else {
           feed = await fetchSemanticViaApi(apiBaseUrl, query, viewer);
         }
       } else {
-        feed = await fetchFeedViaApi(apiBaseUrl, query, significantMode);
+        feed = await readService.feed(query);
       }
     } catch (error) {
       feedError = error instanceof Error ? error.message : "Failed to load feed";
     }
 
     try {
-      summaries = await fetchWindowSummariesViaApi(apiBaseUrl);
+      summaries = await readService.latestSummaries();
     } catch (error) {
       summariesError = error instanceof Error ? error.message : "Failed to load summaries";
     }
 
     try {
-      trends = await fetchTrendsViaApi(apiBaseUrl, query, searchMode, trendRange, significantMode);
+      trends = await readService.activityTrends(query, { searchMode, trendRange });
     } catch (error) {
       trendsError = error instanceof Error ? error.message : "Failed to load trends";
     }
 
     try {
-      locationSuggestions = await fetchAuthorLocationsViaApi(apiBaseUrl);
-    } catch {
-      locationSuggestions = [];
-    }
-  } else if (hasDatabaseConfig()) {
-    try {
-      if (useSemanticRetrieval) {
-        feedError = "Semantic mode requires XMONITOR_READ_API_BASE_URL/XMONITOR_BACKEND_API_BASE_URL.";
-      } else {
-        feed = await getFeed(query);
-      }
-    } catch (error) {
-      feedError = error instanceof Error ? error.message : "Failed to load feed";
-    }
-
-    try {
-      summaries = await getLatestWindowSummaries();
-    } catch (error) {
-      summariesError = error instanceof Error ? error.message : "Failed to load summaries";
-    }
-
-    try {
-      trends = await getTrends(query, {
-        applyTextQuery: searchMode !== "semantic",
-        rangeKey: trendRange,
-      });
-    } catch (error) {
-      trendsError = error instanceof Error ? error.message : "Failed to load trends";
-    }
-
-    try {
-      locationSuggestions = await getAuthorLocationSuggestions();
+      locationSuggestions = await readService.authorLocations();
     } catch {
       locationSuggestions = [];
     }

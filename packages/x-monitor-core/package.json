@@ -1,0 +1,12 @@
+{
+  "name": "@xmonitor/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "license": "(Apache-2.0 OR MIT)",
+  "exports": {
+    ".": "./src/index.ts",
+    "./contracts": "./src/contracts.ts",
+    "./read-client": "./src/read-client.ts"
+  }
+}

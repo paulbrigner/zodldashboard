@@ -24,6 +24,12 @@
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@xmonitor/core": [
+        "./packages/x-monitor-core/src/index.ts"
+      ],
+      "@xmonitor/core/*": [
+        "./packages/x-monitor-core/src/*"
       ]
     },
     "allowJs": true

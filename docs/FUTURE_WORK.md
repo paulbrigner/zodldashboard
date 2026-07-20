@@ -1,10 +1,10 @@
 # Future Work
 
-This file captures potential follow-up work that is not currently scheduled or approved for implementation.
+This file captures potential follow-up work and staged initiatives that are not yet complete.
 
 ## Evaluate X Monitor Repository Extraction
 
-Status: potential TODO for later.
+Status: phase 1 in progress. See [X Monitor Targeted Extraction](X_MONITOR_EXTRACTION.md).
 
 Consider separating X Monitor from `zodldashboard` into its own application/service repository.
 
@@ -23,6 +23,7 @@ Suggested target shape:
 Notes for a future implementation:
 
 - Treat this as a staged extraction, not a quick file move.
-- First modularize X Monitor boundaries in place.
+- First modularize X Monitor boundaries in place. The headless public read
+  contracts/client and zodldashboard read adapter are now implemented.
 - Preserve the existing production route and access behavior during any migration.
 - Keep private AWS account details, production data, secrets, allowlists, and Zodl-specific operations out of any open-source distribution.

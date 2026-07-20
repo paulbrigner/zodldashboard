@@ -3,12 +3,12 @@
 import Link from "next/link";
 import type { CSSProperties } from "react";
 import { LocalDateTime } from "@/app/components/local-date-time";
-import type { TrendsResponse } from "@/lib/xmonitor/types";
+import type { ActivityTrendsResponse } from "@xmonitor/core/contracts";
 
 type TrendRangeKey = "24h" | "7d" | "30d" | "90d";
 
 type TrendsPanelProps = {
-  payload: TrendsResponse | null;
+  payload: ActivityTrendsResponse | null;
   error: string | null;
   rangeOptions: Array<{
     key: TrendRangeKey;
@@ -64,12 +64,12 @@ function buildLabelIndexSet(total: number, maxLabels = 6): Set<number> {
 }
 
 function compressTrendBuckets(
-  buckets: TrendsResponse["activity"]["buckets"],
+  buckets: ActivityTrendsResponse["activity"]["buckets"],
   maxBuckets: number
-): TrendsResponse["activity"]["buckets"] {
+): ActivityTrendsResponse["activity"]["buckets"] {
   if (buckets.length <= maxBuckets) return buckets;
   const groupSize = Math.ceil(buckets.length / maxBuckets);
-  const compressed: TrendsResponse["activity"]["buckets"] = [];
+  const compressed: ActivityTrendsResponse["activity"]["buckets"] = [];
   for (let start = 0; start < buckets.length; start += groupSize) {
     const slice = buckets.slice(start, start + groupSize);
     if (slice.length === 0) continue;
