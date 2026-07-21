@@ -48,8 +48,10 @@ capability.
    code and nothing else.
 3. Apply migration `034_curated_topic_briefings.sql` using the normal migration
    runner, or run `scripts/aws/apply_curated_briefings_migration.sh`. The helper
-   temporarily enables migration bootstrap on the VPC API Lambda and uses an
-   exit trap to restore its complete original environment map. Confirm all three
+   clones the deployed API code and VPC placement into an isolated one-shot
+   Lambda, applies the migration with `xmonitor/rds/master`, and deletes the
+   temporary function on exit. It never places the privileged migration
+   credential on the API Gateway-backed production function. Confirm all three
    tables and the active-run partial unique index.
 4. Smoke-check existing feed, semantic, Compose, worker, and scheduler behavior
    while briefings remain disabled.
