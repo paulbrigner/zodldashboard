@@ -59,6 +59,11 @@ import os
 with open(os.environ["ORIGINAL_ENV_FILE"], encoding="utf-8") as handle:
     environment = json.load(handle)
 variables = dict(environment.get("Variables") or {})
+# The production function is close to Lambda's 4 KB environment limit. The
+# packaged omit-handle configuration is equivalent for this one health-route
+# invocation and is unrelated to migrations, so omit only that large override
+# temporarily. The EXIT trap restores the complete original map.
+variables.pop("XMONITOR_INGEST_OMIT_HANDLES", None)
 variables["XMONITOR_BRIEFINGS_ENABLED"] = "false"
 variables["XMONITOR_ENABLE_DB_MIGRATIONS_BOOTSTRAP"] = "true"
 variables["XMONITOR_DB_MIGRATIONS_FROM_FILE"] = os.environ["MIGRATION_FILE"]
