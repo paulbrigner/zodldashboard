@@ -5315,6 +5315,7 @@ export function buildComposePrompt(input, evidence) {
       "In answer_text, place an inline citation marker immediately after each evidence-supported claim using the exact format [#<status_id>].",
       "Use the exact numeric status_id from the evidence post, never the evidence list number (such as #1), and never invent an ID.",
       "Every inline marker must name an ID in citation_status_ids, and every ID in citation_status_ids must appear in answer_text at least once.",
+      `Use no more than ${composeMaxCitations()} unique cited posts unless the answer cannot be accurate without additional sources.`,
     ] : []),
     answerStyleInstruction(answerStyle),
     composeDraftInstruction(draftFormat),
@@ -5542,15 +5543,63 @@ function enforceEmailDraftGuardrails(emailDraft, requestedFormat, taskText) {
   return null;
 }
 
-function selectComposeCitations(evidence, citationStatusIds) {
+export function composeInlineCitationStatusIds(answerText) {
+  const statusIds = [];
+  const seen = new Set();
+  const markerPattern = /\[#([0-9]{1,32})\]/g;
+  let match;
+  while ((match = markerPattern.exec(String(answerText || ""))) !== null) {
+    if (seen.has(match[1])) continue;
+    seen.add(match[1]);
+    statusIds.push(match[1]);
+  }
+  return statusIds;
+}
+
+export function normalizeComposeInlineCitationMarkers(answerText, citations) {
+  const selectedStatusIds = new Set(
+    (Array.isArray(citations) ? citations : [])
+      .map((citation) => String(citation?.status_id || "").trim())
+      .filter(Boolean)
+  );
+  return String(answerText || "").replace(/\[#([0-9]{1,32})\]/g, (marker, statusId) => (
+    selectedStatusIds.has(statusId) ? marker : ""
+  ));
+}
+
+export function unresolvedComposeInlineCitationStatusIds(answerText, citations) {
+  const citedStatusIds = new Set(
+    (Array.isArray(citations) ? citations : [])
+      .map((citation) => String(citation?.status_id || "").trim())
+      .filter(Boolean)
+  );
+  return composeInlineCitationStatusIds(answerText)
+    .filter((statusId) => !citedStatusIds.has(statusId));
+}
+
+export function selectComposeCitations(evidence, citationStatusIds, { preserveAllMatches = false } = {}) {
   const citationLimit = composeMaxCitations();
   if (!Array.isArray(citationStatusIds) || citationStatusIds.length === 0) {
     return evidence.citations.slice(0, citationLimit);
   }
 
-  const wanted = new Set(citationStatusIds);
-  const selected = evidence.citations.filter((citation) => wanted.has(citation.status_id));
-  return selected.length > 0 ? selected.slice(0, citationLimit) : evidence.citations.slice(0, citationLimit);
+  const wanted = new Set(citationStatusIds.map((statusId) => String(statusId || "").trim()).filter(Boolean));
+  const selected = evidence.citations.filter((citation) => wanted.has(String(citation.status_id || "").trim()));
+  if (selected.length === 0) return evidence.citations.slice(0, citationLimit);
+  return preserveAllMatches ? selected : selected.slice(0, citationLimit);
+}
+
+export function reconcileComposeInlineCitations(answerText, evidence, citationStatusIds) {
+  const inlineCitationStatusIds = composeInlineCitationStatusIds(answerText);
+  const citations = selectComposeCitations(
+    evidence,
+    [...(Array.isArray(citationStatusIds) ? citationStatusIds : []), ...inlineCitationStatusIds],
+    { preserveAllMatches: inlineCitationStatusIds.length > 0 }
+  );
+  return {
+    answer_text: normalizeComposeInlineCitationMarkers(answerText, citations),
+    citations,
+  };
 }
 
 async function synthesizeComposeAnswer(input, evidencePayload, requestId) {
@@ -5578,7 +5627,11 @@ async function synthesizeComposeAnswer(input, evidencePayload, requestId) {
     );
   }
 
-  const citations = selectComposeCitations(evidencePayload, parsed.citation_status_ids);
+  const inlineCitationResult = input.inline_citation_markers
+    ? reconcileComposeInlineCitations(parsed.answer_text, evidencePayload, parsed.citation_status_ids)
+    : null;
+  const citations = inlineCitationResult?.citations
+    || selectComposeCitations(evidencePayload, parsed.citation_status_ids);
   if (citations.length === 0) {
     return buildComposeFallbackResponse(
       evidencePayload,
@@ -5591,7 +5644,7 @@ async function synthesizeComposeAnswer(input, evidencePayload, requestId) {
   const emailDraft = enforceEmailDraftGuardrails(parsed.email_draft, input.draft_format, input.task_text);
 
   return {
-    answer_text: parsed.answer_text,
+    answer_text: inlineCitationResult ? inlineCitationResult.answer_text : parsed.answer_text,
     draft_text: draftText,
     email_draft: emailDraft,
     key_points: keyPoints,
@@ -6255,14 +6308,14 @@ function briefingTopicSnapshot(topic) {
   };
 }
 
-async function getPublishedBriefings(slug = null) {
-  const db = getPool();
+export async function getPublishedBriefings(slug = null, databasePool = getPool()) {
+  const db = databasePool;
   const params = [];
   const slugClause = slug ? `AND v.slug = $${params.push(slug)}` : "";
   const result = await db.query(
     `
       SELECT
-        t.topic_id, v.slug, v.question, v.category, v.display_order,
+        t.topic_id, v.slug, v.question, v.category, t.display_order AS display_order,
         v.version_id, v.answer_text, v.key_points_json, v.citations_json,
         v.source_count, v.corpus_from, v.corpus_through, v.generated_at,
         v.stale_after, v.embedding_model, v.synthesis_model, v.prompt_version,
@@ -6273,7 +6326,7 @@ async function getPublishedBriefings(slug = null) {
       WHERE t.enabled = TRUE
         AND v.review_status = 'published'
         ${slugClause}
-      ORDER BY v.display_order ASC, v.question ASC
+      ORDER BY t.display_order ASC, v.question ASC, t.topic_id ASC
     `,
     params
   );
@@ -7070,6 +7123,18 @@ async function publishBriefingVersion(versionId, clientId, { allowRollback = fal
     }
     if (!briefingJsonArray(version.citations_json).length) {
       throw new Error("a briefing version must include at least one citation before publication");
+    }
+    const unresolvedCitationStatusIds = unresolvedComposeInlineCitationStatusIds(
+      version.answer_text,
+      briefingJsonArray(version.citations_json)
+    );
+    if (!allowRollback) {
+      if (composeInlineCitationStatusIds(version.answer_text).length === 0) {
+        throw new Error("briefing answer must include at least one inline citation marker");
+      }
+      if (unresolvedCitationStatusIds.length > 0) {
+        throw new Error("briefing answer includes citation markers that are missing from its source list");
+      }
     }
     await client.query(
       `UPDATE xmonitor_briefing_versions SET review_status = 'superseded' WHERE topic_id = $1 AND review_status = 'published' AND version_id <> $2`,

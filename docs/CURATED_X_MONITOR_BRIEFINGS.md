@@ -23,7 +23,15 @@ but every run snapshots the question and generation settings it used, and every
 version snapshots its public question, slug, category, evidence, and provenance.
 Editing a draft creates a new immutable content revision. Publication, rejection,
 supersession, and rollback update review metadata and the topic's published
-pointer without combining a newer question with an older answer.
+pointer without combining a newer question with an older answer. Display order
+is presentation metadata: published reads use the current topic order while the
+version keeps the order captured for its audit history.
+
+Briefing Compose answers use inline X status-ID markers. Generation reconciles
+every marker that exists in the bounded evidence set into the stored citation
+snapshot, even when the answer needs more than the normal citation-card target.
+Markers absent from retrieved evidence are removed, and a draft cannot be
+published if its remaining markers are missing from its stored source list.
 
 The scheduler uses a unique idempotency key per topic/due time, and the database
 allows at most one queued or running generation per topic. A scheduled run with
