@@ -56,7 +56,7 @@ set -euo pipefail
 #   COMPOSE_API_KEY=...
 #   BRIEFINGS_ENABLED=false                  # staged rollout: enable only after migration and credentials
 #   BRIEFING_DISPATCH_LIMIT=10
-#   BRIEFING_PROMPT_VERSION=curated-briefing-v1
+#   BRIEFING_PROMPT_VERSION=curated-briefing-v2
 #   COMPOSE_JOBS_QUEUE_NAME=xmonitor-compose-jobs
 #   COMPOSE_JOBS_DLQ_NAME=xmonitor-compose-jobs-dlq
 #   COMPOSE_WORKER_FUNCTION_NAME=xmonitor-vpc-compose-worker
@@ -598,7 +598,7 @@ if [[ -z "$BRIEFING_DISPATCH_LIMIT" ]]; then
   BRIEFING_DISPATCH_LIMIT="10"
 fi
 if [[ -z "$BRIEFING_PROMPT_VERSION" ]]; then
-  BRIEFING_PROMPT_VERSION="curated-briefing-v1"
+  BRIEFING_PROMPT_VERSION="curated-briefing-v2"
 fi
 if [[ -z "$EMAIL_SCHEDULES_ENABLED" ]]; then
   EMAIL_SCHEDULES_ENABLED="$(existing_lambda_var "XMONITOR_EMAIL_SCHEDULES_ENABLED")"
@@ -834,7 +834,7 @@ print(json.dumps({
     "XMONITOR_COMPOSE_API_KEY": os.environ.get("COMPOSE_API_KEY", ""),
     "XMONITOR_BRIEFINGS_ENABLED": os.environ.get("BRIEFINGS_ENABLED", "false"),
     "XMONITOR_BRIEFING_DISPATCH_LIMIT": os.environ.get("BRIEFING_DISPATCH_LIMIT", "10"),
-    "XMONITOR_BRIEFING_PROMPT_VERSION": os.environ.get("BRIEFING_PROMPT_VERSION", "curated-briefing-v1"),
+    "XMONITOR_BRIEFING_PROMPT_VERSION": os.environ.get("BRIEFING_PROMPT_VERSION", "curated-briefing-v2"),
     "XMONITOR_EMAIL_ENABLED": os.environ.get("EMAIL_ENABLED", ""),
     "XMONITOR_EMAIL_SCHEDULES_ENABLED": os.environ.get("EMAIL_SCHEDULES_ENABLED", ""),
     "XMONITOR_EMAIL_REQUIRE_OAUTH": os.environ.get("EMAIL_REQUIRE_OAUTH", ""),
