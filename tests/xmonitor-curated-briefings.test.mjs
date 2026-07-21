@@ -128,12 +128,43 @@ test("curated briefing Compose requires auditable inline status-ID markers", asy
   }));
   assert.equal(parsed.answer_text, `Tachyon is in development. [#${statusId}]`);
   assert.deepEqual(parsed.citation_status_ids, [statusId]);
+
+  const statusIds = Array.from({ length: 11 }, (_, index) => String(2054924108299923836n + BigInt(index)));
+  const missingStatusId = "9999999999999999999";
+  const answerText = [
+    ...statusIds.map((citationStatusId, index) => `Claim ${index + 1}. [#${citationStatusId}]`),
+    `Unsupported marker. [#${missingStatusId}]`,
+  ].join("\n");
+  const reconciliation = api.reconcileComposeInlineCitations(
+    answerText,
+    { citations: statusIds.map((citationStatusId) => ({ status_id: citationStatusId })) },
+    statusIds.slice(0, 10)
+  );
+
+  assert.deepEqual(api.composeInlineCitationStatusIds(answerText), [...statusIds, missingStatusId]);
+  assert.deepEqual(reconciliation.citations.map((citation) => citation.status_id), statusIds);
+  assert.equal(
+    reconciliation.answer_text,
+    [
+      ...statusIds.map((citationStatusId, index) => `Claim ${index + 1}. [#${citationStatusId}]`),
+      "Unsupported marker. ",
+    ].join("\n")
+  );
+  assert.deepEqual(api.unresolvedComposeInlineCitationStatusIds(
+    reconciliation.answer_text,
+    reconciliation.citations
+  ), []);
+  assert.deepEqual(api.unresolvedComposeInlineCitationStatusIds(
+    `Missing source. [#${missingStatusId}]`,
+    reconciliation.citations
+  ), [missingStatusId]);
 });
 
 test("briefing persistence and worker flow preserve editorial and scheduling invariants", async () => {
-  const [source, migration] = await Promise.all([
+  const [source, migration, api] = await Promise.all([
     readFile(backendPath, "utf8"),
     readFile(path.join(repositoryRoot, "db/migrations/034_curated_topic_briefings.sql"), "utf8"),
+    import(`${backendModuleUrl}?briefing-persistence=${Date.now()}`),
   ]);
 
   assert.match(migration, /CREATE TABLE IF NOT EXISTS xmonitor_briefing_topics/);
@@ -160,9 +191,47 @@ test("briefing persistence and worker flow preserve editorial and scheduling inv
   assert.match(source, /compose_job_stale_running/);
   assert.match(source, /SET status = 'running', started_at = COALESCE\(started_at, now\(\)\)/);
   assert.match(source, /only a draft briefing version can be published/);
+  assert.match(source, /briefing answer must include at least one inline citation marker/);
+  assert.match(source, /briefing answer includes citation markers that are missing from its source list/);
   assert.match(source, /new Set\(\["published", "superseded"\]\)/);
   assert.match(source, /discovered_at: \$\{citation\.discovered_at \|\| "unknown"\}/);
   assert.match(source, /discovered_at: item\.discovered_at/);
+
+  const publicQuery = source.slice(
+    source.indexOf("async function getPublishedBriefings"),
+    source.indexOf("async function listAdminBriefingTopics")
+  );
+  assert.match(publicQuery, /t\.display_order AS display_order/);
+  assert.match(publicQuery, /ORDER BY t\.display_order ASC, v\.question ASC, t\.topic_id ASC/);
+  assert.doesNotMatch(publicQuery, /v\.display_order/);
+
+  let capturedQuery = "";
+  const published = await api.getPublishedBriefings(null, {
+    async query(queryText, params) {
+      capturedQuery = queryText;
+      assert.deepEqual(params, []);
+      return {
+        rows: [{
+          topic_id: "11111111-1111-4111-8111-111111111111",
+          slug: "current-topic-order",
+          question: "Does current topic order control presentation?",
+          category: "Operations",
+          display_order: 2,
+          version_id: "22222222-2222-4222-8222-222222222222",
+          answer_text: "Yes. [#2054924108299923836]",
+          key_points_json: [],
+          citations_json: [{ status_id: "2054924108299923836" }],
+          source_count: 1,
+          generated_at: "2026-07-21T12:00:00.000Z",
+          corpus_through: "2026-07-21T11:00:00.000Z",
+          reviewed_at: "2026-07-21T13:00:00.000Z",
+          published_at: "2026-07-21T13:00:00.000Z",
+        }],
+      };
+    },
+  });
+  assert.equal(published[0].order, 2);
+  assert.match(capturedQuery, /t\.display_order AS display_order/);
 });
 
 test("provisioning is staged off and targeted rollout helpers preserve configuration", async () => {
