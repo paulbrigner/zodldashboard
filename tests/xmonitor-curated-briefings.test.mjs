@@ -135,9 +135,13 @@ test("provisioning is staged off and targeted rollout helpers preserve configura
   assert.match(codeOnly, /update-function-code/);
   assert.doesNotMatch(codeOnly, /update-function-configuration/);
   assert.doesNotMatch(codeOnly, /apigatewayv2|put-role-policy|events put-rule/);
-  assert.match(migrationHelper, /--query Environment/);
+  assert.match(migrationHelper, /xmonitor\/rds\/master/);
   assert.match(migrationHelper, /trap cleanup EXIT/);
-  assert.match(migrationHelper, /restore_api_environment/);
+  assert.match(migrationHelper, /lambda create-function/);
+  assert.match(migrationHelper, /lambda delete-function/);
+  assert.match(migrationHelper, /"Handler": "index\.handler"/);
+  assert.match(migrationHelper, /"PGUSER": str\(secret\["username"\]\)/);
   assert.match(migrationHelper, /034_curated_topic_briefings\.sql/);
-  assert.match(migrationHelper, /variables\["XMONITOR_BRIEFINGS_ENABLED"\] = "false"/);
+  assert.match(migrationHelper, /"XMONITOR_BRIEFINGS_ENABLED": "false"/);
+  assert.doesNotMatch(migrationHelper, /update-function-configuration/);
 });
