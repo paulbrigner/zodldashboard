@@ -88,6 +88,48 @@ test("manage capability is rejected unless the same client also has briefing rea
   );
 });
 
+test("curated briefing Compose requires auditable inline status-ID markers", async () => {
+  const api = await import(`${backendModuleUrl}?briefing-citation-contract=${Date.now()}`);
+  const statusId = "2054924108299923836";
+  const composeInput = api.briefingComposeInput({
+    question: "What is Tachyon and its current status?",
+    editorial_context: null,
+    answer_style: "detailed",
+    retrieval_config_json: {
+      lookback_hours: 720,
+      retrieval_limit: 10,
+      context_limit: 10,
+    },
+  }, new Date("2026-07-21T12:00:00.000Z"));
+
+  assert.equal(composeInput.inline_citation_markers, true);
+  const prompt = api.buildComposePrompt(composeInput, {
+    citations: [{
+      status_id: statusId,
+      author_handle: "tachyonzcash",
+      discovered_at: "2026-07-20T12:00:00.000Z",
+      score: 0.95,
+      url: `https://x.com/i/status/${statusId}`,
+      body_text: "Tachyon is in development.",
+    }],
+  });
+
+  assert.match(prompt.systemPrompt, /exact format \[#<status_id>\]/);
+  assert.match(prompt.systemPrompt, /never the evidence list number/);
+  assert.match(prompt.systemPrompt, /every ID in citation_status_ids must appear in answer_text/);
+  assert.match(prompt.userPrompt, new RegExp(`status_id: ${statusId}`));
+
+  const parsed = api.parseComposeModelResult(JSON.stringify({
+    answer_text: `Tachyon is in development. [#${statusId}]`,
+    draft_text: null,
+    email_draft: null,
+    key_points: ["Tachyon is in development."],
+    citation_status_ids: [statusId],
+  }));
+  assert.equal(parsed.answer_text, `Tachyon is in development. [#${statusId}]`);
+  assert.deepEqual(parsed.citation_status_ids, [statusId]);
+});
+
 test("briefing persistence and worker flow preserve editorial and scheduling invariants", async () => {
   const [source, migration] = await Promise.all([
     readFile(backendPath, "utf8"),
@@ -105,6 +147,7 @@ test("briefing persistence and worker flow preserve editorial and scheduling inv
   assert.match(migration, /WHERE status IN \('queued', 'running'\)/);
 
   assert.match(source, /draft_format: "none"/);
+  assert.match(source, /inline_citation_markers: true/);
   assert.match(source, /evidence_fingerprint = \$3/);
   assert.match(source, /WHERE previous\.evidence_fingerprint = \$3/);
   assert.match(source, /FOR UPDATE OF r, t/);

@@ -107,7 +107,7 @@ const DEFAULT_COMPOSE_DISABLE_THINKING = true;
 const DEFAULT_COMPOSE_STRIP_THINKING_RESPONSE = true;
 const DEFAULT_BRIEFINGS_ENABLED = false;
 const DEFAULT_BRIEFING_DISPATCH_LIMIT = 10;
-const DEFAULT_BRIEFING_PROMPT_VERSION = "curated-briefing-v1";
+const DEFAULT_BRIEFING_PROMPT_VERSION = "curated-briefing-v2";
 const BRIEFING_RUNNING_STALE_MINUTES = 15;
 const BRIEFING_QUEUED_STALE_MINUTES = 30;
 const DEFAULT_EMAIL_ENABLED = false;
@@ -2801,6 +2801,13 @@ function parseComposeQueryBody(value) {
   }
   const draftFormat = draftFormatRaw || "email";
 
+  const inlineCitationMarkers = value.inline_citation_markers === undefined
+    ? false
+    : asBoolean(value.inline_citation_markers);
+  if (inlineCitationMarkers === undefined) {
+    return { ok: false, error: "inline_citation_markers must be a boolean" };
+  }
+
   const normalizedHandle = normalizeHandleFilter(value.handle);
 
   return {
@@ -2822,6 +2829,7 @@ function parseComposeQueryBody(value) {
       context_limit: contextLimit,
       answer_style: answerStyle,
       draft_format: draftFormat,
+      ...(inlineCitationMarkers ? { inline_citation_markers: true } : {}),
     },
   };
 }
@@ -5210,7 +5218,7 @@ function normalizeComposeAnswerText(value) {
   return trimmed;
 }
 
-function parseComposeModelResult(rawContent) {
+export function parseComposeModelResult(rawContent) {
   const jsonText = extractJsonObject(rawContent);
   if (jsonText) {
     try {
@@ -5273,7 +5281,7 @@ function answerStyleInstruction(style) {
   return "Provide a balanced medium-length synthesis.";
 }
 
-function buildComposePrompt(input, evidence) {
+export function buildComposePrompt(input, evidence) {
   const answerStyle = input.answer_style || "balanced";
   const draftFormat = input.draft_format || "email";
 
@@ -5303,6 +5311,11 @@ function buildComposePrompt(input, evidence) {
     "Return only a single JSON object with keys:",
     '{"answer_text": string, "draft_text": string|null, "email_draft": {"subject": string, "body_markdown": string, "body_text": string|null}|null, "key_points": string[], "citation_status_ids": string[]}',
     "Format answer_text as clean GitHub-flavored Markdown suitable for direct UI rendering (headings, short paragraphs, bullet lists).",
+    ...(input.inline_citation_markers ? [
+      "In answer_text, place an inline citation marker immediately after each evidence-supported claim using the exact format [#<status_id>].",
+      "Use the exact numeric status_id from the evidence post, never the evidence list number (such as #1), and never invent an ID.",
+      "Every inline marker must name an ID in citation_status_ids, and every ID in citation_status_ids must appear in answer_text at least once.",
+    ] : []),
     answerStyleInstruction(answerStyle),
     composeDraftInstruction(draftFormat),
     "citation_status_ids must include only status IDs from the evidence list and should cover major claims.",
@@ -6203,7 +6216,7 @@ function parseBriefingTopicBody(value, { partial = false } = {}) {
   return { ok: true, data };
 }
 
-function briefingComposeInput(topic, reference = new Date()) {
+export function briefingComposeInput(topic, reference = new Date()) {
   const retrieval = briefingJsonObject(topic.retrieval_config_json);
   const lookbackHours = Math.min(
     Math.max(asInteger(retrieval.lookback_hours) || 720, 1),
@@ -6219,6 +6232,7 @@ function briefingComposeInput(topic, reference = new Date()) {
     task_text: taskText,
     answer_style: String(topic.answer_style || "detailed"),
     draft_format: "none",
+    inline_citation_markers: true,
     since,
     until,
   };
