@@ -20,6 +20,8 @@ export function isXMonitorReadApiPath(pathname: string): boolean {
     normalized === "/v1/engagement" ||
     normalized === "/v1/trends" ||
     normalized === "/v1/window-summaries/latest" ||
+    normalized === "/v1/curated-briefings" ||
+    /^\/v1\/curated-briefings\/[^/]+$/.test(normalized) ||
     /^\/v1\/posts\/[^/]+$/.test(normalized)
   );
 }

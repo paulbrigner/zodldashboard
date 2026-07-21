@@ -538,6 +538,242 @@ paths:
               schema:
                 $ref: '#/components/schemas/ScheduledEmailRunNowResponse'
 
+  /curated-briefings:
+    get:
+      summary: List published curated X Monitor briefings
+      operationId: listCuratedBriefings
+      description: Requires a read-client credential with briefings:read. This endpoint never accepts a free-form question.
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      responses:
+        '200':
+          description: Published, administrator-reviewed briefing versions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuratedBriefingListResponse'
+        '401': { description: Read-client credentials are missing or invalid }
+        '403': { description: 'The authenticated client lacks briefings:read' }
+
+  /curated-briefings/{slug}:
+    get:
+      summary: Get one published curated X Monitor briefing
+      operationId: getCuratedBriefing
+      description: Requires a read-client credential with briefings:read.
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: path
+          name: slug
+          required: true
+          schema: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+      responses:
+        '200':
+          description: Published briefing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuratedBriefing'
+        '404': { description: No published briefing exists for this slug }
+
+  /admin/curated-briefings:
+    get:
+      summary: List curated briefing topics for administration
+      operationId: listCuratedBriefingTopics
+      description: Requires a separate server-only client with briefings:read and briefings:manage.
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      responses:
+        '200':
+          description: Topic inventory and latest-run state
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        '403': { description: 'The authenticated client lacks briefings:manage' }
+
+  /admin/curated-briefings/topics:
+    post:
+      summary: Create a curated briefing topic
+      operationId: createCuratedBriefingTopic
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CuratedBriefingTopicWrite'
+      responses:
+        '201': { description: Topic created }
+        '409': { description: Slug already exists }
+
+  /admin/curated-briefings/topics/{topicId}:
+    parameters:
+      - in: path
+        name: topicId
+        required: true
+        schema: { type: string, format: uuid }
+    patch:
+      summary: Update a curated briefing topic
+      operationId: updateCuratedBriefingTopic
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CuratedBriefingTopicWrite'
+      responses:
+        '200': { description: Topic updated }
+        '404': { description: Topic not found }
+    delete:
+      summary: Archive a curated briefing topic while retaining history
+      operationId: archiveCuratedBriefingTopic
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      responses:
+        '200': { description: Topic archived }
+        '404': { description: Topic not found }
+
+  /admin/curated-briefings/topics/{topicId}/refresh:
+    post:
+      summary: Idempotently enqueue a curated briefing refresh
+      operationId: refreshCuratedBriefingTopic
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: header
+          name: Idempotency-Key
+          required: false
+          schema: { type: string, maxLength: 180 }
+      responses:
+        '202':
+          description: Refresh queued or existing active/idempotent run returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CuratedBriefingRun'
+
+  /admin/curated-briefings/topics/{topicId}/versions:
+    get:
+      summary: List immutable content versions for a topic
+      operationId: listCuratedBriefingVersions
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Versions newest first }
+
+  /admin/curated-briefings/versions/{versionId}:
+    parameters:
+      - in: path
+        name: versionId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Get a curated briefing version
+      operationId: getCuratedBriefingVersion
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      responses:
+        '200': { description: Version detail }
+        '404': { description: Version not found }
+    patch:
+      summary: Create a new immutable editorial revision from a version
+      operationId: reviseCuratedBriefingVersion
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CuratedBriefingRevisionRequest'
+      responses:
+        '201': { description: New draft revision created }
+
+  /admin/curated-briefings/versions/{versionId}/publish:
+    post:
+      summary: Publish an eligible draft version
+      operationId: publishCuratedBriefingVersion
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: path
+          name: versionId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { description: Version published }
+        '409': { description: Version is not a citable draft }
+
+  /admin/curated-briefings/versions/{versionId}/reject:
+    post:
+      summary: Reject a draft version
+      operationId: rejectCuratedBriefingVersion
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: path
+          name: versionId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string, maxLength: 2000 }
+      responses:
+        '200': { description: Draft rejected }
+
+  /admin/curated-briefings/topics/{topicId}/rollback:
+    post:
+      summary: Restore a previously published version
+      operationId: rollbackCuratedBriefingTopic
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      parameters:
+        - in: path
+          name: topicId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [version_id]
+              properties:
+                version_id: { type: string, format: uuid }
+      responses:
+        '200': { description: Previous version restored }
+        '404': { description: Eligible version not found }
+
   /posts/{statusId}:
     get:
       summary: Get post detail
@@ -825,11 +1061,12 @@ components:
 
     ComposeCitation:
       type: object
-      required: [status_id, url, author_handle, excerpt]
+      required: [status_id, url, author_handle, discovered_at, excerpt]
       properties:
         status_id: { type: string }
         url: { type: string }
         author_handle: { type: string }
+        discovered_at: { type: string, format: date-time }
         excerpt: { type: string }
         score: { type: number, nullable: true }
 
@@ -870,6 +1107,120 @@ components:
             $ref: '#/components/schemas/ComposeCitation'
         retrieval_stats:
           $ref: '#/components/schemas/ComposeRetrievalStats'
+
+    CuratedBriefing:
+      type: object
+      required:
+        - topic_id
+        - slug
+        - question
+        - order
+        - version_id
+        - answer_text
+        - key_points
+        - citations
+        - source_count
+        - generated_at
+        - published_at
+        - stale
+        - models
+        - prompt_version
+        - provenance
+      properties:
+        topic_id: { type: string, format: uuid }
+        slug: { type: string }
+        question: { type: string }
+        category: { type: string, nullable: true }
+        order: { type: integer }
+        version_id: { type: string, format: uuid }
+        answer_text: { type: string }
+        key_points:
+          type: array
+          items: { type: string }
+        citations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComposeCitation'
+        source_count: { type: integer, minimum: 0 }
+        generated_at: { type: string, format: date-time }
+        corpus_from: { type: string, format: date-time, nullable: true }
+        corpus_through: { type: string, format: date-time, nullable: true }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+        published_at: { type: string, format: date-time }
+        stale_after: { type: string, format: date-time, nullable: true }
+        stale: { type: boolean }
+        models:
+          type: object
+          properties:
+            embedding: { type: string, nullable: true }
+            synthesis: { type: string, nullable: true }
+        prompt_version: { type: string }
+        provenance: { type: object, additionalProperties: true }
+
+    CuratedBriefingListResponse:
+      type: object
+      required: [items, generated_at]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CuratedBriefing'
+        generated_at: { type: string, format: date-time }
+
+    CuratedBriefingRetrievalConfig:
+      type: object
+      properties:
+        lookback_hours: { type: integer, minimum: 1, maximum: 8760, default: 720 }
+        tiers:
+          type: array
+          items: { type: string, enum: [teammate, investor, influencer, ecosystem] }
+        handle: { type: string }
+        significant: { type: boolean }
+        min_followers: { type: integer, minimum: 1 }
+        max_followers: { type: integer, minimum: 1 }
+        min_account_age_days: { type: integer, minimum: 1 }
+        max_account_age_days: { type: integer, minimum: 1 }
+        location: { type: string }
+        retrieval_limit: { type: integer, minimum: 1, maximum: 150 }
+        context_limit: { type: integer, minimum: 1, maximum: 32 }
+      additionalProperties: false
+
+    CuratedBriefingTopicWrite:
+      type: object
+      properties:
+        slug: { type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$' }
+        question: { type: string, minLength: 10, maxLength: 1000 }
+        category: { type: string, maxLength: 120, nullable: true }
+        editorial_context: { type: string, maxLength: 4000, nullable: true }
+        retrieval_config:
+          $ref: '#/components/schemas/CuratedBriefingRetrievalConfig'
+        answer_style: { type: string, enum: [brief, balanced, detailed], default: detailed }
+        refresh_interval_minutes: { type: integer, minimum: 60, maximum: 10080, default: 1440 }
+        enabled: { type: boolean, default: true }
+        order: { type: integer }
+      additionalProperties: false
+
+    CuratedBriefingRun:
+      type: object
+      required: [run_id, topic_id, status, compose_job_id, created_at]
+      properties:
+        run_id: { type: string, format: uuid }
+        topic_id: { type: string, format: uuid }
+        status: { type: string, enum: [queued, running, succeeded, failed] }
+        compose_job_id: { type: string, format: uuid, nullable: true }
+        created_at: { type: string, format: date-time }
+        idempotent_replay: { type: boolean }
+        already_active: { type: boolean }
+
+    CuratedBriefingRevisionRequest:
+      type: object
+      properties:
+        answer_text: { type: string, minLength: 1, maxLength: 50000 }
+        key_points:
+          type: array
+          maxItems: 12
+          items: { type: string, minLength: 1, maxLength: 1000 }
+      additionalProperties: false
 
     ComposeJobStatus:
       type: string

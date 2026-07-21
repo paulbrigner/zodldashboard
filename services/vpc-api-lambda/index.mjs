@@ -12,6 +12,7 @@ const WATCH_TIER_FILTERS = new Set(["teammate", "investor", "influencer", "ecosy
 const RUN_MODES = new Set(["priority", "discovery", "both", "manual"]);
 const COMPOSE_ANSWER_STYLES = new Set(["brief", "balanced", "detailed"]);
 const COMPOSE_DRAFT_FORMATS = new Set(["none", "x_post", "thread", "email"]);
+const BRIEFING_REVIEW_STATUSES = new Set(["draft", "published", "rejected", "superseded"]);
 const SCHEDULE_KINDS = new Set(["interval", "weekly"]);
 const SCHEDULE_VISIBILITIES = new Set(["personal", "shared"]);
 const SCHEDULE_DAY_CODES = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
@@ -104,6 +105,11 @@ const DEFAULT_COMPOSE_MAX_CITATIONS = 10;
 const DEFAULT_COMPOSE_USE_JSON_MODE = true;
 const DEFAULT_COMPOSE_DISABLE_THINKING = true;
 const DEFAULT_COMPOSE_STRIP_THINKING_RESPONSE = true;
+const DEFAULT_BRIEFINGS_ENABLED = false;
+const DEFAULT_BRIEFING_DISPATCH_LIMIT = 10;
+const DEFAULT_BRIEFING_PROMPT_VERSION = "curated-briefing-v1";
+const BRIEFING_RUNNING_STALE_MINUTES = 15;
+const BRIEFING_QUEUED_STALE_MINUTES = 30;
 const DEFAULT_EMAIL_ENABLED = false;
 const DEFAULT_EMAIL_SCHEDULES_ENABLED = false;
 const DEFAULT_EMAIL_REQUIRE_OAUTH = true;
@@ -125,7 +131,7 @@ const VIEWER_PROXY_SECRET_HEADER = "x-xmonitor-viewer-secret";
 const READ_CLIENT_ID_HEADER = "x-xmonitor-client-id";
 const READ_CLIENT_SECRET_HEADER = "x-xmonitor-client-secret";
 const READ_CLIENT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/;
-const READ_CLIENT_CAPABILITIES = new Set(["read", "semantic:query"]);
+const READ_CLIENT_CAPABILITIES = new Set(["read", "semantic:query", "briefings:read", "briefings:manage"]);
 const MIN_READ_CLIENT_SECRET_LENGTH = 32;
 const READ_CLIENT_CONFIGURATION_CACHE_MS = 5 * 60 * 1000;
 const READ_CLIENT_CONFIGURATION_FAILURE_CACHE_MS = 15 * 1000;
@@ -236,6 +242,7 @@ let queryCheckpointSchemaEnsured = false;
 let roadmapAccessSchemaEnsured = false;
 let xmonitorAccessSchemaEnsured = false;
 let accessControlSchemaEnsured = false;
+let briefingSchemaAvailableCache;
 let sqsClient;
 let sesClient;
 let secretsManagerClient;
@@ -418,6 +425,26 @@ function composeStripThinkingResponse() {
 
 function composeApiKey() {
   return asString(process.env.XMONITOR_COMPOSE_API_KEY) || embeddingApiKey();
+}
+
+function briefingsEnabled() {
+  const value = asString(process.env.XMONITOR_BRIEFINGS_ENABLED);
+  if (!value) return DEFAULT_BRIEFINGS_ENABLED;
+  const normalized = value.toLowerCase();
+  if (["1", "true", "yes"].includes(normalized)) return true;
+  if (["0", "false", "no"].includes(normalized)) return false;
+  return DEFAULT_BRIEFINGS_ENABLED;
+}
+
+function briefingDispatchLimit() {
+  return parsePositiveInt(
+    process.env.XMONITOR_BRIEFING_DISPATCH_LIMIT,
+    DEFAULT_BRIEFING_DISPATCH_LIMIT
+  );
+}
+
+function briefingPromptVersion() {
+  return asString(process.env.XMONITOR_BRIEFING_PROMPT_VERSION) || DEFAULT_BRIEFING_PROMPT_VERSION;
 }
 
 function emailEnabled() {
@@ -614,6 +641,16 @@ function getPool() {
   return pool;
 }
 
+async function briefingSchemaAvailable() {
+  if (briefingSchemaAvailableCache === true) return true;
+  const result = await getPool().query(
+    "SELECT to_regclass('public.xmonitor_briefing_topics') AS topics, to_regclass('public.xmonitor_briefing_runs') AS runs, to_regclass('public.xmonitor_briefing_versions') AS versions"
+  );
+  const available = Boolean(result.rows[0]?.topics && result.rows[0]?.runs && result.rows[0]?.versions);
+  if (available) briefingSchemaAvailableCache = true;
+  return available;
+}
+
 function getSqsClient() {
   if (!sqsClient) {
     sqsClient = new SQSClient({});
@@ -677,6 +714,14 @@ function isReadClientPath(path) {
     path === "/v1/window-summaries/latest" ||
     /^\/v1\/posts\/[^/]+$/.test(path)
   );
+}
+
+function isPublishedBriefingPath(path) {
+  return path === "/v1/curated-briefings" || /^\/v1\/curated-briefings\/[^/]+$/.test(path);
+}
+
+function isAdminBriefingPath(path) {
+  return path === "/v1/admin/curated-briefings" || path.startsWith("/v1/admin/curated-briefings/");
 }
 
 function timingSafeMatch(expected, actual) {
@@ -761,7 +806,8 @@ function parseReadClientMap(payload) {
       secrets.some((secret) => !secret || secret.length < MIN_READ_CLIENT_SECRET_LENGTH) ||
       capabilities.length < 1 ||
       capabilities.some((capability) => !capability || !READ_CLIENT_CAPABILITIES.has(capability)) ||
-      (capabilities.includes("semantic:query") && !capabilities.includes("read"))
+      (capabilities.includes("semantic:query") && !capabilities.includes("read")) ||
+      (capabilities.includes("briefings:manage") && !capabilities.includes("briefings:read"))
     ) {
       return { ok: false, reason: "read client configuration has invalid secrets or capabilities" };
     }
@@ -1261,6 +1307,13 @@ function readJsonBody(event) {
   } catch {
     return { ok: false, error: "invalid JSON body" };
   }
+}
+
+function readOptionalJsonBody(event) {
+  if (!event || event.body == null || String(event.body).trim() === "") {
+    return { ok: true, body: {} };
+  }
+  return readJsonBody(event);
 }
 
 function rawBodyFromEvent(event) {
@@ -4912,6 +4965,7 @@ async function queryComposeEvidence(query, embeddingVector) {
     status_id: item.status_id,
     url: item.url,
     author_handle: item.author_handle,
+    discovered_at: item.discovered_at,
     excerpt: buildCitationExcerpt(item.body_text),
     body_text: normalizeComposeEvidenceBody(item.body_text),
     score: item.score !== undefined ? item.score : null,
@@ -5230,6 +5284,7 @@ function buildComposePrompt(input, evidence) {
         `#${index + 1}`,
         `status_id: ${citation.status_id}`,
         `author_handle: @${citation.author_handle}`,
+        `discovered_at: ${citation.discovered_at || "unknown"}`,
         `score: ${scoreText}`,
         `url: ${citation.url}`,
         `body_text: ${normalizeComposeEvidenceBody(citation.body_text || citation.excerpt)}`,
@@ -5698,6 +5753,7 @@ async function processComposeJob(jobId, requestId) {
   }
 
   const db = getPool();
+  const briefingSchemaReady = await briefingSchemaAvailable();
   const client = await db.connect();
   let row;
 
@@ -5726,6 +5782,24 @@ async function processComposeJob(jobId, requestId) {
 
     row = selected.rows[0];
     if (row.status !== "queued") {
+      if (briefingSchemaReady && new Set(["failed", "expired", "succeeded"]).has(String(row.status))) {
+        await client.query(
+          `
+            UPDATE xmonitor_briefing_runs
+            SET status = 'failed',
+                error_code = $2,
+                error_message = $3,
+                completed_at = COALESCE(completed_at, now())
+            WHERE compose_job_id = $1
+              AND status IN ('queued', 'running')
+          `,
+          [
+            jobId,
+            `compose_job_${String(row.status)}`,
+            `compose job reached ${String(row.status)} without completing the briefing run`,
+          ]
+        );
+      }
       await client.query("COMMIT");
       return { ok: false, skipped: `status_${row.status}` };
     }
@@ -5740,6 +5814,18 @@ async function processComposeJob(jobId, requestId) {
         `,
         [jobId]
       );
+      if (briefingSchemaReady) {
+        await client.query(
+          `
+            UPDATE xmonitor_briefing_runs
+            SET status = 'failed', error_code = 'compose_job_expired',
+                error_message = 'compose job expired before processing', completed_at = now()
+            WHERE compose_job_id = $1
+              AND status IN ('queued', 'running')
+          `,
+          [jobId]
+        );
+      }
       await client.query("COMMIT");
       return { ok: false, skipped: "expired" };
     }
@@ -5759,6 +5845,17 @@ async function processComposeJob(jobId, requestId) {
     );
 
     row = updated.rows[0];
+    if (briefingSchemaReady) {
+      await client.query(
+        `
+          UPDATE xmonitor_briefing_runs
+          SET status = 'running', started_at = COALESCE(started_at, now())
+          WHERE compose_job_id = $1
+            AND status IN ('queued', 'running')
+        `,
+        [jobId]
+      );
+    }
     await client.query("COMMIT");
   } catch (error) {
     try {
@@ -5785,6 +5882,7 @@ async function processComposeJob(jobId, requestId) {
       `,
       [jobId, parsed.error]
     );
+    await failBriefingRunForComposeJob(jobId, "invalid_job_payload", parsed.error);
     return { ok: false, skipped: "invalid_payload" };
   }
 
@@ -5793,18 +5891,7 @@ async function processComposeJob(jobId, requestId) {
     const evidencePayload = await queryComposeEvidence(parsed.data, queryEmbedding);
     const composed = await synthesizeComposeAnswer(parsed.data, evidencePayload, requestId || jobId);
 
-    await db.query(
-      `
-        UPDATE compose_jobs
-        SET status = 'succeeded',
-            result_payload_json = $2::jsonb,
-            completed_at = now(),
-            error_code = NULL,
-            error_message = NULL
-        WHERE job_id = $1
-      `,
-      [jobId, asJson(composed)]
-    );
+    await completeComposeJobAndBriefing(jobId, composed);
 
     console.log(
       JSON.stringify({
@@ -5834,6 +5921,7 @@ async function processComposeJob(jobId, requestId) {
         `,
         [jobId, errorCode, message]
       );
+      await markBriefingRunForComposeJob(jobId, "queued");
       await enqueueComposeJob(jobId, backoffSeconds);
       console.log(
         JSON.stringify({
@@ -5860,6 +5948,7 @@ async function processComposeJob(jobId, requestId) {
       `,
       [jobId, errorCode, message]
     );
+    await failBriefingRunForComposeJob(jobId, errorCode, message);
     console.log(
       JSON.stringify({
         event: "compose_job_failed",
@@ -5872,6 +5961,1155 @@ async function processComposeJob(jobId, requestId) {
     );
     return { ok: false, skipped: "failed" };
   }
+}
+
+function briefingJsonArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function briefingJsonObject(value) {
+  return isRecord(value) && !Array.isArray(value) ? value : {};
+}
+
+function briefingDateRange(citations, fallbackFrom = null, fallbackThrough = null) {
+  const timestamps = briefingJsonArray(citations)
+    .map((citation) => toIso(citation?.discovered_at))
+    .filter(Boolean)
+    .sort();
+  return {
+    corpus_from: timestamps[0] || toIso(fallbackFrom),
+    corpus_through: timestamps[timestamps.length - 1] || toIso(fallbackThrough),
+  };
+}
+
+function publishedBriefingFromRow(row) {
+  const staleAfter = toIso(row.stale_after);
+  return {
+    topic_id: String(row.topic_id),
+    slug: String(row.slug),
+    question: String(row.question),
+    category: row.category ? String(row.category) : null,
+    order: Number(row.display_order || 0),
+    version_id: String(row.version_id),
+    answer_text: String(row.answer_text),
+    key_points: briefingJsonArray(row.key_points_json),
+    citations: briefingJsonArray(row.citations_json),
+    source_count: Number(row.source_count || 0),
+    generated_at: toIso(row.generated_at) || nowIso(),
+    corpus_from: toIso(row.corpus_from),
+    corpus_through: toIso(row.corpus_through),
+    reviewed_at: toIso(row.reviewed_at),
+    published_at: toIso(row.published_at) || nowIso(),
+    stale_after: staleAfter,
+    stale: Boolean(staleAfter && new Date(staleAfter).getTime() <= Date.now()),
+    models: {
+      embedding: row.embedding_model ? String(row.embedding_model) : null,
+      synthesis: row.synthesis_model ? String(row.synthesis_model) : null,
+    },
+    prompt_version: String(row.prompt_version || DEFAULT_BRIEFING_PROMPT_VERSION),
+    provenance: briefingJsonObject(row.provenance_json),
+  };
+}
+
+function adminBriefingVersionFromRow(row) {
+  const mapped = {
+    ...publishedBriefingFromRow({
+      ...row,
+      slug: row.slug || "unpublished",
+      question: row.question || "Unpublished briefing",
+      display_order: row.display_order || 0,
+      published_at: row.published_at || row.generated_at,
+    }),
+    version_number: Number(row.version_number || 0),
+    review_status: BRIEFING_REVIEW_STATUSES.has(String(row.review_status))
+      ? String(row.review_status)
+      : "draft",
+    run_id: row.run_id ? String(row.run_id) : null,
+    source_version_id: row.source_version_id ? String(row.source_version_id) : null,
+    rejection_reason: row.rejection_reason ? String(row.rejection_reason) : null,
+    created_at: toIso(row.created_at) || nowIso(),
+  };
+  mapped.published_at = toIso(row.published_at);
+  mapped.reviewed_at = toIso(row.reviewed_at);
+  return mapped;
+}
+
+function adminBriefingTopicFromRow(row) {
+  return {
+    topic_id: String(row.topic_id),
+    slug: String(row.slug),
+    question: String(row.question),
+    category: row.category ? String(row.category) : null,
+    editorial_context: row.editorial_context ? String(row.editorial_context) : null,
+    retrieval_config: briefingJsonObject(row.retrieval_config_json),
+    answer_style: String(row.answer_style || "detailed"),
+    refresh_interval_minutes: Number(row.refresh_interval_minutes || 1440),
+    enabled: Boolean(row.enabled),
+    order: Number(row.display_order || 0),
+    next_refresh_at: toIso(row.next_refresh_at),
+    last_scheduled_at: toIso(row.last_scheduled_at),
+    current_published_version_id: row.current_published_version_id
+      ? String(row.current_published_version_id)
+      : null,
+    latest_run: row.latest_run_id
+      ? {
+          run_id: String(row.latest_run_id),
+          topic_id: String(row.topic_id),
+          status: String(row.latest_run_status),
+          trigger_source: row.latest_run_trigger_source ? String(row.latest_run_trigger_source) : undefined,
+          compose_job_id: row.latest_run_compose_job_id ? String(row.latest_run_compose_job_id) : null,
+          corpus_from: toIso(row.latest_run_corpus_from),
+          corpus_through: toIso(row.latest_run_corpus_through),
+          created_at: toIso(row.latest_run_created_at) || nowIso(),
+          started_at: toIso(row.latest_run_started_at),
+          completed_at: toIso(row.latest_run_completed_at),
+          error: row.latest_run_error_message
+            ? {
+                code: String(row.latest_run_error_code || "briefing_failed"),
+                message: String(row.latest_run_error_message),
+              }
+            : null,
+        }
+      : null,
+    created_at: toIso(row.created_at) || nowIso(),
+    updated_at: toIso(row.updated_at) || nowIso(),
+  };
+}
+
+const BRIEFING_RETRIEVAL_CONFIG_KEYS = new Set([
+  "lookback_hours",
+  "tiers",
+  "handle",
+  "significant",
+  "min_followers",
+  "max_followers",
+  "min_account_age_days",
+  "max_account_age_days",
+  "location",
+  "retrieval_limit",
+  "context_limit",
+]);
+
+function parseBriefingRetrievalConfig(value) {
+  if (value === undefined) return { ok: true, data: {} };
+  if (!isRecord(value) || Array.isArray(value)) {
+    return { ok: false, error: "retrieval_config must be an object" };
+  }
+  for (const key of Object.keys(value)) {
+    if (!BRIEFING_RETRIEVAL_CONFIG_KEYS.has(key)) {
+      return { ok: false, error: `retrieval_config contains unsupported field: ${key}` };
+    }
+  }
+  const lookbackHours = value.lookback_hours === undefined ? 720 : asInteger(value.lookback_hours);
+  if (!lookbackHours || lookbackHours < 1 || lookbackHours > 24 * 365) {
+    return { ok: false, error: "retrieval_config.lookback_hours must be between 1 and 8760" };
+  }
+  const probe = parseComposeQueryBody({
+    ...value,
+    task_text: "Validate curated briefing retrieval configuration",
+    draft_format: "none",
+  });
+  if (!probe.ok) return probe;
+  const data = { ...probe.data, lookback_hours: lookbackHours };
+  delete data.task_text;
+  delete data.draft_format;
+  delete data.answer_style;
+  delete data.query_vector;
+  delete data.since;
+  delete data.until;
+  return { ok: true, data };
+}
+
+function parseBriefingTopicBody(value, { partial = false } = {}) {
+  if (!isRecord(value) || Array.isArray(value)) {
+    return { ok: false, error: "body must be an object" };
+  }
+  const allowed = new Set([
+    "slug",
+    "question",
+    "category",
+    "editorial_context",
+    "retrieval_config",
+    "answer_style",
+    "refresh_interval_minutes",
+    "enabled",
+    "order",
+  ]);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) return { ok: false, error: `unsupported field: ${key}` };
+  }
+
+  const data = {};
+  if (!partial || Object.hasOwn(value, "slug")) {
+    const slug = asString(value.slug)?.toLowerCase();
+    if (!slug || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 120) {
+      return { ok: false, error: "slug must be a lowercase, hyphenated identifier up to 120 characters" };
+    }
+    data.slug = slug;
+  }
+  if (!partial || Object.hasOwn(value, "question")) {
+    const question = asString(value.question);
+    if (!question || question.length < 10 || question.length > 1000) {
+      return { ok: false, error: "question must contain between 10 and 1000 characters" };
+    }
+    data.question = question;
+  }
+  if (Object.hasOwn(value, "category")) {
+    const category = asString(value.category);
+    if (category && category.length > 120) return { ok: false, error: "category is too long" };
+    data.category = category || null;
+  }
+  if (Object.hasOwn(value, "editorial_context")) {
+    const context = asString(value.editorial_context);
+    if (context && context.length > 4000) return { ok: false, error: "editorial_context is too long" };
+    data.editorial_context = context || null;
+  }
+  if (!partial || Object.hasOwn(value, "retrieval_config")) {
+    const retrieval = parseBriefingRetrievalConfig(value.retrieval_config);
+    if (!retrieval.ok) return retrieval;
+    data.retrieval_config = retrieval.data;
+  }
+  if (!partial || Object.hasOwn(value, "answer_style")) {
+    const answerStyle = asString(value.answer_style)?.toLowerCase() || "detailed";
+    if (!COMPOSE_ANSWER_STYLES.has(answerStyle)) {
+      return { ok: false, error: "answer_style must be one of brief, balanced, detailed" };
+    }
+    data.answer_style = answerStyle;
+  }
+  if (!partial || Object.hasOwn(value, "refresh_interval_minutes")) {
+    const interval = value.refresh_interval_minutes === undefined
+      ? 1440
+      : asInteger(value.refresh_interval_minutes);
+    if (!interval || interval < 60 || interval > 10080) {
+      return { ok: false, error: "refresh_interval_minutes must be between 60 and 10080" };
+    }
+    data.refresh_interval_minutes = interval;
+  }
+  if (!partial || Object.hasOwn(value, "enabled")) {
+    const enabled = value.enabled === undefined ? true : asBoolean(value.enabled);
+    if (enabled === undefined) return { ok: false, error: "enabled must be a boolean" };
+    data.enabled = enabled;
+  }
+  if (!partial || Object.hasOwn(value, "order")) {
+    const order = value.order === undefined ? 0 : asInteger(value.order);
+    if (order === undefined || order < -100000 || order > 100000) {
+      return { ok: false, error: "order must be an integer between -100000 and 100000" };
+    }
+    data.order = order;
+  }
+  if (partial && Object.keys(data).length === 0) {
+    return { ok: false, error: "at least one editable field is required" };
+  }
+  return { ok: true, data };
+}
+
+function briefingComposeInput(topic, reference = new Date()) {
+  const retrieval = briefingJsonObject(topic.retrieval_config_json);
+  const lookbackHours = Math.min(
+    Math.max(asInteger(retrieval.lookback_hours) || 720, 1),
+    24 * 365
+  );
+  const until = reference.toISOString();
+  const since = new Date(reference.getTime() - lookbackHours * 60 * 60 * 1000).toISOString();
+  const taskText = topic.editorial_context
+    ? `${String(topic.question)}\n\nEditorial guidance: ${String(topic.editorial_context)}`
+    : String(topic.question);
+  const candidate = {
+    ...retrieval,
+    task_text: taskText,
+    answer_style: String(topic.answer_style || "detailed"),
+    draft_format: "none",
+    since,
+    until,
+  };
+  delete candidate.lookback_hours;
+  const parsed = parseComposeQueryBody(candidate);
+  if (!parsed.ok) throw new Error(`invalid briefing topic configuration: ${parsed.error}`);
+  return parsed.data;
+}
+
+function briefingTopicSnapshot(topic) {
+  return {
+    slug: String(topic.slug),
+    question: String(topic.question),
+    category: topic.category ? String(topic.category) : null,
+    display_order: Number(topic.display_order || 0),
+    editorial_context: topic.editorial_context ? String(topic.editorial_context) : null,
+    retrieval_config: briefingJsonObject(topic.retrieval_config_json),
+    answer_style: String(topic.answer_style || "detailed"),
+    refresh_interval_minutes: Number(topic.refresh_interval_minutes || 1440),
+  };
+}
+
+async function getPublishedBriefings(slug = null) {
+  const db = getPool();
+  const params = [];
+  const slugClause = slug ? `AND v.slug = $${params.push(slug)}` : "";
+  const result = await db.query(
+    `
+      SELECT
+        t.topic_id, v.slug, v.question, v.category, v.display_order,
+        v.version_id, v.answer_text, v.key_points_json, v.citations_json,
+        v.source_count, v.corpus_from, v.corpus_through, v.generated_at,
+        v.stale_after, v.embedding_model, v.synthesis_model, v.prompt_version,
+        v.provenance_json, v.reviewed_at, v.published_at
+      FROM xmonitor_briefing_topics t
+      JOIN xmonitor_briefing_versions v
+        ON v.version_id = t.current_published_version_id
+      WHERE t.enabled = TRUE
+        AND v.review_status = 'published'
+        ${slugClause}
+      ORDER BY v.display_order ASC, v.question ASC
+    `,
+    params
+  );
+  return result.rows.map(publishedBriefingFromRow);
+}
+
+async function listAdminBriefingTopics() {
+  const result = await getPool().query(`
+    SELECT
+      t.*,
+      latest.run_id AS latest_run_id,
+      latest.status AS latest_run_status,
+      latest.trigger_source AS latest_run_trigger_source,
+      latest.compose_job_id AS latest_run_compose_job_id,
+      latest.corpus_from AS latest_run_corpus_from,
+      latest.corpus_through AS latest_run_corpus_through,
+      latest.created_at AS latest_run_created_at,
+      latest.started_at AS latest_run_started_at,
+      latest.completed_at AS latest_run_completed_at,
+      latest.error_code AS latest_run_error_code,
+      latest.error_message AS latest_run_error_message
+    FROM xmonitor_briefing_topics t
+    LEFT JOIN LATERAL (
+      SELECT r.run_id, r.status, r.trigger_source, r.compose_job_id,
+             r.corpus_from, r.corpus_through, r.created_at, r.started_at,
+             r.completed_at, r.error_code, r.error_message
+      FROM xmonitor_briefing_runs r
+      WHERE r.topic_id = t.topic_id
+      ORDER BY r.created_at DESC
+      LIMIT 1
+    ) latest ON TRUE
+    ORDER BY t.display_order ASC, t.created_at ASC
+  `);
+  return result.rows.map(adminBriefingTopicFromRow);
+}
+
+async function createBriefingTopic(payload) {
+  const result = await getPool().query(
+    `
+      INSERT INTO xmonitor_briefing_topics (
+        slug, question, category, editorial_context, retrieval_config_json,
+        answer_style, refresh_interval_minutes, enabled, display_order, next_refresh_at
+      )
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, CASE WHEN $8 THEN now() ELSE NULL END)
+      RETURNING *
+    `,
+    [
+      payload.slug,
+      payload.question,
+      payload.category || null,
+      payload.editorial_context || null,
+      asJson(payload.retrieval_config || {}),
+      payload.answer_style,
+      payload.refresh_interval_minutes,
+      payload.enabled,
+      payload.order,
+    ]
+  );
+  return adminBriefingTopicFromRow(result.rows[0]);
+}
+
+async function updateBriefingTopic(topicId, payload) {
+  const columns = {
+    slug: "slug",
+    question: "question",
+    category: "category",
+    editorial_context: "editorial_context",
+    retrieval_config: "retrieval_config_json",
+    answer_style: "answer_style",
+    refresh_interval_minutes: "refresh_interval_minutes",
+    enabled: "enabled",
+    order: "display_order",
+  };
+  const params = [topicId];
+  const sets = [];
+  for (const [key, column] of Object.entries(columns)) {
+    if (!Object.hasOwn(payload, key)) continue;
+    const value = key === "retrieval_config" ? asJson(payload[key]) : payload[key];
+    params.push(value);
+    sets.push(`${column} = $${params.length}${key === "retrieval_config" ? "::jsonb" : ""}`);
+  }
+  if (Object.hasOwn(payload, "enabled")) {
+    sets.push(payload.enabled
+      ? "next_refresh_at = COALESCE(next_refresh_at, now())"
+      : "next_refresh_at = NULL");
+  }
+  const result = await getPool().query(
+    `UPDATE xmonitor_briefing_topics SET ${sets.join(", ")} WHERE topic_id = $1 RETURNING *`,
+    params
+  );
+  return result.rows[0] ? adminBriefingTopicFromRow(result.rows[0]) : null;
+}
+
+async function archiveBriefingTopic(topicId) {
+  const result = await getPool().query(
+    `
+      UPDATE xmonitor_briefing_topics
+      SET enabled = FALSE, next_refresh_at = NULL
+      WHERE topic_id = $1
+      RETURNING *
+    `,
+    [topicId]
+  );
+  return result.rows[0] ? adminBriefingTopicFromRow(result.rows[0]) : null;
+}
+
+function briefingRunResponse(row) {
+  return {
+    run_id: String(row.run_id),
+    topic_id: String(row.topic_id),
+    status: String(row.status),
+    compose_job_id: row.compose_job_id ? String(row.compose_job_id) : null,
+    created_at: toIso(row.created_at) || nowIso(),
+  };
+}
+
+async function createBriefingRun({
+  topicId,
+  triggerSource,
+  clientId = null,
+  idempotencyKey = null,
+  scheduledFor = null,
+}) {
+  if (!composeEnabled() || !composeAsyncEnabled()) {
+    throw new Error("async compose is disabled");
+  }
+  if (!composeJobsQueueUrl()) throw new Error("compose async queue is not configured");
+
+  await ensureComposeJobsSchema();
+  const db = getPool();
+  const client = await db.connect();
+  let runRow;
+  let jobId;
+  let inserted = false;
+  try {
+    await client.query("BEGIN");
+    const selected = await client.query(
+      `SELECT * FROM xmonitor_briefing_topics WHERE topic_id = $1 FOR UPDATE`,
+      [topicId]
+    );
+    const topic = selected.rows[0];
+    if (!topic) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    if (!topic.enabled && triggerSource === "scheduled") {
+      await client.query("COMMIT");
+      return { skipped: "disabled" };
+    }
+
+    const activeRun = await client.query(
+      `
+        SELECT * FROM xmonitor_briefing_runs
+        WHERE topic_id = $1 AND status IN ('queued', 'running')
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [topicId]
+    );
+    if (activeRun.rows[0]) {
+      await client.query("COMMIT");
+      return { ...briefingRunResponse(activeRun.rows[0]), already_active: true };
+    }
+
+    const resolvedIdempotencyKey = idempotencyKey || (
+      triggerSource === "scheduled"
+        ? `scheduled:${topicId}:${scheduledFor || toIso(topic.next_refresh_at) || "due"}`
+        : `manual:${topicId}:${randomUUID()}`
+    );
+    if (resolvedIdempotencyKey.length > 240) throw new Error("idempotency key is too long");
+
+    const existing = await client.query(
+      `SELECT * FROM xmonitor_briefing_runs WHERE idempotency_key = $1 LIMIT 1`,
+      [resolvedIdempotencyKey]
+    );
+    if (existing.rows[0]) {
+      await client.query("COMMIT");
+      return { ...briefingRunResponse(existing.rows[0]), idempotent_replay: true };
+    }
+
+    const composeInput = briefingComposeInput(topic);
+    const topicSnapshot = briefingTopicSnapshot(topic);
+    const payloadJson = asJson(composeInput);
+    const composeResult = await client.query(
+      `
+        INSERT INTO compose_jobs (
+          status, request_hash, request_payload_json, attempt_count, max_attempts, expires_at
+        )
+        VALUES ('queued', $1, $2::jsonb, 0, $3, now() + make_interval(hours => $4::int))
+        RETURNING job_id
+      `,
+      [sha256Hex(payloadJson), payloadJson, composeJobMaxAttempts(), composeJobTtlHours()]
+    );
+    jobId = String(composeResult.rows[0].job_id);
+
+    const runResult = await client.query(
+      `
+        INSERT INTO xmonitor_briefing_runs (
+          topic_id, status, trigger_source, idempotency_key, compose_job_id,
+          topic_snapshot_json, corpus_from, corpus_through, requested_by_client_id
+        )
+        VALUES ($1, 'queued', $2, $3, $4, $5::jsonb, $6, $7, $8)
+        RETURNING *
+      `,
+      [
+        topicId,
+        triggerSource,
+        resolvedIdempotencyKey,
+        jobId,
+        asJson(topicSnapshot),
+        composeInput.since || null,
+        composeInput.until || null,
+        clientId,
+      ]
+    );
+    runRow = runResult.rows[0];
+    await client.query(
+      `
+        UPDATE xmonitor_briefing_topics
+        SET last_scheduled_at = now(),
+            next_refresh_at = CASE
+              WHEN enabled THEN now() + make_interval(mins => refresh_interval_minutes)
+              ELSE NULL
+            END
+        WHERE topic_id = $1
+      `,
+      [topicId]
+    );
+    await client.query("COMMIT");
+    inserted = true;
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  if (inserted) {
+    try {
+      await enqueueComposeJob(jobId, 0);
+    } catch (error) {
+      const message = (errorMessage(error) || "failed to enqueue briefing run").slice(0, 1200);
+      await db.query(
+        `UPDATE compose_jobs SET status = 'failed', error_code = 'queue_failed', error_message = $2, completed_at = now() WHERE job_id = $1`,
+        [jobId, message]
+      );
+      await failBriefingRunForComposeJob(jobId, "queue_failed", message);
+      throw error;
+    }
+  }
+  return briefingRunResponse(runRow);
+}
+
+async function markBriefingRunForComposeJob(jobId, status) {
+  if (!new Set(["queued", "running"]).has(status)) return;
+  if (!await briefingSchemaAvailable()) return;
+  await getPool().query(
+    `
+      UPDATE xmonitor_briefing_runs
+      SET status = $2,
+          started_at = CASE WHEN $2 = 'running' THEN COALESCE(started_at, now()) ELSE started_at END
+      WHERE compose_job_id = $1
+        AND status IN ('queued', 'running')
+    `,
+    [jobId, status]
+  );
+}
+
+async function failBriefingRunForComposeJob(jobId, errorCode, errorMessageText) {
+  if (!await briefingSchemaAvailable()) return;
+  await getPool().query(
+    `
+      UPDATE xmonitor_briefing_runs
+      SET status = 'failed', error_code = $2, error_message = $3, completed_at = now()
+      WHERE compose_job_id = $1
+        AND status <> 'succeeded'
+    `,
+    [jobId, errorCode, String(errorMessageText || "briefing generation failed").slice(0, 1200)]
+  );
+}
+
+async function completeComposeJobAndBriefing(jobId, composed) {
+  const db = getPool();
+  if (!await briefingSchemaAvailable()) {
+    await db.query(
+      `
+        UPDATE compose_jobs
+        SET status = 'succeeded', result_payload_json = $2::jsonb, completed_at = now(),
+            error_code = NULL, error_message = NULL
+        WHERE job_id = $1
+      `,
+      [jobId, asJson(composed)]
+    );
+    return;
+  }
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `
+        UPDATE compose_jobs
+        SET status = 'succeeded', result_payload_json = $2::jsonb, completed_at = now(),
+            error_code = NULL, error_message = NULL
+        WHERE job_id = $1
+      `,
+      [jobId, asJson(composed)]
+    );
+    const runResult = await client.query(
+      `
+        SELECT r.*, t.topic_id AS locked_topic_id
+        FROM xmonitor_briefing_runs r
+        JOIN xmonitor_briefing_topics t ON t.topic_id = r.topic_id
+        WHERE r.compose_job_id = $1
+        FOR UPDATE OF r, t
+      `,
+      [jobId]
+    );
+    const run = runResult.rows[0];
+    if (run) {
+      const topicSnapshot = briefingJsonObject(run.topic_snapshot_json);
+      const snapshotSlug = asString(topicSnapshot.slug);
+      const snapshotQuestion = asString(topicSnapshot.question);
+      if (!snapshotSlug || !snapshotQuestion) {
+        throw new Error("briefing run is missing its topic snapshot");
+      }
+      const snapshotRefreshInterval = Math.min(
+        Math.max(asInteger(topicSnapshot.refresh_interval_minutes) || 1440, 60),
+        10080
+      );
+      const citations = briefingJsonArray(composed.citations);
+      const range = briefingDateRange(citations, run.corpus_from, run.corpus_through);
+      const fingerprint = sha256Hex(asJson({
+        citations: citations.map((item) => ({
+          status_id: item?.status_id || null,
+          discovered_at: item?.discovered_at || null,
+          excerpt: item?.excerpt || null,
+        })),
+        generation_config: {
+          ...topicSnapshot,
+          embedding_model: composed.retrieval_stats?.model || embeddingModel(),
+          synthesis_model: composeModel(),
+          prompt_version: briefingPromptVersion(),
+        },
+      }));
+      const versionResult = await client.query(
+        `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM xmonitor_briefing_versions WHERE topic_id = $1`,
+        [run.topic_id]
+      );
+      const nextVersion = Number(versionResult.rows[0]?.next_version || 1);
+      const matchingEvidence = String(run.trigger_source) === "scheduled"
+        ? await client.query(
+            `
+              SELECT previous.run_id
+              FROM (
+                SELECT run_id, evidence_fingerprint
+                FROM xmonitor_briefing_runs
+                WHERE topic_id = $1
+                  AND run_id <> $2
+                  AND status = 'succeeded'
+                ORDER BY completed_at DESC
+                LIMIT 1
+              ) previous
+              WHERE previous.evidence_fingerprint = $3
+            `,
+            [run.topic_id, run.run_id, fingerprint]
+          )
+        : { rows: [] };
+      const provenance = {
+        source: "x-monitor",
+        corpus: "monitored public X posts",
+        generation_mode: "curated-compose",
+        trigger_source: String(run.trigger_source),
+        run_id: String(run.run_id),
+        compose_job_id: String(jobId),
+        topic_snapshot: topicSnapshot,
+      };
+      if (!matchingEvidence.rows[0]) await client.query(
+        `
+          INSERT INTO xmonitor_briefing_versions (
+            topic_id, run_id, version_number, slug, question, category,
+            display_order, topic_snapshot_json, evidence_fingerprint,
+            review_status, answer_text,
+            key_points_json, citations_json, retrieval_stats_json, source_count,
+            corpus_from, corpus_through, generated_at, stale_after,
+            embedding_model, synthesis_model, prompt_version, provenance_json
+          )
+          VALUES (
+            $1, $2, $3, $4, $5, $6, $7, $8::jsonb, $9,
+            'draft', $10, $11::jsonb, $12::jsonb, $13::jsonb, $14,
+            $15, $16, now(), now() + make_interval(mins => $17::int),
+            $18, $19, $20, $21::jsonb
+          )
+        `,
+        [
+          run.topic_id,
+          run.run_id,
+          nextVersion,
+          snapshotSlug,
+          snapshotQuestion,
+          asString(topicSnapshot.category) || null,
+          asInteger(topicSnapshot.display_order) || 0,
+          asJson(topicSnapshot),
+          fingerprint,
+          String(composed.answer_text || ""),
+          asJson(briefingJsonArray(composed.key_points)),
+          asJson(citations),
+          asJson(briefingJsonObject(composed.retrieval_stats)),
+          citations.length,
+          range.corpus_from,
+          range.corpus_through,
+          snapshotRefreshInterval * 2,
+          composed.retrieval_stats?.model || embeddingModel(),
+          composeModel(),
+          briefingPromptVersion(),
+          asJson(provenance),
+        ]
+      );
+      if (matchingEvidence.rows[0]) {
+        await client.query(
+          `
+            UPDATE xmonitor_briefing_versions v
+            SET stale_after = now() + make_interval(mins => $2::int)
+            FROM xmonitor_briefing_topics t
+            WHERE t.topic_id = $1
+              AND v.version_id = t.current_published_version_id
+              AND v.review_status = 'published'
+              AND v.evidence_fingerprint = $3
+          `,
+          [run.topic_id, snapshotRefreshInterval * 2, fingerprint]
+        );
+      }
+      await client.query(
+        `
+          UPDATE xmonitor_briefing_runs
+          SET status = 'succeeded', corpus_from = $2, corpus_through = $3,
+              evidence_fingerprint = $4, error_code = NULL, error_message = NULL,
+              completed_at = now()
+          WHERE run_id = $1
+        `,
+        [run.run_id, range.corpus_from, range.corpus_through, fingerprint]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function reconcileStaleBriefingRuns(topicId = null) {
+  if (!await briefingSchemaAvailable()) return { reconciled: 0 };
+  const db = getPool();
+  const client = await db.connect();
+  const reconciledTopicIds = new Set();
+  try {
+    await client.query("BEGIN");
+    const staleResult = await client.query(
+      `
+        SELECT
+          r.run_id,
+          r.topic_id,
+          j.job_id,
+          j.status AS job_status,
+          j.expires_at,
+          j.updated_at
+        FROM xmonitor_briefing_runs r
+        JOIN compose_jobs j ON j.job_id = r.compose_job_id
+        WHERE r.status IN ('queued', 'running')
+          AND ($3::uuid IS NULL OR r.topic_id = $3::uuid)
+          AND (
+            j.status IN ('failed', 'expired', 'succeeded')
+            OR j.expires_at <= now()
+            OR (
+              j.status = 'running'
+              AND COALESCE(j.updated_at, j.started_at, j.created_at)
+                < now() - make_interval(mins => $1::int)
+            )
+            OR (
+              j.status = 'queued'
+              AND COALESCE(j.updated_at, j.created_at)
+                < now() - make_interval(mins => $2::int)
+            )
+          )
+        ORDER BY r.created_at ASC
+        LIMIT 100
+        FOR UPDATE OF r, j SKIP LOCKED
+      `,
+      [BRIEFING_RUNNING_STALE_MINUTES, BRIEFING_QUEUED_STALE_MINUTES, topicId]
+    );
+
+    for (const row of staleResult.rows) {
+      const expired = new Date(row.expires_at).getTime() <= Date.now();
+      const terminalStatus = new Set(["failed", "expired", "succeeded"]).has(String(row.job_status));
+      const errorCode = terminalStatus
+        ? `compose_job_${String(row.job_status)}`
+        : expired
+          ? "compose_job_expired"
+          : String(row.job_status) === "running"
+            ? "compose_job_stale_running"
+            : "compose_job_stale_queued";
+      const errorMessageText = terminalStatus
+        ? `compose job reached ${String(row.job_status)} without completing the briefing run`
+        : expired
+          ? "compose job expired before completing the briefing run"
+          : `compose job remained ${String(row.job_status)} beyond its processing lease`;
+
+      if (!terminalStatus) {
+        await client.query(
+          `
+            UPDATE compose_jobs
+            SET status = $2, error_code = $3, error_message = $4,
+                completed_at = COALESCE(completed_at, now())
+            WHERE job_id = $1
+              AND status IN ('queued', 'running')
+          `,
+          [row.job_id, expired ? "expired" : "failed", errorCode, errorMessageText]
+        );
+      }
+      await client.query(
+        `
+          UPDATE xmonitor_briefing_runs
+          SET status = 'failed', error_code = $2, error_message = $3,
+              completed_at = COALESCE(completed_at, now())
+          WHERE run_id = $1
+            AND status IN ('queued', 'running')
+        `,
+        [row.run_id, errorCode, errorMessageText]
+      );
+      reconciledTopicIds.add(String(row.topic_id));
+    }
+
+    if (reconciledTopicIds.size > 0) {
+      await client.query(
+        `
+          UPDATE xmonitor_briefing_topics
+          SET next_refresh_at = now()
+          WHERE enabled = TRUE
+            AND topic_id = ANY($1::uuid[])
+        `,
+        [Array.from(reconciledTopicIds)]
+      );
+    }
+    await client.query("COMMIT");
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+
+  if (reconciledTopicIds.size > 0) {
+    console.log(JSON.stringify({
+      event: "curated_briefing_runs_reconciled",
+      reconciled: reconciledTopicIds.size,
+      topic_id: topicId || null,
+    }));
+  }
+  return { reconciled: reconciledTopicIds.size };
+}
+
+async function dispatchDueBriefingRuns(requestId) {
+  if (!briefingsEnabled()) return { briefing_dispatched: 0, briefing_skipped: "disabled" };
+  if (!await briefingSchemaAvailable()) {
+    return { briefing_dispatched: 0, briefing_skipped: "schema_unavailable" };
+  }
+  const reconciliation = await reconcileStaleBriefingRuns();
+  const due = await getPool().query(
+    `
+      SELECT topic_id, next_refresh_at
+      FROM xmonitor_briefing_topics
+      WHERE enabled = TRUE
+        AND (next_refresh_at IS NULL OR next_refresh_at <= now())
+        AND NOT EXISTS (
+          SELECT 1 FROM xmonitor_briefing_runs r
+          WHERE r.topic_id = xmonitor_briefing_topics.topic_id
+            AND r.status IN ('queued', 'running')
+        )
+      ORDER BY next_refresh_at ASC NULLS FIRST, display_order ASC
+      LIMIT $1
+    `,
+    [briefingDispatchLimit()]
+  );
+  let dispatched = 0;
+  for (const row of due.rows) {
+    const scheduledFor = toIso(row.next_refresh_at) || "initial";
+    const result = await createBriefingRun({
+      topicId: String(row.topic_id),
+      triggerSource: "scheduled",
+      clientId: "briefing-scheduler",
+      scheduledFor,
+      idempotencyKey: `scheduled:${String(row.topic_id)}:${scheduledFor}`,
+    });
+    if (result && !result.skipped && !result.idempotent_replay && !result.already_active) dispatched += 1;
+  }
+  console.log(JSON.stringify({
+    event: "curated_briefings_dispatched",
+    request_id: requestId || null,
+    dispatched,
+  }));
+  return {
+    briefing_dispatched: dispatched,
+    briefing_reconciled: reconciliation.reconciled,
+  };
+}
+
+async function listBriefingVersions(topicId) {
+  const result = await getPool().query(
+    `
+      SELECT v.*
+      FROM xmonitor_briefing_versions v
+      WHERE v.topic_id = $1
+      ORDER BY v.version_number DESC
+    `,
+    [topicId]
+  );
+  return result.rows.map(adminBriefingVersionFromRow);
+}
+
+async function getBriefingVersion(versionId) {
+  const result = await getPool().query(
+    `
+      SELECT v.*
+      FROM xmonitor_briefing_versions v
+      WHERE v.version_id = $1
+      LIMIT 1
+    `,
+    [versionId]
+  );
+  return result.rows[0] ? adminBriefingVersionFromRow(result.rows[0]) : null;
+}
+
+function parseBriefingRevisionBody(value) {
+  if (!isRecord(value) || Array.isArray(value)) return { ok: false, error: "body must be an object" };
+  const allowed = new Set(["answer_text", "key_points"]);
+  for (const key of Object.keys(value)) {
+    if (!allowed.has(key)) return { ok: false, error: `unsupported field: ${key}` };
+  }
+  const data = {};
+  if (Object.hasOwn(value, "answer_text")) {
+    const answer = asString(value.answer_text);
+    if (!answer || answer.length > 50000) {
+      return { ok: false, error: "answer_text must contain between 1 and 50000 characters" };
+    }
+    data.answer_text = answer;
+  }
+  if (Object.hasOwn(value, "key_points")) {
+    if (!Array.isArray(value.key_points) || value.key_points.length > 12) {
+      return { ok: false, error: "key_points must be an array of at most 12 strings" };
+    }
+    const keyPoints = value.key_points.map(asString);
+    if (keyPoints.some((item) => !item || item.length > 1000)) {
+      return { ok: false, error: "each key point must contain between 1 and 1000 characters" };
+    }
+    data.key_points = keyPoints;
+  }
+  if (Object.keys(data).length === 0) return { ok: false, error: "answer_text or key_points is required" };
+  return { ok: true, data };
+}
+
+async function createBriefingEditorialRevision(versionId, payload, clientId) {
+  const db = getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const selectedTopic = await client.query(
+      `SELECT topic_id FROM xmonitor_briefing_versions WHERE version_id = $1`,
+      [versionId]
+    );
+    const topicId = selectedTopic.rows[0]?.topic_id;
+    if (!topicId) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      `SELECT topic_id FROM xmonitor_briefing_topics WHERE topic_id = $1 FOR UPDATE`,
+      [topicId]
+    );
+    const selected = await client.query(
+      `SELECT * FROM xmonitor_briefing_versions WHERE version_id = $1 FOR UPDATE`,
+      [versionId]
+    );
+    const source = selected.rows[0];
+    const nextResult = await client.query(
+      `SELECT COALESCE(MAX(version_number), 0) + 1 AS next_version FROM xmonitor_briefing_versions WHERE topic_id = $1`,
+      [source.topic_id]
+    );
+    const provenance = {
+      ...briefingJsonObject(source.provenance_json),
+      editorial_revision: true,
+      source_version_id: String(source.version_id),
+    };
+    const inserted = await client.query(
+      `
+        INSERT INTO xmonitor_briefing_versions (
+          topic_id, run_id, source_version_id, version_number,
+          slug, question, category, display_order, topic_snapshot_json,
+          evidence_fingerprint, review_status,
+          answer_text, key_points_json, citations_json, retrieval_stats_json,
+          source_count, corpus_from, corpus_through, generated_at, stale_after,
+          embedding_model, synthesis_model, prompt_version, provenance_json,
+          created_by_client_id
+        )
+        VALUES (
+          $1, NULL, $2, $3, $4, $5, $6, $7, $8::jsonb, $9, 'draft',
+          $10, $11::jsonb, $12::jsonb, $13::jsonb,
+          $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23
+        )
+        RETURNING *
+      `,
+      [
+        source.topic_id,
+        source.version_id,
+        Number(nextResult.rows[0]?.next_version || 1),
+        source.slug,
+        source.question,
+        source.category,
+        Number(source.display_order || 0),
+        asJson(briefingJsonObject(source.topic_snapshot_json)),
+        source.evidence_fingerprint,
+        payload.answer_text ?? source.answer_text,
+        asJson(payload.key_points ?? briefingJsonArray(source.key_points_json)),
+        asJson(briefingJsonArray(source.citations_json)),
+        asJson(briefingJsonObject(source.retrieval_stats_json)),
+        Number(source.source_count || 0),
+        source.corpus_from,
+        source.corpus_through,
+        source.generated_at,
+        source.stale_after,
+        source.embedding_model,
+        source.synthesis_model,
+        source.prompt_version,
+        asJson(provenance),
+        clientId,
+      ]
+    );
+    await client.query("COMMIT");
+    return getBriefingVersion(String(inserted.rows[0].version_id));
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function publishBriefingVersion(versionId, clientId, { allowRollback = false } = {}) {
+  const db = getPool();
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const selectedTopic = await client.query(
+      `SELECT topic_id FROM xmonitor_briefing_versions WHERE version_id = $1`,
+      [versionId]
+    );
+    const topicId = selectedTopic.rows[0]?.topic_id;
+    if (!topicId) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    await client.query(
+      `SELECT topic_id FROM xmonitor_briefing_topics WHERE topic_id = $1 FOR UPDATE`,
+      [topicId]
+    );
+    const selected = await client.query(
+      `SELECT * FROM xmonitor_briefing_versions WHERE version_id = $1 FOR UPDATE`,
+      [versionId]
+    );
+    const version = selected.rows[0];
+    const allowedStatuses = allowRollback
+      ? new Set(["published", "superseded"])
+      : new Set(["draft"]);
+    if (!allowedStatuses.has(String(version.review_status))) {
+      throw new Error(allowRollback
+        ? "only a previously published briefing version can be restored"
+        : "only a draft briefing version can be published");
+    }
+    if (!briefingJsonArray(version.citations_json).length) {
+      throw new Error("a briefing version must include at least one citation before publication");
+    }
+    await client.query(
+      `UPDATE xmonitor_briefing_versions SET review_status = 'superseded' WHERE topic_id = $1 AND review_status = 'published' AND version_id <> $2`,
+      [version.topic_id, versionId]
+    );
+    await client.query(
+      `
+        UPDATE xmonitor_briefing_versions
+        SET review_status = 'published', reviewed_at = now(), reviewed_by_client_id = $2,
+            published_at = now(), rejection_reason = NULL
+        WHERE version_id = $1
+      `,
+      [versionId, clientId]
+    );
+    await client.query(
+      `UPDATE xmonitor_briefing_topics SET current_published_version_id = $2 WHERE topic_id = $1`,
+      [version.topic_id, versionId]
+    );
+    await client.query("COMMIT");
+    return getBriefingVersion(versionId);
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+async function rejectBriefingVersion(versionId, clientId, reason = null) {
+  const result = await getPool().query(
+    `
+      UPDATE xmonitor_briefing_versions
+      SET review_status = 'rejected', reviewed_at = now(), reviewed_by_client_id = $2,
+          rejection_reason = $3
+      WHERE version_id = $1
+        AND review_status = 'draft'
+      RETURNING version_id
+    `,
+    [versionId, clientId, reason]
+  );
+  return result.rows[0] ? getBriefingVersion(versionId) : null;
+}
+
+async function rollbackBriefingTopic(topicId, versionId, clientId) {
+  const version = await getPool().query(
+    `SELECT version_id FROM xmonitor_briefing_versions WHERE version_id = $1 AND topic_id = $2 AND review_status IN ('published', 'superseded')`,
+    [versionId, topicId]
+  );
+  if (!version.rows[0]) return null;
+  return publishBriefingVersion(versionId, clientId, { allowRollback: true });
 }
 
 function normalizeComposeRequestForSchedule(parsedComposeInput) {
@@ -10310,6 +11548,188 @@ async function handleComposeJobGet(event, path) {
   }
 }
 
+async function handlePublishedBriefingsGet(path) {
+  if (!briefingsEnabled()) return jsonError("curated briefings are disabled", 503);
+  if (!hasDatabaseConfig()) {
+    return jsonError("Database is not configured. Set DATABASE_URL or PG* variables.", 503);
+  }
+  if (!await briefingSchemaAvailable()) return jsonError("curated briefing schema is unavailable", 503);
+  const match = path.match(/^\/v1\/curated-briefings\/([^/]+)$/);
+  const slug = match ? decodeURIComponent(match[1]).toLowerCase() : null;
+  if (slug && (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 120)) {
+    return jsonError("invalid briefing slug", 400);
+  }
+  try {
+    const items = await getPublishedBriefings(slug);
+    if (slug) {
+      return items[0] ? jsonOk(items[0]) : jsonError("curated briefing not found", 404);
+    }
+    return jsonOk({ items, generated_at: nowIso() });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to read curated briefings", 503);
+  }
+}
+
+async function handleAdminBriefingTopicsList() {
+  try {
+    return jsonOk({ items: await listAdminBriefingTopics(), generated_at: nowIso() });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to list curated briefing topics", 503);
+  }
+}
+
+async function handleAdminBriefingTopicCreate(event) {
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseBriefingTopicBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+  try {
+    return jsonOk(await createBriefingTopic(parsed.data), 201);
+  } catch (error) {
+    if (error?.code === "23505") return jsonError("a briefing topic with this slug already exists", 409);
+    return jsonError(errorMessage(error) || "failed to create curated briefing topic", 503);
+  }
+}
+
+async function handleAdminBriefingTopicPatch(event, path) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/topics\/([^/]+)$/);
+  const topicId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(topicId)) return jsonError("invalid briefing topic id", 400);
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseBriefingTopicBody(parsedBody.body, { partial: true });
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+  try {
+    const topic = await updateBriefingTopic(topicId, parsed.data);
+    return topic ? jsonOk(topic) : jsonError("curated briefing topic not found", 404);
+  } catch (error) {
+    if (error?.code === "23505") return jsonError("a briefing topic with this slug already exists", 409);
+    return jsonError(errorMessage(error) || "failed to update curated briefing topic", 503);
+  }
+}
+
+async function handleAdminBriefingTopicDelete(path) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/topics\/([^/]+)$/);
+  const topicId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(topicId)) return jsonError("invalid briefing topic id", 400);
+  try {
+    const topic = await archiveBriefingTopic(topicId);
+    return topic ? jsonOk({ ...topic, archived: true }) : jsonError("curated briefing topic not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to archive curated briefing topic", 503);
+  }
+}
+
+async function handleAdminBriefingRefresh(event, path, clientId) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/topics\/([^/]+)\/refresh$/);
+  const topicId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(topicId)) return jsonError("invalid briefing topic id", 400);
+  const parsedBody = readOptionalJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const bodyKey = asString(parsedBody.body?.idempotency_key);
+  const headerKey = asString(headerValue(event?.headers, "idempotency-key"));
+  const idempotencyKey = bodyKey || headerKey;
+  if (idempotencyKey && idempotencyKey.length > 180) {
+    return jsonError("idempotency key is too long", 400);
+  }
+  try {
+    await reconcileStaleBriefingRuns(topicId);
+    const run = await createBriefingRun({
+      topicId,
+      triggerSource: "manual",
+      clientId,
+      idempotencyKey: idempotencyKey ? `manual:${topicId}:${idempotencyKey}` : null,
+    });
+    if (!run) return jsonError("curated briefing topic not found", 404);
+    return jsonOk(run, 202);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to refresh curated briefing", 503);
+  }
+}
+
+async function handleAdminBriefingVersionsList(path) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/topics\/([^/]+)\/versions$/);
+  const topicId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(topicId)) return jsonError("invalid briefing topic id", 400);
+  try {
+    return jsonOk({ items: await listBriefingVersions(topicId), generated_at: nowIso() });
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to list curated briefing versions", 503);
+  }
+}
+
+async function handleAdminBriefingVersionGet(path) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/versions\/([^/]+)$/);
+  const versionId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(versionId)) return jsonError("invalid briefing version id", 400);
+  try {
+    const version = await getBriefingVersion(versionId);
+    return version ? jsonOk(version) : jsonError("curated briefing version not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to read curated briefing version", 503);
+  }
+}
+
+async function handleAdminBriefingVersionPatch(event, path, clientId) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/versions\/([^/]+)$/);
+  const versionId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(versionId)) return jsonError("invalid briefing version id", 400);
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const parsed = parseBriefingRevisionBody(parsedBody.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+  try {
+    const revision = await createBriefingEditorialRevision(versionId, parsed.data, clientId);
+    return revision ? jsonOk(revision, 201) : jsonError("curated briefing version not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to create curated briefing revision", 503);
+  }
+}
+
+async function handleAdminBriefingVersionPublish(path, clientId) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/versions\/([^/]+)\/publish$/);
+  const versionId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(versionId)) return jsonError("invalid briefing version id", 400);
+  try {
+    const version = await publishBriefingVersion(versionId, clientId);
+    return version ? jsonOk(version) : jsonError("curated briefing version not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to publish curated briefing version", 409);
+  }
+}
+
+async function handleAdminBriefingVersionReject(event, path, clientId) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/versions\/([^/]+)\/reject$/);
+  const versionId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(versionId)) return jsonError("invalid briefing version id", 400);
+  const parsedBody = readOptionalJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const reason = asString(parsedBody.body?.reason);
+  if (reason && reason.length > 2000) return jsonError("reason is too long", 400);
+  try {
+    const version = await rejectBriefingVersion(versionId, clientId, reason || null);
+    return version ? jsonOk(version) : jsonError("draft curated briefing version not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to reject curated briefing version", 503);
+  }
+}
+
+async function handleAdminBriefingRollback(event, path, clientId) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/topics\/([^/]+)\/rollback$/);
+  const topicId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(topicId)) return jsonError("invalid briefing topic id", 400);
+  const parsedBody = readJsonBody(event);
+  if (!parsedBody.ok) return jsonError(parsedBody.error, 400);
+  const versionId = asString(parsedBody.body?.version_id);
+  if (!versionId || !isUuid(versionId)) return jsonError("valid version_id is required", 400);
+  try {
+    const version = await rollbackBriefingTopic(topicId, versionId, clientId);
+    return version ? jsonOk(version) : jsonError("eligible curated briefing version not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to roll back curated briefing", 503);
+  }
+}
+
 async function handleEmailSend(event) {
   if (!emailEnabled()) {
     return jsonError("email sending is disabled", 503);
@@ -12599,7 +14019,9 @@ export async function sqsHandler(event) {
 }
 
 export async function schedulerHandler(event) {
-  if (!emailEnabled() || !emailSchedulesEnabled()) {
+  const emailDispatchEnabled = emailEnabled() && emailSchedulesEnabled();
+  const briefingDispatchEnabled = briefingsEnabled();
+  if (!emailDispatchEnabled && !briefingDispatchEnabled) {
     return {
       ok: true,
       skipped: "disabled",
@@ -12616,7 +14038,13 @@ export async function schedulerHandler(event) {
   }
 
   const requestId = asString(event?.id) || randomUUID();
-  const result = await dispatchDueScheduledEmailRuns(requestId);
+  const result = {};
+  if (emailDispatchEnabled) {
+    Object.assign(result, await dispatchDueScheduledEmailRuns(requestId));
+  }
+  if (briefingDispatchEnabled) {
+    Object.assign(result, await dispatchDueBriefingRuns(requestId));
+  }
   return {
     ok: true,
     request_id: requestId,
@@ -12630,6 +14058,7 @@ export async function handler(event) {
   const path = normalizePath(event?.rawPath || event?.path || "/");
   const directRoadmapReportInvocation = isDirectRoadmapReportInvocation(event);
   const directXMonitorReportInvocation = isDirectXMonitorReportInvocation(event);
+  let briefingAuthorization = null;
 
   if (method === "POST" && isIngestPath(path)) {
     const auth = validateIngestAuthorization(event);
@@ -12652,10 +14081,70 @@ export async function handler(event) {
     }
   }
 
+  if (method === "GET" && isPublishedBriefingPath(path)) {
+    const auth = await validateReadClientAuthorization(event, { requiredCapability: "briefings:read" });
+    if (!auth.ok) return jsonError(auth.error, auth.status);
+    briefingAuthorization = auth;
+  }
+
+  if (isAdminBriefingPath(path)) {
+    const auth = await validateReadClientAuthorization(event, { requiredCapability: "briefings:manage" });
+    if (!auth.ok) return jsonError(auth.error, auth.status);
+    briefingAuthorization = auth;
+  }
+
   await ensurePackagedDbMigrations();
 
   if (method === "GET" && path === "/v1/health") {
     return handleHealth();
+  }
+
+  if (method === "GET" && isPublishedBriefingPath(path)) {
+    return handlePublishedBriefingsGet(path);
+  }
+
+  if (method === "GET" && (path === "/v1/admin/curated-briefings" || path === "/v1/admin/curated-briefings/topics")) {
+    return handleAdminBriefingTopicsList();
+  }
+
+  if (method === "POST" && path === "/v1/admin/curated-briefings/topics") {
+    return handleAdminBriefingTopicCreate(event);
+  }
+
+  if (method === "PATCH" && /^\/v1\/admin\/curated-briefings\/topics\/[^/]+$/.test(path)) {
+    return handleAdminBriefingTopicPatch(event, path);
+  }
+
+  if (method === "DELETE" && /^\/v1\/admin\/curated-briefings\/topics\/[^/]+$/.test(path)) {
+    return handleAdminBriefingTopicDelete(path);
+  }
+
+  if (method === "POST" && /^\/v1\/admin\/curated-briefings\/topics\/[^/]+\/refresh$/.test(path)) {
+    return handleAdminBriefingRefresh(event, path, briefingAuthorization?.clientId || "unknown-admin-client");
+  }
+
+  if (method === "GET" && /^\/v1\/admin\/curated-briefings\/topics\/[^/]+\/versions$/.test(path)) {
+    return handleAdminBriefingVersionsList(path);
+  }
+
+  if (method === "GET" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+$/.test(path)) {
+    return handleAdminBriefingVersionGet(path);
+  }
+
+  if (method === "PATCH" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+$/.test(path)) {
+    return handleAdminBriefingVersionPatch(event, path, briefingAuthorization?.clientId || "unknown-admin-client");
+  }
+
+  if (method === "POST" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+\/publish$/.test(path)) {
+    return handleAdminBriefingVersionPublish(path, briefingAuthorization?.clientId || "unknown-admin-client");
+  }
+
+  if (method === "POST" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+\/reject$/.test(path)) {
+    return handleAdminBriefingVersionReject(event, path, briefingAuthorization?.clientId || "unknown-admin-client");
+  }
+
+  if (method === "POST" && /^\/v1\/admin\/curated-briefings\/topics\/[^/]+\/rollback$/.test(path)) {
+    return handleAdminBriefingRollback(event, path, briefingAuthorization?.clientId || "unknown-admin-client");
   }
 
   if (method === "GET" && path === "/v1/feed") {

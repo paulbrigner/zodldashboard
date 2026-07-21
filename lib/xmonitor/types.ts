@@ -423,6 +423,7 @@ export type ComposeCitation = {
   status_id: string;
   url: string;
   author_handle: string;
+  discovered_at: string;
   excerpt: string;
   body_text?: string | null;
   score?: number | null;

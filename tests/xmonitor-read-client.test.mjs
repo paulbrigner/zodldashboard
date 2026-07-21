@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   buildActivityTrendsApiUrl,
+  buildCuratedBriefingApiUrl,
+  buildCuratedBriefingsApiUrl,
   buildFeedApiUrl,
   buildPostDetailApiUrl,
   createXMonitorReadClient,
@@ -68,6 +70,21 @@ test("post-detail URL encodes the status ID as one path segment", () => {
   );
 });
 
+test("curated briefing URLs stay under the read-only briefing namespace", () => {
+  assert.equal(
+    buildCuratedBriefingsApiUrl("https://api.example.test/v1/"),
+    "https://api.example.test/v1/curated-briefings"
+  );
+  assert.equal(
+    buildCuratedBriefingApiUrl("https://api.example.test/v1", "Quantum-Readiness"),
+    "https://api.example.test/v1/curated-briefings/quantum-readiness"
+  );
+  assert.throws(
+    () => buildCuratedBriefingApiUrl("https://api.example.test/v1", "not/a/slug"),
+    /valid slug/
+  );
+});
+
 test("read client uses injected fetch, no-store, and validates all public reads", async () => {
   const requests = [];
   const fetchImpl = async (input, init) => {
@@ -98,6 +115,12 @@ test("read client uses injected fetch, no-store, and validates all public reads"
     if (url.pathname.endsWith("/posts/missing")) {
       return new Response(null, { status: 404 });
     }
+    if (url.pathname.endsWith("/curated-briefings/missing")) {
+      return new Response(null, { status: 404 });
+    }
+    if (url.pathname.endsWith("/curated-briefings")) {
+      return Response.json({ items: [], generated_at: "2026-07-21T00:00:00.000Z" });
+    }
     throw new Error(`Unexpected URL: ${url}`);
   };
 
@@ -119,8 +142,13 @@ test("read client uses injected fetch, no-store, and validates all public reads"
     0
   );
   assert.equal(await client.postDetail("missing"), null);
+  assert.deepEqual(await client.curatedBriefings(), {
+    items: [],
+    generated_at: "2026-07-21T00:00:00.000Z",
+  });
+  assert.equal(await client.curatedBriefing("missing"), null);
 
-  assert.equal(requests.length, 5);
+  assert.equal(requests.length, 7);
   for (const request of requests) {
     assert.equal(request.init.cache, "no-store");
     assert.equal(request.init.redirect, "manual");
@@ -161,4 +189,6 @@ test("read client validates every public response shape", async () => {
     /Invalid trends response payload/
   );
   await assert.rejects(() => client.postDetail("123"), /Invalid post detail response payload/);
+  await assert.rejects(() => client.curatedBriefings(), /Invalid curated briefings response payload/);
+  await assert.rejects(() => client.curatedBriefing("topic"), /Invalid curated briefing response payload/);
 });

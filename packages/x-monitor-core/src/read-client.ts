@@ -1,6 +1,8 @@
 import type {
   ActivityTrendsResponse,
   AuthorLocationSuggestionResponse,
+  CuratedBriefing,
+  CuratedBriefingsResponse,
   FeedQuery,
   FeedResponse,
   PostDetail,
@@ -34,6 +36,8 @@ export type XMonitorReadClient = {
     options: XMonitorTrendsRequestOptions
   ): Promise<ActivityTrendsResponse>;
   postDetail(statusId: string): Promise<PostDetail | null>;
+  curatedBriefings(): Promise<CuratedBriefingsResponse>;
+  curatedBriefing(slug: string): Promise<CuratedBriefing | null>;
 };
 
 function normalizeBaseUrl(value: string): string {
@@ -110,6 +114,18 @@ export function buildPostDetailApiUrl(baseUrl: string, statusId: string): string
     throw new Error("X Monitor post detail requires a statusId");
   }
   return `${normalizeBaseUrl(baseUrl)}/posts/${encodeURIComponent(normalizedStatusId)}`;
+}
+
+export function buildCuratedBriefingsApiUrl(baseUrl: string): string {
+  return `${normalizeBaseUrl(baseUrl)}/curated-briefings`;
+}
+
+export function buildCuratedBriefingApiUrl(baseUrl: string, slug: string): string {
+  const normalizedSlug = String(slug || "").trim().toLowerCase();
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(normalizedSlug)) {
+    throw new Error("X Monitor curated briefing requires a valid slug");
+  }
+  return `${normalizeBaseUrl(baseUrl)}/curated-briefings/${encodeURIComponent(normalizedSlug)}`;
 }
 
 async function readApiError(response: Response): Promise<string> {
@@ -207,6 +223,29 @@ export function createXMonitorReadClient(options: XMonitorReadClientOptions): XM
       const payload = (await response.json()) as PostDetail;
       if (!payload || !payload.post) {
         throw new Error("Invalid post detail response payload");
+      }
+      return payload;
+    },
+
+    async curatedBriefings() {
+      const response = await get(buildCuratedBriefingsApiUrl(baseUrl));
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const payload = (await response.json()) as CuratedBriefingsResponse;
+      if (!payload || !Array.isArray(payload.items) || typeof payload.generated_at !== "string") {
+        throw new Error("Invalid curated briefings response payload");
+      }
+      return payload;
+    },
+
+    async curatedBriefing(slug) {
+      const response = await get(buildCuratedBriefingApiUrl(baseUrl, slug));
+      if (response.status === 404) return null;
+      if (!response.ok) throw new Error(await readApiError(response));
+
+      const payload = (await response.json()) as CuratedBriefing;
+      if (!payload || typeof payload.slug !== "string" || typeof payload.answer_text !== "string") {
+        throw new Error("Invalid curated briefing response payload");
       }
       return payload;
     },
