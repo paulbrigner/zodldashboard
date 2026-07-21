@@ -488,13 +488,15 @@ function parseEvidencePayload(payload: unknown): ComposeQueryResponse {
       const statusId = asString(row.status_id);
       const url = asString(row.url);
       const authorHandle = asString(row.author_handle);
-      if (!statusId || !url || !authorHandle) return null;
+      const discoveredAt = asString(row.discovered_at);
+      if (!statusId || !url || !authorHandle || !discoveredAt) return null;
       const scoreRaw = row.score;
       const score = scoreRaw === null || scoreRaw === undefined ? null : Number(scoreRaw);
       return {
         status_id: statusId,
         url,
         author_handle: authorHandle,
+        discovered_at: discoveredAt,
         excerpt: normalizeExcerpt(asString(row.excerpt)),
         body_text: normalizeBodyText(asString(row.body_text) || asString(row.excerpt)),
         score: Number.isFinite(score) ? score : null,
@@ -561,6 +563,7 @@ function buildComposePrompt(
         `#${index + 1}`,
         `status_id: ${citation.status_id}`,
         `author_handle: @${citation.author_handle}`,
+        `discovered_at: ${citation.discovered_at}`,
         `score: ${scoreText}`,
         `url: ${citation.url}`,
         `body_text: ${normalizeBodyText(citation.body_text || citation.excerpt)}`,

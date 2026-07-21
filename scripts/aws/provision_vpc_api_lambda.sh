@@ -54,6 +54,9 @@ set -euo pipefail
 #   COMPOSE_DISABLE_THINKING=true
 #   COMPOSE_STRIP_THINKING_RESPONSE=true
 #   COMPOSE_API_KEY=...
+#   BRIEFINGS_ENABLED=false                  # staged rollout: enable only after migration and credentials
+#   BRIEFING_DISPATCH_LIMIT=10
+#   BRIEFING_PROMPT_VERSION=curated-briefing-v1
 #   COMPOSE_JOBS_QUEUE_NAME=xmonitor-compose-jobs
 #   COMPOSE_JOBS_DLQ_NAME=xmonitor-compose-jobs-dlq
 #   COMPOSE_WORKER_FUNCTION_NAME=xmonitor-vpc-compose-worker
@@ -181,6 +184,9 @@ COMPOSE_USE_JSON_MODE="${COMPOSE_USE_JSON_MODE:-true}"
 COMPOSE_DISABLE_THINKING="${COMPOSE_DISABLE_THINKING:-true}"
 COMPOSE_STRIP_THINKING_RESPONSE="${COMPOSE_STRIP_THINKING_RESPONSE:-true}"
 COMPOSE_API_KEY="${COMPOSE_API_KEY:-}"
+BRIEFINGS_ENABLED="${BRIEFINGS_ENABLED:-}"
+BRIEFING_DISPATCH_LIMIT="${BRIEFING_DISPATCH_LIMIT:-}"
+BRIEFING_PROMPT_VERSION="${BRIEFING_PROMPT_VERSION:-}"
 EMAIL_ENABLED="${EMAIL_ENABLED:-}"
 EMAIL_SCHEDULES_ENABLED="${EMAIL_SCHEDULES_ENABLED:-}"
 EMAIL_REQUIRE_OAUTH="${EMAIL_REQUIRE_OAUTH:-true}"
@@ -573,8 +579,26 @@ fi
 if [[ -z "$COMPOSE_API_KEY" ]]; then
   COMPOSE_API_KEY="$(existing_lambda_var "XMONITOR_COMPOSE_API_KEY")"
 fi
+if [[ -z "$BRIEFINGS_ENABLED" ]]; then
+  BRIEFINGS_ENABLED="$(existing_lambda_var "XMONITOR_BRIEFINGS_ENABLED")"
+fi
+if [[ -z "$BRIEFING_DISPATCH_LIMIT" ]]; then
+  BRIEFING_DISPATCH_LIMIT="$(existing_lambda_var "XMONITOR_BRIEFING_DISPATCH_LIMIT")"
+fi
+if [[ -z "$BRIEFING_PROMPT_VERSION" ]]; then
+  BRIEFING_PROMPT_VERSION="$(existing_lambda_var "XMONITOR_BRIEFING_PROMPT_VERSION")"
+fi
 if [[ -z "$EMAIL_ENABLED" ]]; then
   EMAIL_ENABLED="$(existing_lambda_var "XMONITOR_EMAIL_ENABLED")"
+fi
+if [[ -z "$BRIEFINGS_ENABLED" ]]; then
+  BRIEFINGS_ENABLED="false"
+fi
+if [[ -z "$BRIEFING_DISPATCH_LIMIT" ]]; then
+  BRIEFING_DISPATCH_LIMIT="10"
+fi
+if [[ -z "$BRIEFING_PROMPT_VERSION" ]]; then
+  BRIEFING_PROMPT_VERSION="curated-briefing-v1"
 fi
 if [[ -z "$EMAIL_SCHEDULES_ENABLED" ]]; then
   EMAIL_SCHEDULES_ENABLED="$(existing_lambda_var "XMONITOR_EMAIL_SCHEDULES_ENABLED")"
@@ -637,7 +661,7 @@ if isinstance(payload, str):
     payload = json.loads(payload)
 if not isinstance(payload, dict) or not payload:
     raise SystemExit("error: read client configuration must be a non-empty object")
-allowed_capabilities = {"read", "semantic:query"}
+allowed_capabilities = {"read", "semantic:query", "briefings:read", "briefings:manage"}
 for client_id, configured_client in payload.items():
     if not isinstance(client_id, str) or not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", client_id):
         raise SystemExit("error: read client configuration contains an invalid client id")
@@ -657,6 +681,8 @@ for client_id, configured_client in payload.items():
         raise SystemExit("error: each read client must define supported capabilities")
     if "semantic:query" in capabilities and "read" not in capabilities:
         raise SystemExit("error: semantic:query clients must also define read")
+    if "briefings:manage" in capabilities and "briefings:read" not in capabilities:
+        raise SystemExit("error: briefings:manage clients must also define briefings:read")
 PY
 
 echo "==> Packaging Lambda code"
@@ -731,6 +757,9 @@ ENV_JSON="$(
   COMPOSE_DISABLE_THINKING="$COMPOSE_DISABLE_THINKING" \
   COMPOSE_STRIP_THINKING_RESPONSE="$COMPOSE_STRIP_THINKING_RESPONSE" \
   COMPOSE_API_KEY="$COMPOSE_API_KEY" \
+  BRIEFINGS_ENABLED="$BRIEFINGS_ENABLED" \
+  BRIEFING_DISPATCH_LIMIT="$BRIEFING_DISPATCH_LIMIT" \
+  BRIEFING_PROMPT_VERSION="$BRIEFING_PROMPT_VERSION" \
   EMAIL_ENABLED="$EMAIL_ENABLED" \
   EMAIL_SCHEDULES_ENABLED="$EMAIL_SCHEDULES_ENABLED" \
   EMAIL_REQUIRE_OAUTH="$EMAIL_REQUIRE_OAUTH" \
@@ -803,6 +832,9 @@ print(json.dumps({
     "XMONITOR_COMPOSE_DISABLE_THINKING": os.environ.get("COMPOSE_DISABLE_THINKING", ""),
     "XMONITOR_COMPOSE_STRIP_THINKING_RESPONSE": os.environ.get("COMPOSE_STRIP_THINKING_RESPONSE", ""),
     "XMONITOR_COMPOSE_API_KEY": os.environ.get("COMPOSE_API_KEY", ""),
+    "XMONITOR_BRIEFINGS_ENABLED": os.environ.get("BRIEFINGS_ENABLED", "false"),
+    "XMONITOR_BRIEFING_DISPATCH_LIMIT": os.environ.get("BRIEFING_DISPATCH_LIMIT", "10"),
+    "XMONITOR_BRIEFING_PROMPT_VERSION": os.environ.get("BRIEFING_PROMPT_VERSION", "curated-briefing-v1"),
     "XMONITOR_EMAIL_ENABLED": os.environ.get("EMAIL_ENABLED", ""),
     "XMONITOR_EMAIL_SCHEDULES_ENABLED": os.environ.get("EMAIL_SCHEDULES_ENABLED", ""),
     "XMONITOR_EMAIL_REQUIRE_OAUTH": os.environ.get("EMAIL_REQUIRE_OAUTH", ""),

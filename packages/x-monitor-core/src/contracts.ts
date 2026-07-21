@@ -117,3 +117,136 @@ export type ActivityTrendsResponse = {
 export type PostDetail = {
   post: FeedItem;
 };
+
+/**
+ * A source selected by the curated-briefing generator. Briefing citations are
+ * published snapshots: consumers must not use them to start a compose job.
+ */
+export type CuratedBriefingCitation = {
+  status_id: string;
+  author_handle: string;
+  url: string;
+  discovered_at: string;
+  excerpt?: string | null;
+  body_text?: string | null;
+  score?: number | null;
+};
+
+export type CuratedBriefing = {
+  topic_id: string;
+  slug: string;
+  question: string;
+  category: string | null;
+  order: number;
+  version_id: string;
+  answer_text: string;
+  key_points: string[];
+  citations: CuratedBriefingCitation[];
+  generated_at: string;
+  corpus_from?: string | null;
+  corpus_through: string | null;
+  reviewed_at: string | null;
+  published_at: string;
+  source_count: number;
+  stale_after: string | null;
+  stale: boolean;
+  models?: {
+    embedding: string | null;
+    synthesis: string | null;
+  };
+  prompt_version?: string | null;
+  provenance?: Record<string, unknown> | null;
+};
+
+export type CuratedBriefingsResponse = {
+  items: CuratedBriefing[];
+  generated_at: string;
+};
+
+export type CuratedBriefingAnswerStyle = "brief" | "balanced" | "detailed";
+export type CuratedBriefingReviewStatus = "draft" | "published" | "rejected" | "superseded";
+
+export type CuratedBriefingTopicInput = {
+  slug: string;
+  question: string;
+  category?: string | null;
+  editorial_context?: string | null;
+  retrieval_config?: Record<string, unknown>;
+  answer_style?: CuratedBriefingAnswerStyle;
+  refresh_interval_minutes?: number;
+  enabled?: boolean;
+  order?: number;
+};
+
+export type CuratedBriefingTopic = {
+  topic_id: string;
+  slug: string;
+  question: string;
+  category: string | null;
+  editorial_context: string | null;
+  retrieval_config: Record<string, unknown>;
+  answer_style: CuratedBriefingAnswerStyle;
+  refresh_interval_minutes: number;
+  enabled: boolean;
+  order: number;
+  next_refresh_at: string | null;
+  last_scheduled_at: string | null;
+  current_published_version_id: string | null;
+  created_at: string;
+  updated_at: string;
+  latest_run?: CuratedBriefingRun | null;
+};
+
+export type CuratedBriefingRun = {
+  run_id: string;
+  topic_id: string;
+  status: "queued" | "running" | "succeeded" | "failed";
+  trigger_source?: "scheduled" | "manual";
+  compose_job_id?: string | null;
+  corpus_from?: string | null;
+  corpus_through?: string | null;
+  error?: { code: string; message: string } | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+};
+
+export type CuratedBriefingVersion = {
+  version_id: string;
+  topic_id: string;
+  slug: string;
+  question: string;
+  category: string | null;
+  order: number;
+  run_id: string | null;
+  source_version_id: string | null;
+  version_number: number;
+  review_status: CuratedBriefingReviewStatus;
+  answer_text: string;
+  key_points: string[];
+  citations: CuratedBriefingCitation[];
+  source_count: number;
+  corpus_from: string | null;
+  corpus_through: string | null;
+  generated_at: string;
+  stale_after: string;
+  stale: boolean;
+  models?: {
+    embedding: string | null;
+    synthesis: string | null;
+  };
+  prompt_version: string;
+  provenance: Record<string, unknown>;
+  reviewed_at: string | null;
+  published_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+};
+
+export type CuratedBriefingTopicsResponse = {
+  items: CuratedBriefingTopic[];
+};
+
+export type CuratedBriefingVersionsResponse = {
+  items: CuratedBriefingVersion[];
+};
