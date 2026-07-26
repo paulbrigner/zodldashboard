@@ -160,6 +160,31 @@ test("curated briefing Compose requires auditable inline status-ID markers", asy
   ), [missingStatusId]);
 });
 
+test("editorial briefing revisions accept a bounded version title", async () => {
+  const api = await import(`${backendModuleUrl}?briefing-revision-title=${Date.now()}`);
+
+  assert.deepEqual(api.parseBriefingRevisionBody({
+    question: "How does the Ironwood upgrade work and when will it activate?",
+    answer_text: "A reviewed answer.",
+    key_points: ["One point"],
+  }), {
+    ok: true,
+    data: {
+      question: "How does the Ironwood upgrade work and when will it activate?",
+      answer_text: "A reviewed answer.",
+      key_points: ["One point"],
+    },
+  });
+  assert.deepEqual(api.parseBriefingRevisionBody({ question: "Too short" }), {
+    ok: false,
+    error: "question must contain between 10 and 1000 characters",
+  });
+  assert.deepEqual(api.parseBriefingRevisionBody({ title: "Unsupported alias" }), {
+    ok: false,
+    error: "unsupported field: title",
+  });
+});
+
 test("briefing persistence and worker flow preserve editorial and scheduling invariants", async () => {
   const [source, migration, api] = await Promise.all([
     readFile(backendPath, "utf8"),
@@ -194,6 +219,8 @@ test("briefing persistence and worker flow preserve editorial and scheduling inv
   assert.match(source, /briefing answer must include at least one inline citation marker/);
   assert.match(source, /briefing answer includes citation markers that are missing from its source list/);
   assert.match(source, /new Set\(\["published", "superseded"\]\)/);
+  assert.match(source, /const revisionQuestion = payload\.question \?\? source\.question/);
+  assert.match(source, /question: revisionQuestion/);
   assert.match(source, /discovered_at: \$\{citation\.discovered_at \|\| "unknown"\}/);
   assert.match(source, /discovered_at: item\.discovered_at/);
 

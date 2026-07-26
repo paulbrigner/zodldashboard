@@ -6972,13 +6972,20 @@ async function getBriefingVersion(versionId) {
   return result.rows[0] ? adminBriefingVersionFromRow(result.rows[0]) : null;
 }
 
-function parseBriefingRevisionBody(value) {
+export function parseBriefingRevisionBody(value) {
   if (!isRecord(value) || Array.isArray(value)) return { ok: false, error: "body must be an object" };
-  const allowed = new Set(["answer_text", "key_points"]);
+  const allowed = new Set(["question", "answer_text", "key_points"]);
   for (const key of Object.keys(value)) {
     if (!allowed.has(key)) return { ok: false, error: `unsupported field: ${key}` };
   }
   const data = {};
+  if (Object.hasOwn(value, "question")) {
+    const question = asString(value.question);
+    if (question.length < 10 || question.length > 1000) {
+      return { ok: false, error: "question must contain between 10 and 1000 characters" };
+    }
+    data.question = question;
+  }
   if (Object.hasOwn(value, "answer_text")) {
     const answer = asString(value.answer_text);
     if (!answer || answer.length > 50000) {
@@ -6996,7 +7003,9 @@ function parseBriefingRevisionBody(value) {
     }
     data.key_points = keyPoints;
   }
-  if (Object.keys(data).length === 0) return { ok: false, error: "answer_text or key_points is required" };
+  if (Object.keys(data).length === 0) {
+    return { ok: false, error: "question, answer_text, or key_points is required" };
+  }
   return { ok: true, data };
 }
 
@@ -7032,6 +7041,11 @@ async function createBriefingEditorialRevision(versionId, payload, clientId) {
       editorial_revision: true,
       source_version_id: String(source.version_id),
     };
+    const revisionQuestion = payload.question ?? source.question;
+    const topicSnapshot = {
+      ...briefingJsonObject(source.topic_snapshot_json),
+      question: revisionQuestion,
+    };
     const inserted = await client.query(
       `
         INSERT INTO xmonitor_briefing_versions (
@@ -7055,10 +7069,10 @@ async function createBriefingEditorialRevision(versionId, payload, clientId) {
         source.version_id,
         Number(nextResult.rows[0]?.next_version || 1),
         source.slug,
-        source.question,
+        revisionQuestion,
         source.category,
         Number(source.display_order || 0),
-        asJson(briefingJsonObject(source.topic_snapshot_json)),
+        asJson(topicSnapshot),
         source.evidence_fingerprint,
         payload.answer_text ?? source.answer_text,
         asJson(payload.key_points ?? briefingJsonArray(source.key_points_json)),
