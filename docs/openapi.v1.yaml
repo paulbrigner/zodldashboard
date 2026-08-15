@@ -710,6 +710,16 @@ paths:
               $ref: '#/components/schemas/CuratedBriefingRevisionRequest'
       responses:
         '201': { description: New draft revision created }
+    delete:
+      summary: Permanently delete a non-current briefing version
+      operationId: deleteCuratedBriefingVersion
+      security:
+        - XMonitorReadClientId: []
+          XMonitorReadClientSecret: []
+      responses:
+        '200': { description: Version deleted }
+        '404': { description: Version not found }
+        '409': { description: The version is currently published }
 
   /admin/curated-briefings/versions/{versionId}/publish:
     post:
@@ -1197,6 +1207,7 @@ components:
         answer_style: { type: string, enum: [brief, balanced, detailed], default: detailed }
         refresh_interval_minutes: { type: integer, minimum: 60, maximum: 10080, default: 1440 }
         enabled: { type: boolean, default: true }
+        publication_enabled: { type: boolean, default: true }
         order: { type: integer }
       additionalProperties: false
 

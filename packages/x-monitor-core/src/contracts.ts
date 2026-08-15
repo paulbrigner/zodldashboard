@@ -175,6 +175,7 @@ export type CuratedBriefingTopicInput = {
   answer_style?: CuratedBriefingAnswerStyle;
   refresh_interval_minutes?: number;
   enabled?: boolean;
+  publication_enabled?: boolean;
   order?: number;
 };
 
@@ -188,10 +189,12 @@ export type CuratedBriefingTopic = {
   answer_style: CuratedBriefingAnswerStyle;
   refresh_interval_minutes: number;
   enabled: boolean;
+  publication_enabled: boolean;
   order: number;
   next_refresh_at: string | null;
   last_scheduled_at: string | null;
   current_published_version_id: string | null;
+  archived_at: string | null;
   created_at: string;
   updated_at: string;
   latest_run?: CuratedBriefingRun | null;

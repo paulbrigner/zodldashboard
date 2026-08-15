@@ -17,8 +17,9 @@ Answer or Compose interface to PGPZ Community members.
 - The Community UI reads only reviewed, published versions. Generation always
   uses `draft_format: none` through the existing async Compose queue and worker.
 
-The PostgreSQL source of truth is migration
-`db/migrations/034_curated_topic_briefings.sql`. Topic definitions are mutable,
+The PostgreSQL source of truth is migrations
+`db/migrations/034_curated_topic_briefings.sql` and
+`db/migrations/035_curated_briefing_admin_controls.sql`. Topic definitions are mutable,
 but every run snapshots the question and generation settings it used, and every
 version snapshots its public question, slug, category, evidence, and provenance.
 Editing a draft creates a new immutable content revision. Publication, rejection,
@@ -42,6 +43,11 @@ terminalizes stale or orphaned compose jobs so they cannot wedge future topic
 refreshes. Failed or unreviewed refreshes never replace the current published
 version.
 
+Scheduled refresh and member publication are independent controls. Archiving a
+topic removes it from both administrator and member lists while retaining its
+history. Administrators can permanently delete individual historical versions,
+but the version currently published to members is protected from deletion.
+
 ## Safe staged rollout
 
 `XMONITOR_BRIEFINGS_ENABLED` defaults to `false`. Do not add the new capabilities
@@ -51,16 +57,17 @@ capability.
 
 1. Back up the current read-client secret payload and the environment maps for
    the API, worker, and scheduler Lambdas.
-2. Deploy the parser/routes/worker code only with
+2. Apply migrations `034_curated_topic_briefings.sql` and later using the normal
+   migration runner, or run `scripts/aws/apply_curated_briefings_migration.sh`.
+   The helper combines the local API package with the deployed VPC placement in
+   an isolated one-shot Lambda, applies the migrations with
+   `xmonitor/rds/master`, and deletes the temporary function on exit. It never
+   places the privileged migration credential on the API Gateway-backed
+   production function. Confirm the three tables, independent publication and
+   archive columns, and the active-run partial unique index.
+3. Deploy the parser/routes/worker code only with
    `scripts/aws/deploy_vpc_api_lambda_code_only.sh`. This script changes Lambda
    code and nothing else.
-3. Apply migration `034_curated_topic_briefings.sql` using the normal migration
-   runner, or run `scripts/aws/apply_curated_briefings_migration.sh`. The helper
-   clones the deployed API code and VPC placement into an isolated one-shot
-   Lambda, applies the migration with `xmonitor/rds/master`, and deletes the
-   temporary function on exit. It never places the privileged migration
-   credential on the API Gateway-backed production function. Confirm all three
-   tables and the active-run partial unique index.
 4. Smoke-check existing feed, semantic, Compose, worker, and scheduler behavior
    while briefings remain disabled.
 5. Update the existing `pgpz-community` client to include

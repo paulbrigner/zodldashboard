@@ -185,10 +185,62 @@ test("editorial briefing revisions accept a bounded version title", async () => 
   });
 });
 
+test("version pruning protects the current publication and deletes other history", async () => {
+  const api = await import(`${backendModuleUrl}?briefing-version-delete=${Date.now()}`);
+  const versionId = "22222222-2222-4222-8222-222222222222";
+  const topicId = "11111111-1111-4111-8111-111111111111";
+  const queries = [];
+  const client = {
+    async query(sql) {
+      queries.push(sql);
+      if (String(sql).includes("SELECT v.version_id")) {
+        return { rows: [{ version_id: versionId, topic_id: topicId, current_published_version_id: null }] };
+      }
+      return { rows: [] };
+    },
+    release() {},
+  };
+
+  assert.deepEqual(await api.deleteBriefingVersion(versionId, {
+    async connect() { return client; },
+  }), { version_id: versionId, topic_id: topicId, deleted: true });
+  assert.equal(queries.some((sql) => String(sql).includes("DELETE FROM xmonitor_briefing_versions")), true);
+
+  const protectedQueries = [];
+  await assert.rejects(
+    api.deleteBriefingVersion(versionId, {
+      async connect() {
+        return {
+          async query(sql) {
+            protectedQueries.push(sql);
+            if (String(sql).includes("SELECT v.version_id")) {
+              return {
+                rows: [{
+                  version_id: versionId,
+                  topic_id: topicId,
+                  current_published_version_id: versionId,
+                }],
+              };
+            }
+            return { rows: [] };
+          },
+          release() {},
+        };
+      },
+    }),
+    /currently published briefing version cannot be deleted/
+  );
+  assert.equal(
+    protectedQueries.some((sql) => String(sql).includes("DELETE FROM xmonitor_briefing_versions")),
+    false
+  );
+});
+
 test("briefing persistence and worker flow preserve editorial and scheduling invariants", async () => {
-  const [source, migration, api] = await Promise.all([
+  const [source, migration, adminControlsMigration, api] = await Promise.all([
     readFile(backendPath, "utf8"),
     readFile(path.join(repositoryRoot, "db/migrations/034_curated_topic_briefings.sql"), "utf8"),
+    readFile(path.join(repositoryRoot, "db/migrations/035_curated_briefing_admin_controls.sql"), "utf8"),
     import(`${backendModuleUrl}?briefing-persistence=${Date.now()}`),
   ]);
 
@@ -201,6 +253,9 @@ test("briefing persistence and worker flow preserve editorial and scheduling inv
   assert.match(migration, /idx_xmonitor_briefing_versions_unique_published_slug/);
   assert.match(migration, /idx_xmonitor_briefing_runs_one_active_per_topic/);
   assert.match(migration, /WHERE status IN \('queued', 'running'\)/);
+  assert.match(adminControlsMigration, /publication_enabled BOOLEAN NOT NULL DEFAULT TRUE/);
+  assert.match(adminControlsMigration, /archived_at TIMESTAMPTZ/);
+  assert.match(adminControlsMigration, /WHERE enabled AND archived_at IS NULL/);
 
   assert.match(source, /draft_format: "none"/);
   assert.match(source, /inline_citation_markers: true/);
@@ -219,6 +274,9 @@ test("briefing persistence and worker flow preserve editorial and scheduling inv
   assert.match(source, /briefing answer must include at least one inline citation marker/);
   assert.match(source, /briefing answer includes citation markers that are missing from its source list/);
   assert.match(source, /new Set\(\["published", "superseded"\]\)/);
+  assert.match(source, /WHERE t\.publication_enabled = TRUE/);
+  assert.match(source, /WHERE t\.archived_at IS NULL/);
+  assert.match(source, /currently published briefing version cannot be deleted/);
   assert.match(source, /const revisionQuestion = payload\.question \?\? source\.question/);
   assert.match(source, /question: revisionQuestion/);
   assert.match(source, /discovered_at: \$\{citation\.discovered_at \|\| "unknown"\}/);
@@ -278,6 +336,8 @@ test("provisioning is staged off and targeted rollout helpers preserve configura
   assert.match(migrationHelper, /trap cleanup EXIT/);
   assert.match(migrationHelper, /lambda create-function/);
   assert.match(migrationHelper, /lambda delete-function/);
+  assert.match(migrationHelper, /cp "\$ROOT_DIR\/db\/migrations\/"\*\.sql/);
+  assert.doesNotMatch(migrationHelper, /Code\.Location|lambda get-function --/);
   assert.match(migrationHelper, /"Handler": "index\.handler"/);
   assert.match(migrationHelper, /"PGUSER": str\(secret\["username"\]\)/);
   assert.match(migrationHelper, /034_curated_topic_briefings\.sql/);

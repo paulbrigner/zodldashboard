@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Apply only migration 034 from a one-shot Lambda that clones the deployed API
-# runtime, role, code, and VPC placement. The temporary function is never
+# Apply curated-briefing migrations from 034 onward using a one-shot Lambda that
+# combines locally built code with the deployed API runtime, role, and VPC
+# placement. The temporary function is never
 # connected to API Gateway or an event source, so privileged migration
 # credentials are not placed on a publicly reachable production function.
 #
-# Run the code-only deployment first so the deployed package contains migration
-# 034. The one-shot function and all local secret-bearing files are removed by
-# the EXIT trap whether the migration succeeds or fails.
+# Run this helper before the code-only deployment so additive schema changes are
+# available when the production functions begin using them. The one-shot
+# function and all local secret-bearing files are removed by the EXIT trap
+# whether the migration succeeds or fails.
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+LAMBDA_DIR="$ROOT_DIR/services/vpc-api-lambda"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 SOURCE_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-xmonitor-vpc-api}"
 MIGRATION_SECRET_ID="${XMONITOR_MIGRATION_SECRET_ID:-xmonitor/rds/master}"
@@ -25,6 +29,7 @@ SOURCE_CONFIG_FILE="$WORK_DIR/source-function.json"
 MASTER_SECRET_FILE="$WORK_DIR/master-secret.json"
 CREATE_INPUT_FILE="$WORK_DIR/create-function.json"
 FUNCTION_ZIP="$WORK_DIR/function.zip"
+BUILD_DIR="$WORK_DIR/build"
 INVOKE_METADATA_FILE="$WORK_DIR/invoke-metadata.json"
 INVOKE_RESPONSE_FILE="$WORK_DIR/invoke-response.json"
 TEMP_FUNCTION_CREATED="false"
@@ -43,17 +48,30 @@ trap cleanup EXIT
 
 chmod 700 "$WORK_DIR"
 
-echo "==> Capturing the deployed API Lambda runtime and code"
+echo "==> Capturing the deployed API Lambda runtime and VPC placement"
 aws_cli lambda get-function-configuration \
   --function-name "$SOURCE_FUNCTION_NAME" \
   --output json >"$SOURCE_CONFIG_FILE"
 chmod 600 "$SOURCE_CONFIG_FILE"
 
-CODE_LOCATION="$(aws_cli lambda get-function \
-  --function-name "$SOURCE_FUNCTION_NAME" \
-  --query 'Code.Location' \
-  --output text)"
-curl --fail --silent --show-error "$CODE_LOCATION" --output "$FUNCTION_ZIP"
+echo "==> Building the local API package with current migrations"
+mkdir -p "$BUILD_DIR"
+cp "$LAMBDA_DIR/index.mjs" "$LAMBDA_DIR/package.json" "$LAMBDA_DIR/package-lock.json" "$BUILD_DIR/"
+pushd "$BUILD_DIR" >/dev/null
+npm ci --omit=dev >/dev/null
+popd >/dev/null
+mkdir -p "$BUILD_DIR/shared/xmonitor" "$BUILD_DIR/shared/cipherpay-test" "$BUILD_DIR/config/xmonitor" "$BUILD_DIR/db/migrations"
+cp "$ROOT_DIR/shared/xmonitor/ingest-policy.mjs" "$BUILD_DIR/shared/xmonitor/ingest-policy.mjs"
+cp "$ROOT_DIR/shared/xmonitor/summary-taxonomy.mjs" "$BUILD_DIR/shared/xmonitor/summary-taxonomy.mjs"
+cp "$ROOT_DIR/shared/xmonitor/summary-trends.mjs" "$BUILD_DIR/shared/xmonitor/summary-trends.mjs"
+cp "$ROOT_DIR/shared/xmonitor/text-filter.mjs" "$BUILD_DIR/shared/xmonitor/text-filter.mjs"
+cp "$ROOT_DIR/shared/cipherpay-test/catalog.mjs" "$BUILD_DIR/shared/cipherpay-test/catalog.mjs"
+cp "$ROOT_DIR/shared/cipherpay-test/webhook.mjs" "$BUILD_DIR/shared/cipherpay-test/webhook.mjs"
+cp "$ROOT_DIR/config/xmonitor/omit-handles.json" "$BUILD_DIR/config/xmonitor/omit-handles.json"
+cp "$ROOT_DIR/db/migrations/"*.sql "$BUILD_DIR/db/migrations/"
+pushd "$BUILD_DIR" >/dev/null
+zip -qr "$FUNCTION_ZIP" .
+popd >/dev/null
 chmod 600 "$FUNCTION_ZIP"
 
 echo "==> Loading the database migration credential"

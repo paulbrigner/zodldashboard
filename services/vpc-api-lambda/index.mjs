@@ -6111,12 +6111,16 @@ function adminBriefingTopicFromRow(row) {
     answer_style: String(row.answer_style || "detailed"),
     refresh_interval_minutes: Number(row.refresh_interval_minutes || 1440),
     enabled: Boolean(row.enabled),
+    publication_enabled: row.publication_enabled === undefined
+      ? Boolean(row.enabled)
+      : Boolean(row.publication_enabled),
     order: Number(row.display_order || 0),
     next_refresh_at: toIso(row.next_refresh_at),
     last_scheduled_at: toIso(row.last_scheduled_at),
     current_published_version_id: row.current_published_version_id
       ? String(row.current_published_version_id)
       : null,
+    archived_at: toIso(row.archived_at),
     latest_run: row.latest_run_id
       ? {
           run_id: String(row.latest_run_id),
@@ -6199,6 +6203,7 @@ function parseBriefingTopicBody(value, { partial = false } = {}) {
     "answer_style",
     "refresh_interval_minutes",
     "enabled",
+    "publication_enabled",
     "order",
   ]);
   for (const key of Object.keys(value)) {
@@ -6255,6 +6260,15 @@ function parseBriefingTopicBody(value, { partial = false } = {}) {
     const enabled = value.enabled === undefined ? true : asBoolean(value.enabled);
     if (enabled === undefined) return { ok: false, error: "enabled must be a boolean" };
     data.enabled = enabled;
+  }
+  if (!partial || Object.hasOwn(value, "publication_enabled")) {
+    const publicationEnabled = value.publication_enabled === undefined
+      ? true
+      : asBoolean(value.publication_enabled);
+    if (publicationEnabled === undefined) {
+      return { ok: false, error: "publication_enabled must be a boolean" };
+    }
+    data.publication_enabled = publicationEnabled;
   }
   if (!partial || Object.hasOwn(value, "order")) {
     const order = value.order === undefined ? 0 : asInteger(value.order);
@@ -6323,7 +6337,8 @@ export async function getPublishedBriefings(slug = null, databasePool = getPool(
       FROM xmonitor_briefing_topics t
       JOIN xmonitor_briefing_versions v
         ON v.version_id = t.current_published_version_id
-      WHERE t.enabled = TRUE
+      WHERE t.publication_enabled = TRUE
+        AND t.archived_at IS NULL
         AND v.review_status = 'published'
         ${slugClause}
       ORDER BY t.display_order ASC, v.question ASC, t.topic_id ASC
@@ -6358,6 +6373,7 @@ async function listAdminBriefingTopics() {
       ORDER BY r.created_at DESC
       LIMIT 1
     ) latest ON TRUE
+    WHERE t.archived_at IS NULL
     ORDER BY t.display_order ASC, t.created_at ASC
   `);
   return result.rows.map(adminBriefingTopicFromRow);
@@ -6368,9 +6384,10 @@ async function createBriefingTopic(payload) {
     `
       INSERT INTO xmonitor_briefing_topics (
         slug, question, category, editorial_context, retrieval_config_json,
-        answer_style, refresh_interval_minutes, enabled, display_order, next_refresh_at
+        answer_style, refresh_interval_minutes, enabled, publication_enabled,
+        display_order, next_refresh_at
       )
-      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, CASE WHEN $8 THEN now() ELSE NULL END)
+      VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, CASE WHEN $8 THEN now() ELSE NULL END)
       RETURNING *
     `,
     [
@@ -6382,6 +6399,7 @@ async function createBriefingTopic(payload) {
       payload.answer_style,
       payload.refresh_interval_minutes,
       payload.enabled,
+      payload.publication_enabled,
       payload.order,
     ]
   );
@@ -6398,6 +6416,7 @@ async function updateBriefingTopic(topicId, payload) {
     answer_style: "answer_style",
     refresh_interval_minutes: "refresh_interval_minutes",
     enabled: "enabled",
+    publication_enabled: "publication_enabled",
     order: "display_order",
   };
   const params = [topicId];
@@ -6424,7 +6443,8 @@ async function archiveBriefingTopic(topicId) {
   const result = await getPool().query(
     `
       UPDATE xmonitor_briefing_topics
-      SET enabled = FALSE, next_refresh_at = NULL
+      SET enabled = FALSE, publication_enabled = FALSE,
+          next_refresh_at = NULL, archived_at = now()
       WHERE topic_id = $1
       RETURNING *
     `,
@@ -6464,7 +6484,7 @@ async function createBriefingRun({
   try {
     await client.query("BEGIN");
     const selected = await client.query(
-      `SELECT * FROM xmonitor_briefing_topics WHERE topic_id = $1 FOR UPDATE`,
+      `SELECT * FROM xmonitor_briefing_topics WHERE topic_id = $1 AND archived_at IS NULL FOR UPDATE`,
       [topicId]
     );
     const topic = selected.rows[0];
@@ -6874,6 +6894,7 @@ async function reconcileStaleBriefingRuns(topicId = null) {
           UPDATE xmonitor_briefing_topics
           SET next_refresh_at = now()
           WHERE enabled = TRUE
+            AND archived_at IS NULL
             AND topic_id = ANY($1::uuid[])
         `,
         [Array.from(reconciledTopicIds)]
@@ -6912,6 +6933,7 @@ async function dispatchDueBriefingRuns(requestId) {
       SELECT topic_id, next_refresh_at
       FROM xmonitor_briefing_topics
       WHERE enabled = TRUE
+        AND archived_at IS NULL
         AND (next_refresh_at IS NULL OR next_refresh_at <= now())
         AND NOT EXISTS (
           SELECT 1 FROM xmonitor_briefing_runs r
@@ -6970,6 +6992,44 @@ async function getBriefingVersion(versionId) {
     [versionId]
   );
   return result.rows[0] ? adminBriefingVersionFromRow(result.rows[0]) : null;
+}
+
+export async function deleteBriefingVersion(versionId, databasePool = getPool()) {
+  const db = databasePool;
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
+    const selected = await client.query(
+      `
+        SELECT v.version_id, v.topic_id, t.current_published_version_id
+        FROM xmonitor_briefing_versions v
+        JOIN xmonitor_briefing_topics t ON t.topic_id = v.topic_id
+        WHERE v.version_id = $1
+        FOR UPDATE OF v, t
+      `,
+      [versionId]
+    );
+    const version = selected.rows[0];
+    if (!version) {
+      await client.query("ROLLBACK");
+      return null;
+    }
+    if (String(version.current_published_version_id || "") === String(version.version_id)) {
+      throw new Error("the currently published briefing version cannot be deleted");
+    }
+    await client.query(`DELETE FROM xmonitor_briefing_versions WHERE version_id = $1`, [versionId]);
+    await client.query("COMMIT");
+    return { version_id: String(version.version_id), topic_id: String(version.topic_id), deleted: true };
+  } catch (error) {
+    try {
+      await client.query("ROLLBACK");
+    } catch {
+      // ignore
+    }
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 export function parseBriefingRevisionBody(value) {
@@ -11763,6 +11823,18 @@ async function handleAdminBriefingVersionGet(path) {
   }
 }
 
+async function handleAdminBriefingVersionDelete(path) {
+  const match = path.match(/^\/v1\/admin\/curated-briefings\/versions\/([^/]+)$/);
+  const versionId = match ? decodeURIComponent(match[1]) : "";
+  if (!isUuid(versionId)) return jsonError("invalid briefing version id", 400);
+  try {
+    const result = await deleteBriefingVersion(versionId);
+    return result ? jsonOk(result) : jsonError("curated briefing version not found", 404);
+  } catch (error) {
+    return jsonError(errorMessage(error) || "failed to delete curated briefing version", 409);
+  }
+}
+
 async function handleAdminBriefingVersionPatch(event, path, clientId) {
   const match = path.match(/^\/v1\/admin\/curated-briefings\/versions\/([^/]+)$/);
   const versionId = match ? decodeURIComponent(match[1]) : "";
@@ -14222,6 +14294,10 @@ export async function handler(event) {
 
   if (method === "GET" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+$/.test(path)) {
     return handleAdminBriefingVersionGet(path);
+  }
+
+  if (method === "DELETE" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+$/.test(path)) {
+    return handleAdminBriefingVersionDelete(path);
   }
 
   if (method === "PATCH" && /^\/v1\/admin\/curated-briefings\/versions\/[^/]+$/.test(path)) {
