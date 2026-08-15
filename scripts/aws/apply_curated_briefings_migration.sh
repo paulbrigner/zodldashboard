@@ -17,7 +17,7 @@ LAMBDA_DIR="$ROOT_DIR/services/vpc-api-lambda"
 AWS_REGION="${AWS_REGION:-us-east-1}"
 SOURCE_FUNCTION_NAME="${LAMBDA_FUNCTION_NAME:-xmonitor-vpc-api}"
 MIGRATION_SECRET_ID="${XMONITOR_MIGRATION_SECRET_ID:-xmonitor/rds/master}"
-MIGRATION_FILE="034_curated_topic_briefings.sql"
+MIGRATION_FILE="${XMONITOR_DB_MIGRATIONS_FROM_FILE:-035_curated_briefing_admin_controls.sql}"
 TEMP_FUNCTION_NAME="xmonitor-curated-briefing-migrate-$(date -u +%Y%m%d%H%M%S)-$$"
 
 aws_cli() {
