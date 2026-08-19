@@ -402,11 +402,8 @@ Current architecture and operations:
 - Restrict DB network access to trusted AWS resources.
 - Keep local bypass disabled by default.
 
-## License Options
+## License
 
-All code in this workspace is licensed under either of:
-
-- Apache License, Version 2.0 (see `LICENSE-APACHE` or <http://www.apache.org/licenses/LICENSE-2.0>)
-- MIT license (see `LICENSE-MIT` or <http://opensource.org/licenses/MIT>)
-
-at your option.
+This project is licensed under the
+[GNU Affero General Public License, version 3 only](LICENSE)
+(`AGPL-3.0-only`).

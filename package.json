@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "description": "Authenticated modular dashboard for X monitoring, private workspaces, and operational workflows.",
-  "license": "(Apache-2.0 OR MIT)",
+  "license": "AGPL-3.0-only",
   "engines": {
     "node": ">=22 <23"
   },
