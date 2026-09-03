@@ -298,3 +298,26 @@ test("collector config separates read and ingest APIs and summaries require both
     }
   }
 });
+
+test("collector defaults to a supported summary model configuration", () => {
+  const original = {
+    XMON_SUMMARY_LLM_MODEL: process.env.XMON_SUMMARY_LLM_MODEL,
+    XMON_SUMMARY_LLM_TEMPERATURE: process.env.XMON_SUMMARY_LLM_TEMPERATURE,
+    XMONITOR_COMPOSE_MODEL: process.env.XMONITOR_COMPOSE_MODEL,
+  };
+
+  delete process.env.XMON_SUMMARY_LLM_MODEL;
+  delete process.env.XMON_SUMMARY_LLM_TEMPERATURE;
+  delete process.env.XMONITOR_COMPOSE_MODEL;
+
+  try {
+    const config = getConfig();
+    assert.equal(config.summaryLlmModel, "openai-gpt-56-terra");
+    assert.equal(config.summaryLlmTemperature, 1);
+  } finally {
+    for (const [key, value] of Object.entries(original)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});

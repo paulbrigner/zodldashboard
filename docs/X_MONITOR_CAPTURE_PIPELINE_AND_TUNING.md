@@ -122,7 +122,8 @@ is returned in the normal completion content rather than reasoning-only fields.
 - If synthesis fails/timeouts/truncates after retries, collector falls back to stats-style summary text.
 
 Key summary tuning:
-- `XMON_SUMMARY_LLM_MODEL` (default `openai-gpt-56-terra-pro`)
+- `XMON_SUMMARY_LLM_MODEL` (default `openai-gpt-56-terra`)
+- `XMON_SUMMARY_LLM_TEMPERATURE` (default `1`; required by the current GPT-5.6 endpoint)
 - `XMON_SUMMARY_LLM_MAX_TOKENS` (default `900`)
 - `XMON_SUMMARY_LLM_TIMEOUT_MS` (default `180000`)
 - `XMON_SUMMARY_LLM_MAX_ATTEMPTS` (default `3`)

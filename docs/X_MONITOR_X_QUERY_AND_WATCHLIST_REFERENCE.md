@@ -160,7 +160,8 @@ Summaries (discovery mode):
 - weekly summary generated daily at `6:00 AM America/New_York`
 - LLM defaults:
   - backend: `auto`
-  - model: `openai-gpt-56-terra-pro`
+  - model: `openai-gpt-56-terra`
+  - temperature: `1` (required by the current GPT-5.6 endpoint)
   - max tokens: `900`
   - timeout: `180000 ms`
 - narrative inputs: representative posts, active voices, and theme signals; preset debate categories are excluded

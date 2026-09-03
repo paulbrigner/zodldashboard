@@ -121,7 +121,7 @@ const DEFAULT_EMBEDDING_MODEL = "text-embedding-bge-m3";
 const DEFAULT_EMBEDDING_DIMS = 1024;
 const DEFAULT_EMBEDDING_TIMEOUT_MS = 10000;
 const DEFAULT_SUMMARY_LLM_URL = "https://api.venice.ai/api/v1";
-const DEFAULT_SUMMARY_LLM_MODEL = "openai-gpt-56-terra-pro";
+const DEFAULT_SUMMARY_LLM_MODEL = "openai-gpt-56-terra";
 const WEEKLY_SUMMARY_TIMEZONE = "America/New_York";
 const WEEKLY_SUMMARY_HOUR = 6;
 const TWEET_FIELDS = "article,author_id,created_at,entities,lang,public_metrics,referenced_tweets";
@@ -514,7 +514,7 @@ function getConfig() {
       || asString(process.env.XMONITOR_COMPOSE_API_KEY)
       || asString(process.env.XMONITOR_EMBEDDING_API_KEY)
       || asString(process.env.VENICE_API_KEY),
-    summaryLlmTemperature: asFiniteFloat(process.env.XMON_SUMMARY_LLM_TEMPERATURE, 0.45),
+    summaryLlmTemperature: asFiniteFloat(process.env.XMON_SUMMARY_LLM_TEMPERATURE, 1),
     summaryLlmMaxTokens: asPositiveInt(process.env.XMON_SUMMARY_LLM_MAX_TOKENS, 900),
     summaryLlmTimeoutMs: asPositiveInt(process.env.XMON_SUMMARY_LLM_TIMEOUT_MS, 180000),
     summaryLlmMaxAttempts: asPositiveInt(process.env.XMON_SUMMARY_LLM_MAX_ATTEMPTS, 3),
