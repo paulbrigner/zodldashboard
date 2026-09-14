@@ -950,8 +950,7 @@ function summarizeWindowPosts(posts, topPostsLimit) {
   });
 
   const notablePosts = ranked.slice(0, Math.max(1, topPostsLimit)).map((post) => {
-    const raw = asString(post?.body_text).replace(/\s+/g, " ").trim();
-    const text = raw.length > 180 ? `${raw.slice(0, 177)}...` : raw;
+    const text = buildSummaryExcerpt(post?.body_text);
     return {
       status_id: asString(post?.status_id),
       author_handle: normalizeHandle(post?.author_handle),
@@ -1405,6 +1404,12 @@ async function maybeGenerateWindowSummaries(config, collectorMode, dryRun, event
       errors: Array.isArray(response?.errors) ? response.errors : [],
     },
   };
+}
+
+export function buildSummaryExcerpt(value) {
+  const raw = asString(value).toWellFormed().replace(/\u0000/g, "\ufffd").replace(/\s+/g, " ").trim();
+  const characters = Array.from(raw);
+  return characters.length > 180 ? `${characters.slice(0, 177).join("")}...` : raw;
 }
 
 function comparePriority(existing, incoming) {
@@ -2486,6 +2491,7 @@ export {
   buildQueryPlan,
   buildSearchUrl,
   buildWindowSummaryPrompt,
+  buildWindowSummaryRecord,
   buildWatchlistTierMap,
   fetchWindowFeedPosts,
   getArticleTitle,

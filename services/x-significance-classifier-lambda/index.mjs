@@ -1,10 +1,10 @@
 const DEFAULT_INGEST_API_BASE_URL = "https://www.zodldashboard.com/api/v1";
 const DEFAULT_SIGNIFICANCE_LLM_URL = "https://api.venice.ai/api/v1";
-const DEFAULT_SIGNIFICANCE_LLM_MODEL = "qwen3-235b-a22b-instruct-2507";
+const DEFAULT_SIGNIFICANCE_LLM_MODEL = "deepseek-v4-flash-0731";
 const DEFAULT_SIGNIFICANCE_LLM_MAX_TOKENS = 900;
 const DEFAULT_SIGNIFICANCE_LLM_TIMEOUT_MS = 30000;
-const DEFAULT_SIGNIFICANCE_LLM_MAX_ATTEMPTS = 1;
-const DEFAULT_SIGNIFICANCE_BATCH_SIZE = 1;
+const DEFAULT_SIGNIFICANCE_LLM_MAX_ATTEMPTS = 2;
+const DEFAULT_SIGNIFICANCE_BATCH_SIZE = 4;
 const DEFAULT_SIGNIFICANCE_MAX_POSTS_PER_RUN = 64;
 const DEFAULT_SIGNIFICANCE_MAX_ATTEMPTS = 10;
 const DEFAULT_LAMBDA_SAFETY_MARGIN_MS = 10000;
@@ -122,6 +122,7 @@ function backlogMetrics(backlog) {
     PendingClassificationCount: backlog.pending_count,
     ProcessingClassificationCount: backlog.processing_count,
     FailedClassificationCount: backlog.failed_count,
+    ExhaustedClassificationCount: backlog.exhausted_count,
     RetryableClassificationCount: backlog.retryable_count,
     OldestPendingAgeSeconds: backlog.oldest_retryable_age_seconds,
   };
@@ -167,6 +168,8 @@ function getConfig(event = {}) {
     ingestTimeoutMs: asPositiveInt(process.env.XMON_SIGNIFICANCE_INGEST_TIMEOUT_MS, 20000),
     llmUrl: (asString(process.env.XMON_SIGNIFICANCE_LLM_URL) || DEFAULT_SIGNIFICANCE_LLM_URL).replace(/\/+$/, ""),
     llmModel: asString(process.env.XMON_SIGNIFICANCE_LLM_MODEL) || DEFAULT_SIGNIFICANCE_LLM_MODEL,
+    llmFallbackModels: (process.env.XMON_SIGNIFICANCE_LLM_FALLBACK_MODELS ?? "z-ai-glm-5-3-flash")
+      .split(",").map((value) => value.trim()).filter(Boolean),
     llmApiKey: asString(process.env.XMON_SIGNIFICANCE_LLM_API_KEY),
     llmTemperature: asFiniteFloat(process.env.XMON_SIGNIFICANCE_LLM_TEMPERATURE, 0),
     llmMaxTokens: asPositiveInt(process.env.XMON_SIGNIFICANCE_LLM_MAX_TOKENS, DEFAULT_SIGNIFICANCE_LLM_MAX_TOKENS),
@@ -178,7 +181,7 @@ function getConfig(event = {}) {
     maxPostsPerRun: Math.min(Math.max(asPositiveInt(event.max_posts_per_run ?? process.env.XMON_SIGNIFICANCE_MAX_POSTS_PER_RUN, DEFAULT_SIGNIFICANCE_MAX_POSTS_PER_RUN), 1), 500),
     maxAttempts: Math.min(Math.max(asPositiveInt(event.max_attempts ?? process.env.XMON_SIGNIFICANCE_MAX_ATTEMPTS, DEFAULT_SIGNIFICANCE_MAX_ATTEMPTS), 1), 10),
     leaseSeconds: Math.min(Math.max(asPositiveInt(event.lease_seconds ?? process.env.XMON_SIGNIFICANCE_LEASE_SECONDS, 300), 30), 3600),
-    significanceVersion: asString(process.env.XMON_SIGNIFICANCE_VERSION) || "ai_v2",
+    significanceVersion: asString(process.env.XMON_SIGNIFICANCE_VERSION) || "ai_v3",
     lambdaSafetyMarginMs: asPositiveInt(process.env.XMON_SIGNIFICANCE_LAMBDA_SAFETY_MARGIN_MS, DEFAULT_LAMBDA_SAFETY_MARGIN_MS),
   };
 }
@@ -203,12 +206,17 @@ async function fetchJsonWithTimeout(url, options, timeoutMs) {
     }
 
     if (!response.ok) {
-      throw new Error(`request failed (${response.status}): ${text.slice(0, 400)}`);
+      const error = new Error(`request failed (${response.status}): ${text.slice(0, 400)}`);
+      error.status = response.status;
+      error.retryAfterMs = parseRetryAfterMs(response.headers.get("retry-after"));
+      throw error;
     }
     return payload;
   } catch (error) {
     if (didTimeout || error?.name === "AbortError") {
-      throw new Error(`request timed out after ${timeoutMs} ms`);
+      const timedOut = new Error(`request timed out after ${timeoutMs} ms`);
+      timedOut.code = "ETIMEDOUT";
+      throw timedOut;
     }
     throw error;
   } finally {
@@ -344,6 +352,12 @@ async function requestBatchClassification(config, items) {
   if (config.llmDisableThinking && isVeniceApiUrl(config.llmUrl)) {
     requestBody.venice_parameters = { disable_thinking: true };
   }
+  // GLM 5.3 still spends completion tokens on reasoning when thinking is disabled.
+  // Leave room for both reasoning and the four-item JSON answer when it is used.
+  if (config.llmModel === "z-ai-glm-5-3-flash") {
+    requestBody.reasoning_effort = "low";
+    requestBody.max_tokens = Math.max(config.llmMaxTokens, 4096);
+  }
 
   const payload = await fetchJsonWithTimeout(
     `${config.llmUrl}/chat/completions`,
@@ -359,21 +373,25 @@ async function requestBatchClassification(config, items) {
     config.llmTimeoutMs
   );
 
+  const invalidOutput = (message) => Object.assign(new Error(message), { code: "INVALID_MODEL_OUTPUT" });
+  if (payload?.choices?.some((choice) => choice.finish_reason === "length")) {
+    throw invalidOutput("significance classifier exhausted its completion token budget");
+  }
   const text = extractCompletionText(payload);
   if (!text) {
-    throw new Error("significance classifier returned empty response");
+    throw invalidOutput("significance classifier returned empty response");
   }
 
   let parsed;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new Error("significance classifier returned invalid JSON");
+    throw invalidOutput("significance classifier returned invalid JSON");
   }
 
   const rawItems = Array.isArray(parsed?.items) ? parsed.items : null;
   if (!rawItems) {
-    throw new Error("significance classifier response missing items");
+    throw invalidOutput("significance classifier response missing items");
   }
 
   const byStatusId = new Map();
@@ -383,7 +401,7 @@ async function requestBatchClassification(config, items) {
     const confidence = Number(item?.confidence);
     const reason = asString(item?.reason);
     if (!statusId || significant === null || !Number.isFinite(confidence) || confidence < 0 || confidence > 1 || !reason) {
-      throw new Error("significance classifier response item is invalid");
+      throw invalidOutput("significance classifier response item is invalid");
     }
     byStatusId.set(statusId, {
       status_id: statusId,
@@ -398,40 +416,72 @@ async function requestBatchClassification(config, items) {
   }
 
   if (byStatusId.size !== items.length) {
-    throw new Error("significance classifier response length mismatch");
+    throw invalidOutput("significance classifier response length mismatch");
   }
 
   return items.map((item) => {
     const match = byStatusId.get(item.status_id);
     if (!match) {
-      throw new Error(`significance classifier omitted status_id ${item.status_id}`);
+      throw invalidOutput(`significance classifier omitted status_id ${item.status_id}`);
     }
     return match;
   });
 }
 
-async function requestBatchClassificationWithRetry(config, items, batchIndex) {
+export function parseRetryAfterMs(value, nowMs = Date.now()) {
+  if (!value) return 0;
+  const seconds = Number(value);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const until = Date.parse(value);
+  return Number.isFinite(until) ? Math.max(0, until - nowMs) : 0;
+}
+
+function transientLlmError(error) {
+  return error?.status === 429 || error?.status >= 500
+    || error?.code === "ETIMEDOUT" || error?.code === "INVALID_MODEL_OUTPUT";
+}
+
+function classificationModels(config) {
+  return [...new Set([config.llmModel, ...(config.llmFallbackModels || [])])];
+}
+
+export async function requestBatchClassificationWithRetry(config, items, batchIndex, context, state) {
   let lastError = null;
-  for (let attempt = 1; attempt <= config.llmMaxAttempts; attempt += 1) {
-    const attemptStartedAt = Date.now();
-    try {
-      return await requestBatchClassification(config, items);
-    } catch (error) {
-      lastError = error;
-      logStructured("warn", "significance_llm_attempt_failed", {
-        batch_index: batchIndex,
-        attempt,
-        max_attempts: config.llmMaxAttempts,
-        duration_ms: elapsedMs(attemptStartedAt),
-        error: errorMessage(error),
-        status_ids: sampleStatusIds(items),
-      });
-      if (attempt < config.llmMaxAttempts) {
-        await sleep(config.llmInitialBackoffMs * (2 ** (attempt - 1)));
+  for (const model of classificationModels(config)) {
+    if (state.unavailableModels.has(model)) continue;
+    if (!hasTimeForLlmBatch(config, context)) break;
+    for (let attempt = 1; attempt <= config.llmMaxAttempts; attempt += 1) {
+      if (!hasTimeForLlmBatch(config, context)) break;
+      const attemptStartedAt = Date.now();
+      try {
+        const results = await requestBatchClassification({ ...config, llmModel: model }, items);
+        if (model !== config.llmModel) state.fallbackBatches += 1;
+        return results;
+      } catch (error) {
+        lastError = error;
+        if (error?.status === 429) state.overloads += 1;
+        logStructured("warn", "significance_llm_attempt_failed", {
+          model, batch_index: batchIndex, attempt, max_attempts: config.llmMaxAttempts,
+          duration_ms: elapsedMs(attemptStartedAt), error: errorMessage(error),
+          status_ids: sampleStatusIds(items),
+        });
+        if (!transientLlmError(error)) throw error;
+        if (attempt < config.llmMaxAttempts) {
+          const delayMs = Math.max(error.retryAfterMs || 0,
+            config.llmInitialBackoffMs * (2 ** (attempt - 1)) * (1 + Math.random()));
+          const requiredMs = delayMs + config.llmTimeoutMs + config.ingestTimeoutMs + config.lambdaSafetyMarginMs;
+          if (remainingTimeMs(context) <= requiredMs) break;
+          await sleep(delayMs);
+        }
       }
     }
+    // Avoid sending every remaining post to a model that is overloaded.
+    state.unavailableModels.add(model);
   }
-  throw lastError || new Error("significance classifier failed");
+  if (lastError) throw lastError;
+  const error = new Error("no model request fits the remaining time budget");
+  error.requestAttempted = false;
+  throw error;
 }
 
 async function claimPosts(config) {
@@ -467,12 +517,20 @@ function retryableFailureItems(items, config, message) {
     significance_version: config.significanceVersion,
     classification_model: config.llmModel,
     classification_error: message,
+    classification_leased_at: item.classification_leased_at,
+  }));
+}
+
+function deferredItems(items, config, message) {
+  return retryableFailureItems(items, config, message).map((item) => ({
+    ...item, classification_status: "pending",
   }));
 }
 
 export async function handler(event = {}, context = {}) {
   const runStartedAt = Date.now();
   const config = getConfig(event);
+  const state = { unavailableModels: new Set(), overloads: 0, fallbackBatches: 0 };
 
   logStructured("info", "significance_run_start", {
     model: config.llmModel,
@@ -513,6 +571,9 @@ export async function handler(event = {}, context = {}) {
       AiBatchCount: 0,
       TimeBudgetExhaustedCount: 0,
       ApplyErrorCount: 0,
+      DeferredCount: 0,
+      ProviderOverloadCount: 0,
+      FallbackBatchCount: 0,
       RunDurationMs: elapsedMs(runStartedAt),
       ...backlogMetrics(claim.backlog),
     });
@@ -542,6 +603,7 @@ export async function handler(event = {}, context = {}) {
         classification_model: "hard_reject",
         classification_confidence: 1,
         classified_at: nowIso(),
+        classification_leased_at: item.classification_leased_at,
       });
     } else {
       aiCandidates.push(item);
@@ -550,6 +612,7 @@ export async function handler(event = {}, context = {}) {
 
   const resultItems = [...hardRejected];
   let failed = 0;
+  let deferred = 0;
   let aiBatches = 0;
   let timeBudgetExhausted = false;
 
@@ -557,16 +620,18 @@ export async function handler(event = {}, context = {}) {
   for (let batchOffset = 0; batchOffset < batches.length; batchOffset += 1) {
     const batch = batches[batchOffset];
     const batchIndex = batchOffset + 1;
-    if (!hasTimeForLlmBatch(config, context)) {
-      timeBudgetExhausted = true;
+    const noCapacity = classificationModels(config).every((model) => state.unavailableModels.has(model));
+    if (!hasTimeForLlmBatch(config, context) || noCapacity) {
+      timeBudgetExhausted = !noCapacity;
       const remainingItems = batches.slice(batchOffset).flat();
-      const message = `classifier_time_budget_exhausted: ${Math.round(remainingTimeMs(context))} ms remaining before batch ${batchIndex}`;
-      failed += remainingItems.length;
-      resultItems.push(...retryableFailureItems(remainingItems, config, message));
-      logStructured("warn", "significance_time_budget_exhausted", {
+      const message = noCapacity ? "classifier_provider_capacity_exhausted"
+        : `classifier_time_budget_exhausted: ${Math.round(remainingTimeMs(context))} ms remaining before batch ${batchIndex}`;
+      deferred += remainingItems.length;
+      resultItems.push(...deferredItems(remainingItems, config, message));
+      logStructured("warn", noCapacity ? "significance_provider_capacity_exhausted" : "significance_time_budget_exhausted", {
         batch_index: batchIndex,
         remaining_batches: batches.length - batchOffset,
-        failed_retryable: remainingItems.length,
+        deferred: remainingItems.length,
         remaining_time_ms: finiteRemainingTimeMs(context),
         required_time_ms: config.llmTimeoutMs + config.ingestTimeoutMs + config.lambdaSafetyMarginMs,
         status_ids: sampleStatusIds(remainingItems),
@@ -583,8 +648,10 @@ export async function handler(event = {}, context = {}) {
       status_ids: sampleStatusIds(batch),
     });
     try {
-      const batchResults = await requestBatchClassificationWithRetry(config, batch, batchIndex);
-      resultItems.push(...batchResults);
+      const batchResults = await requestBatchClassificationWithRetry(config, batch, batchIndex, context, state);
+      resultItems.push(...batchResults.map((item, index) => ({
+        ...item, classification_leased_at: batch[index].classification_leased_at,
+      })));
       aiBatches += 1;
       logStructured("info", "significance_batch_complete", {
         batch_index: batchIndex,
@@ -593,13 +660,19 @@ export async function handler(event = {}, context = {}) {
         status_ids: sampleStatusIds(batch),
       });
     } catch (error) {
-      failed += batch.length;
       const message = errorMessage(error) || "significance_classifier_failed";
-      resultItems.push(...retryableFailureItems(batch, config, message));
+      if (error.requestAttempted === false) {
+        deferred += batch.length;
+        resultItems.push(...deferredItems(batch, config, message));
+      } else {
+        failed += batch.length;
+        resultItems.push(...retryableFailureItems(batch, config, message));
+      }
       logStructured("error", "significance_batch_failed", {
         batch_index: batchIndex,
         duration_ms: elapsedMs(batchStartedAt),
-        failed: batch.length,
+        failed: error.requestAttempted === false ? 0 : batch.length,
+        deferred: error.requestAttempted === false ? batch.length : 0,
         error: message,
         status_ids: sampleStatusIds(batch),
       });
@@ -628,6 +701,9 @@ export async function handler(event = {}, context = {}) {
     ClaimedCount: claimed.length,
     ClassifiedCount: resultItems.filter((item) => item.classification_status === "classified").length,
     FailedCount: failed,
+    DeferredCount: deferred,
+    ProviderOverloadCount: state.overloads,
+    FallbackBatchCount: state.fallbackBatches,
     HardRejectedCount: hardRejected.length,
     AiBatchCount: aiBatches,
     TimeBudgetExhaustedCount: timeBudgetExhausted ? 1 : 0,
@@ -640,6 +716,9 @@ export async function handler(event = {}, context = {}) {
     claimed: claimed.length,
     classified: resultItems.filter((item) => item.classification_status === "classified").length,
     failed,
+    deferred,
+    provider_overloads: state.overloads,
+    fallback_batches: state.fallbackBatches,
     hard_rejected: hardRejected.length,
     ai_batches: aiBatches,
     time_budget_exhausted: timeBudgetExhausted,
@@ -647,10 +726,13 @@ export async function handler(event = {}, context = {}) {
   });
 
   return {
-    ok: true,
+    ok: applyErrors.length === 0,
     claimed: claimed.length,
     classified: resultItems.filter((item) => item.classification_status === "classified").length,
     failed,
+    deferred,
+    provider_overloads: state.overloads,
+    fallback_batches: state.fallbackBatches,
     hard_rejected: hardRejected.length,
     ai_batches: aiBatches,
     time_budget_exhausted: timeBudgetExhausted,

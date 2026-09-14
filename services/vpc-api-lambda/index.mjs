@@ -598,17 +598,22 @@ function hasDatabaseConfig() {
   return Boolean(process.env.DATABASE_URL) || Boolean(process.env.PGHOST && process.env.PGDATABASE && process.env.PGUSER);
 }
 
-function poolConfigFromEnv() {
+export function poolConfigFromEnv() {
   const sslMode = String(process.env.PGSSLMODE || "").toLowerCase();
   const ssl = sslMode && sslMode !== "disable" ? { rejectUnauthorized: false } : undefined;
-  const max = parsePositiveInt(process.env.PGPOOL_MAX, 5);
+  const max = parsePositiveInt(process.env.PGPOOL_MAX, 2);
+  const limits = {
+    max,
+    idleTimeoutMillis: parsePositiveInt(process.env.PGPOOL_IDLE_TIMEOUT_MS, 1000),
+    connectionTimeoutMillis: parsePositiveInt(process.env.PGPOOL_CONNECTION_TIMEOUT_MS, 5000),
+    maxLifetimeSeconds: parsePositiveInt(process.env.PGPOOL_MAX_LIFETIME_SECONDS, 60),
+  };
 
   if (process.env.DATABASE_URL) {
     return {
       connectionString: process.env.DATABASE_URL,
       ssl,
-      max,
-      idleTimeoutMillis: 10000,
+      ...limits,
     };
   }
 
@@ -629,14 +634,16 @@ function poolConfigFromEnv() {
     user,
     password,
     ssl,
-    max,
-    idleTimeoutMillis: 10000,
+    ...limits,
   };
 }
 
 function getPool() {
   if (!pool) {
     pool = new Pool(poolConfigFromEnv());
+    pool.on("error", (error) => console.error(JSON.stringify({
+      event: "database_idle_connection_error", code: error.code || null,
+    })));
   }
   return pool;
 }
@@ -699,6 +706,8 @@ function isIngestPath(path) {
 function isOpsPath(path) {
   return (
     path === "/v1/ops/reconcile-counts" ||
+    path === "/v1/ops/retry-classification" ||
+    path === "/v1/ops/classification-failures" ||
     path === "/v1/ops/purge-handle" ||
     path === "/v1/ops/purge-handle-missing-base-terms" ||
     path === "/v1/email/schedules/dispatch-due"
@@ -961,6 +970,9 @@ function jsonOk(body, statusCode = 200) {
 }
 
 function jsonError(message, statusCode = 400) {
+  if (statusCode >= 500) console.error(JSON.stringify({
+    event: "api_backend_error", status: statusCode, error: String(message).slice(0, 400),
+  }));
   return jsonResponse(statusCode, { error: message });
 }
 
@@ -2240,12 +2252,13 @@ function parseSignificanceClaimRequest(value) {
   };
 }
 
-function parseSignificanceResultUpsert(value) {
+export function parseSignificanceResultUpsert(value) {
   if (!isRecord(value)) return { ok: false, error: "item must be an object" };
 
   const statusId = asString(value.status_id);
   const classificationStatus = asString(value.classification_status)?.toLowerCase();
   const classifiedAt = value.classified_at === null ? null : asIsoTimestamp(value.classified_at);
+  const leasedAt = asIsoTimestamp(value.classification_leased_at);
   const confidence = value.classification_confidence === null
     ? null
     : asFiniteFloatValue(value.classification_confidence);
@@ -2253,8 +2266,11 @@ function parseSignificanceResultUpsert(value) {
   if (!statusId || !classificationStatus) {
     return { ok: false, error: "status_id and classification_status are required" };
   }
-  if (classificationStatus !== "classified" && classificationStatus !== "failed") {
-    return { ok: false, error: "classification_status must be one of classified, failed" };
+  if (!["classified", "failed", "pending"].includes(classificationStatus)) {
+    return { ok: false, error: "classification_status must be one of classified, failed, pending" };
+  }
+  if ((value.classification_leased_at !== undefined && !leasedAt) || (classificationStatus === "pending" && !leasedAt)) {
+    return { ok: false, error: "a valid classification_leased_at is required to release an unattempted post" };
   }
   if (confidence !== null && confidence !== undefined && (confidence < 0 || confidence > 1)) {
     return { ok: false, error: "classification_confidence must be between 0 and 1" };
@@ -2275,6 +2291,7 @@ function parseSignificanceResultUpsert(value) {
       classification_confidence: confidence ?? null,
       classification_error: asNullableString(value.classification_error),
       classified_at: classifiedAt ?? null,
+      classification_leased_at: leasedAt || null,
     },
   };
 }
@@ -3999,8 +4016,7 @@ async function upsertPosts(items) {
   return result;
 }
 
-async function claimPostsForClassification(request = {}) {
-  const db = getPool();
+export async function claimPostsForClassification(request = {}, db = getPool()) {
   const limit = Math.min(Math.max(request.limit || 12, 1), 200);
   const leaseSeconds = Math.min(Math.max(request.lease_seconds || 300, 30), 3600);
   const maxAttempts = Math.min(Math.max(request.max_attempts || 3, 1), 10);
@@ -4027,7 +4043,7 @@ async function claimPostsForClassification(request = {}) {
     UPDATE posts p
     SET
       classification_status = 'processing',
-      classification_leased_at = now(),
+      classification_leased_at = date_trunc('milliseconds', now()),
       classification_attempts = p.classification_attempts + 1,
       classification_error = NULL,
       updated_at = now()
@@ -4045,7 +4061,8 @@ async function claimPostsForClassification(request = {}) {
       p.watch_tier,
       p.discovered_at,
       p.last_seen_at,
-      p.classification_attempts
+      p.classification_attempts,
+      p.classification_leased_at
   `;
   const result = await db.query(sql, [limit, leaseSeconds, maxAttempts]);
   const backlogResult = await db.query(`
@@ -4070,7 +4087,12 @@ async function claimPostsForClassification(request = {}) {
       COUNT(*) FILTER (WHERE classification_status = 'processing') AS processing_count,
       COUNT(*) FILTER (WHERE classification_status = 'failed') AS failed_count,
       COUNT(*) AS retryable_count,
-      COALESCE(EXTRACT(EPOCH FROM (now() - MIN(discovered_at))), 0) AS oldest_retryable_age_seconds
+      COALESCE(EXTRACT(EPOCH FROM (now() - MIN(discovered_at))), 0) AS oldest_retryable_age_seconds,
+      (SELECT COUNT(*) FROM posts p
+        WHERE p.classification_attempts >= $2
+          AND (p.classification_status IN ('pending', 'failed') OR
+            (p.classification_status = 'processing' AND
+              (p.classification_leased_at IS NULL OR p.classification_leased_at < now() - make_interval(secs => $1))))) AS exhausted_count
     FROM retryable
   `, [leaseSeconds, maxAttempts]);
   const backlogRow = backlogResult.rows[0] || {};
@@ -4088,19 +4110,20 @@ async function claimPostsForClassification(request = {}) {
       discovered_at: toIso(row.discovered_at) || new Date(0).toISOString(),
       last_seen_at: toIso(row.last_seen_at) || new Date(0).toISOString(),
       classification_attempts: Number(row.classification_attempts || 0),
+      classification_leased_at: toIso(row.classification_leased_at),
     })),
     backlog: {
       pending_count: Number(backlogRow.pending_count || 0),
       processing_count: Number(backlogRow.processing_count || 0),
       failed_count: Number(backlogRow.failed_count || 0),
+      exhausted_count: Number(backlogRow.exhausted_count || 0),
       retryable_count: Number(backlogRow.retryable_count || 0),
       oldest_retryable_age_seconds: Number(backlogRow.oldest_retryable_age_seconds || 0),
     },
   };
 }
 
-async function applySignificanceResults(items) {
-  const db = getPool();
+export async function applySignificanceResults(items, db = getPool()) {
   const result = {
     received: items.length,
     updated: 0,
@@ -4121,9 +4144,13 @@ async function applySignificanceResults(items) {
       classification_model = $7,
       classification_confidence = $8,
       classification_error = $9,
+      classification_attempts = CASE WHEN $5 = 'pending'
+        THEN GREATEST(classification_attempts - 1, 0) ELSE classification_attempts END,
       classification_leased_at = NULL,
       updated_at = now()
     WHERE status_id = $1
+      AND ($10::timestamptz IS NULL OR
+        (classification_status = 'processing' AND classification_leased_at = $10::timestamptz))
     RETURNING status_id
   `;
 
@@ -4138,11 +4165,12 @@ async function applySignificanceResults(items) {
         item.classified_at || null,
         item.classification_model || null,
         item.classification_confidence ?? null,
-        item.classification_status === "failed" ? item.classification_error || "classification_failed" : null,
+        item.classification_status !== "classified" ? item.classification_error || "classification_failed" : null,
+        item.classification_leased_at || null,
       ]);
       if (dbResult.rowCount === 0) {
         result.skipped += 1;
-        result.errors.push({ index, message: `unknown status_id: ${item.status_id}` });
+        result.errors.push({ index, message: `unknown status_id or stale classification lease: ${item.status_id}` });
         continue;
       }
       result.updated += 1;
@@ -4153,6 +4181,63 @@ async function applySignificanceResults(items) {
   }
 
   return result;
+}
+
+export function parseClassificationRetryRequest(value) {
+  if (!isRecord(value) || !Array.isArray(value.status_ids) || value.status_ids.length < 1 || value.status_ids.length > 200
+      || value.status_ids.some((id) => typeof id !== "string" || !/^\d{1,25}$/.test(id))
+      || (value.dry_run !== undefined && typeof value.dry_run !== "boolean")) {
+    return { ok: false, error: "status_ids must contain 1-200 numeric strings; dry_run must be boolean" };
+  }
+  return { ok: true, data: { status_ids: [...new Set(value.status_ids)], dry_run: value.dry_run !== false } };
+}
+
+export async function retryFailedClassifications(request, db = getPool()) {
+  const fields = "status_id, classification_attempts, classification_model, classification_error";
+  if (request.dry_run) {
+    const result = await db.query(`SELECT ${fields} FROM posts
+      WHERE status_id = ANY($1::text[]) AND classification_status = 'failed' ORDER BY status_id`, [request.status_ids]);
+    return { dry_run: true, eligible: result.rows.length, items: result.rows };
+  }
+  const result = await db.query(`WITH candidates AS (
+      SELECT ${fields} FROM posts
+      WHERE status_id = ANY($1::text[]) AND classification_status = 'failed' FOR UPDATE
+    ) UPDATE posts p SET classification_status = 'pending', classification_attempts = 0,
+      classification_leased_at = NULL, updated_at = now()
+    FROM candidates c WHERE p.status_id = c.status_id
+    RETURNING c.status_id, c.classification_attempts, c.classification_model, c.classification_error`, [request.status_ids]);
+  console.log(JSON.stringify({ event: "classification_recovery", requested: request.status_ids.length, requeued: result.rowCount }));
+  return { dry_run: false, requeued: result.rowCount, items: result.rows };
+}
+
+export async function listExhaustedClassifications(db = getPool()) {
+  const result = await db.query(`SELECT status_id, discovered_at, classification_attempts,
+      classification_model, classification_error, COUNT(*) OVER () AS total
+    FROM posts WHERE classification_status = 'failed' AND classification_attempts >= 10
+    ORDER BY discovered_at, status_id LIMIT 200`);
+  return { total: Number(result.rows[0]?.total || 0), items: result.rows.map(({ total, ...item }) => item) };
+}
+
+async function handleClassificationFailures() {
+  if (!hasDatabaseConfig()) return jsonError("Database is not configured.", 503);
+  try {
+    return jsonOk(await listExhaustedClassifications());
+  } catch (error) {
+    return jsonError(errorMessage(error) || "classification failure inventory failed", 503);
+  }
+}
+
+async function handleClassificationRetry(event) {
+  const body = readJsonBody(event);
+  if (!body.ok) return jsonError(body.error, 400);
+  const parsed = parseClassificationRetryRequest(body.body);
+  if (!parsed.ok) return jsonError(parsed.error, 400);
+  if (!hasDatabaseConfig()) return jsonError("Database is not configured.", 503);
+  try {
+    return jsonOk(await retryFailedClassifications(parsed.data));
+  } catch (error) {
+    return jsonError(errorMessage(error) || "classification recovery failed", 503);
+  }
 }
 
 async function purgePostsByAuthorHandle(authorHandle) {
@@ -14518,6 +14603,14 @@ export async function handler(event) {
 
   if (method === "GET" && path === "/v1/ops/reconcile-counts") {
     return handleOpsReconcileCounts(event);
+  }
+
+  if (method === "POST" && path === "/v1/ops/retry-classification") {
+    return handleClassificationRetry(event);
+  }
+
+  if (method === "GET" && path === "/v1/ops/classification-failures") {
+    return handleClassificationFailures();
   }
 
   if (method === "POST" && path === "/v1/ops/purge-handle") {
